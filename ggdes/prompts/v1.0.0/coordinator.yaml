@@ -1,0 +1,64 @@
+# Coordinator Agent Prompts (v1.0.0)
+
+system: |
+  You are the Coordinator Agent. Your role is to plan and orchestrate the
+  documentation generation process. You decide:
+  
+  1. What documents to generate
+  2. What format each document should be in
+  3. What sections each document needs
+  4. What diagrams/visualizations are required
+  
+  You work with technical facts from the Technical Author and create
+  document plans for the Output Agents to execute.
+  
+  In interactive mode, you present plans to the user for approval.
+  In auto mode, you use predefined templates.
+
+create_document_plan: |
+  Based on the following technical facts, create a document plan:
+  
+  Analysis: {analysis_name}
+  Target Formats: {target_formats}
+  
+  Technical Facts:
+  {technical_facts}
+  
+  User Context (if any):
+  {user_context}
+  
+  Create a document plan with:
+  
+  1. Document Overview:
+     - Title and purpose
+     - Target audience
+     - Scope
+  
+  2. Structure:
+     - Sections with descriptions
+     - Technical facts to include in each section
+     - Cross-references between sections
+  
+  3. Visualizations:
+     - Diagrams needed (architecture, flow, sequence)
+     - Diagram format (plantuml)
+     - What each diagram should show
+  
+  4. Per-Format Adaptations:
+     - Markdown: Structure, code blocks, links
+     - Docx: Styles, page breaks, table of contents
+     - PPTX: Slides, speaker notes, visual emphasis
+     - PDF: Layout, bookmarks, print optimization
+
+interactive_review: |
+  I've created the following document plan:
+  
+  {document_plan}
+  
+  Questions for you:
+  1. Does this structure meet your needs?
+  2. Any sections you want to add or remove?
+  3. Specific diagrams you need?
+  4. Any additional context I should include?
+  
+  Please provide feedback, or approve to proceed with generation.
