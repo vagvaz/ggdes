@@ -324,6 +324,14 @@ def config(
         console.print(f"  Auto Cleanup: {config_obj.features.auto_cleanup}")
 
 
+@app.command()
+def tui() -> None:
+    """Launch the interactive TUI."""
+    from ggdes.tui import run_tui
+
+    run_tui()
+
+
 def main() -> None:
     """Entry point for CLI."""
     app()
