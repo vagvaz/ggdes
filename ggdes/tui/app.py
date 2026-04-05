@@ -70,7 +70,7 @@ class AnalysisListItem(ListItem):
 
     def compose(self) -> ComposeResult:
         with Horizontal():
-            yield Label(f"[bold]{self.analysis_name}[/bold]", width=30)
+            yield Label(f"[bold]{self.analysis_name}[/bold]")
             yield Label(f"[{self.status}] {self.analysis_id[:20]}...")
 
 
