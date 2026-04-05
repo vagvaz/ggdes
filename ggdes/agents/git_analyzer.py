@@ -331,6 +331,9 @@ class GitAnalyzer:
         Returns:
             ChangeSummary with analysis results
         """
+        # Store original commit range for output
+        self.original_commit_range = commit_range
+
         # Initialize conversation
         self._init_conversation(storage_policy)
 
@@ -429,8 +432,8 @@ class GitAnalyzer:
             for f in files
         ]
 
-        # Set commit range info
-        change_summary.commit_range = self._format_commit_range(commits)
+        # Set commit range info - use original range passed by user
+        change_summary.commit_range = getattr(self, "original_commit_range", "unknown")
         if commits:
             change_summary.commit_hash = commits[0]["hash"]
 
@@ -505,7 +508,8 @@ Then provide a structured ChangeSummary.
             for f in files
         ]
 
-        change_summary.commit_range = self._format_commit_range(commits)
+        # Use original commit range passed by user
+        change_summary.commit_range = getattr(self, "original_commit_range", "unknown")
         if commits:
             change_summary.commit_hash = commits[0]["hash"]
 
@@ -618,14 +622,6 @@ Then provide a structured ChangeSummary.
             temperature=0.2,
             max_retries=3,
         )
-
-    def _format_commit_range(self, commits: list[dict]) -> str:
-        """Format commit range string."""
-        if len(commits) >= 2:
-            return f"{commits[-1]['hash'][:8]}..{commits[0]['hash'][:8]}"
-        elif len(commits) == 1:
-            return commits[0]["hash"][:8]
-        return "unknown"
 
     @classmethod
     def load_conversation(
