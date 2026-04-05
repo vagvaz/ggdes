@@ -69,6 +69,12 @@ def analyze(
             help="Focus on specific commits (comma-separated hashes, e.g., 'abc123,def456')"
         ),
     ] = None,
+    storage: Annotated[
+        str,
+        typer.Option(
+            help="Conversation storage level (raw, summary, none). Default: summary"
+        ),
+    ] = "summary",
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
     auto: Annotated[
         bool,
@@ -179,6 +185,14 @@ def analyze(
     if focus:
         focus_commits = [c.strip() for c in focus.split(",") if c.strip()]
 
+    # Validate storage policy
+    valid_storage_policies = {"raw", "summary", "none"}
+    storage_policy = storage.lower().strip()
+    if storage_policy not in valid_storage_policies:
+        console.print(f"[red]Error:[/red] Invalid storage policy: '{storage}'")
+        console.print(f"Valid options: {', '.join(sorted(valid_storage_policies))}")
+        raise typer.Exit(1)
+
     # Check if repo is a git repo
     git_dir = repo_path / ".git"
     if not git_dir.exists() and not (repo_path / ".git").is_dir():
@@ -209,6 +223,7 @@ def analyze(
         console.print(f"  Focus commits: {', '.join(focus_commits)}")
     console.print(f"  Feature: {feature}")
     console.print(f"  Formats: {', '.join(target_formats)}")
+    console.print(f"  Storage: {storage_policy}")
 
     # Acquire lock
     try:
@@ -222,6 +237,7 @@ def analyze(
                 focus_commits=focus_commits,
                 prompt_version="v1.0.0",  # Use current version
                 target_formats=target_formats,
+                storage_policy=storage_policy,
             )
             console.print(
                 f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"

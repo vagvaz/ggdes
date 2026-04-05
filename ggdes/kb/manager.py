@@ -66,6 +66,9 @@ class AnalysisMetadata(BaseModel):
     # Target output formats for this analysis
     target_formats: list[str] = Field(default_factory=list)
 
+    # Conversation storage policy
+    storage_policy: str = "summary"
+
     # Worktree information
     worktrees: Optional[WorktreeInfo] = None
 
@@ -187,6 +190,7 @@ class KnowledgeBaseManager:
         focus_commits: Optional[list[str]] = None,
         prompt_version: str = "current",
         target_formats: Optional[list[str]] = None,
+        storage_policy: str = "summary",
     ) -> AnalysisMetadata:
         """Create a new analysis in the knowledge base.
 
@@ -198,6 +202,7 @@ class KnowledgeBaseManager:
             focus_commits: Optional list of focus commits for non-contiguous
             prompt_version: Version of prompts to use
             target_formats: List of output formats to generate (e.g., ["markdown", "docx"])
+            storage_policy: Conversation storage level (raw, summary, none)
 
         Returns:
             AnalysisMetadata for the new analysis
@@ -223,6 +228,7 @@ class KnowledgeBaseManager:
             prompt_version=prompt_version,
             target_formats=target_formats
             or ["markdown"],  # Default to markdown if not specified
+            storage_policy=storage_policy,
         )
 
         # Initialize all stages as pending

@@ -57,52 +57,66 @@ class GitAnalyzer:
         Returns:
             Git diff as string
         """
-        if focus_commits:
-            # When focus commits are specified, get diff only for those commits
-            # For multiple focus commits, we get diff from parent of first to last
-            if len(focus_commits) == 1:
-                # Single commit: diff against its parent
-                cmd = [
-                    "git",
-                    "-C",
-                    str(self.repo_path),
-                    "diff",
-                    f"{focus_commits[0]}~1..{focus_commits[0]}",
-                ]
+        try:
+            if focus_commits:
+                # When focus commits are specified, get diff only for those commits
+                # For multiple focus commits, we get diff from parent of first to last
+                if len(focus_commits) == 1:
+                    # Single commit: diff against its parent
+                    cmd = [
+                        "git",
+                        "-C",
+                        str(self.repo_path),
+                        "diff",
+                        f"{focus_commits[0]}~1..{focus_commits[0]}",
+                    ]
+                else:
+                    # Multiple commits: diff from parent of first to last
+                    cmd = [
+                        "git",
+                        "-C",
+                        str(self.repo_path),
+                        "diff",
+                        f"{focus_commits[0]}~1..{focus_commits[-1]}",
+                    ]
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+                diff = result.stdout
+                # Prefix with context about which commits are being analyzed
+                diff = f"# Analyzing focus commits: {', '.join(focus_commits)}\n# Full range context: {commit_range}\n\n{diff}"
             else:
-                # Multiple commits: diff from parent of first to last
-                cmd = [
-                    "git",
-                    "-C",
-                    str(self.repo_path),
-                    "diff",
-                    f"{focus_commits[0]}~1..{focus_commits[-1]}",
-                ]
+                # No focus commits - analyze the full range
+                cmd = ["git", "-C", str(self.repo_path), "diff", commit_range]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
 
-            diff = result.stdout
-            # Prefix with context about which commits are being analyzed
-            diff = f"# Analyzing focus commits: {', '.join(focus_commits)}\n# Full range context: {commit_range}\n\n{diff}"
-        else:
-            # No focus commits - analyze the full range
-            cmd = ["git", "-C", str(self.repo_path), "diff", commit_range]
+                diff = result.stdout
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            # Validate diff is not empty
+            if not diff or not diff.strip():
+                console.print(
+                    f"[yellow]Warning: Git diff is empty for range {commit_range}[/yellow]"
+                )
+                # Return a descriptive placeholder instead of empty string
+                return f"# Git diff is empty for commit range: {commit_range}\n# This may indicate:\n# - The commits have no changes (empty commits)\n# - The range is invalid\n# - The commits are in the wrong order (try reversing)\n"
 
-            diff = result.stdout
+            return diff
 
-        return diff
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Git diff failed: {e.stderr if e.stderr else 'Unknown error'}"
+            console.print(f"[red]Error: {error_msg}[/red]")
+            raise RuntimeError(error_msg)
 
     def get_commit_log(
         self, commit_range: str, focus_commits: Optional[list[str]] = None
@@ -380,9 +394,41 @@ class GitAnalyzer:
         self, diff: str, files: list[dict], commits: list[dict]
     ) -> ChangeSummary:
         """Single-pass analysis for diffs that fit in context."""
-        # Turn 1: Initial analysis
+        # Prepare context about what files changed
+        files_context = "\n".join(
+            [
+                f"- {f['path']} (+{f['lines_added']} / -{f['lines_deleted']})"
+                for f in files[:50]  # Limit to first 50 files
+            ]
+        )
+
+        # Prepare context about commits
+        commits_context = "\n".join(
+            [
+                f"- {c['hash'][:8]} by {c['author']} on {c['date']}: {c['message']}"
+                for c in commits[:20]  # Limit to first 20 commits
+            ]
+        )
+
+        # Turn 1: Initial analysis with full context
         self.conversation.add_user_message(
-            f"Analyze this git diff and identify key changes:\n\n{diff[:40000]}"
+            f"""You are analyzing a git commit range with the following context:
+
+FILES CHANGED ({len(files)} total):
+{files_context}
+
+COMMITS ({len(commits)} total):
+{commits_context}
+
+GIT DIFF (code changes):
+```diff
+{diff[:40000]}
+```
+
+Analyze the git diff above and identify the key changes. Focus on:
+1. What functionality changed
+2. What files/modules were affected
+3. The overall purpose of these changes"""
         )
 
         context = self.conversation.get_context_for_llm()
@@ -391,8 +437,9 @@ class GitAnalyzer:
 
         # Turn 2: Deep dive on breaking changes
         self.conversation.add_user_message(
-            "Based on your analysis, identify any breaking changes, API modifications, "
-            "or significant behavioral changes. Be specific about what changed and why."
+            "Based on your analysis above, identify any breaking changes, API modifications, "
+            "or significant behavioral changes. Be specific about what changed and why. "
+            "If there are no breaking changes, explicitly state 'No breaking changes detected.'"
         )
 
         context = self.conversation.get_context_for_llm()
@@ -411,8 +458,18 @@ class GitAnalyzer:
 
         # Turn 4: Structured output
         self.conversation.add_user_message(
-            "Now provide a structured summary. Output a JSON object matching the ChangeSummary schema "
-            "with fields: change_type, description, intent, impact, impact_level, breaking_changes, dependencies_changed"
+            f"""Now provide a structured summary as a JSON object.
+
+Based on the {len(files)} files and {len(commits)} commits analyzed, output a ChangeSummary with:
+- change_type: The primary type (feature, bugfix, refactor, docs, test, chore, performance, security)
+- description: A clear description of what changed (2-3 sentences)
+- intent: Why this change was made
+- impact: What systems/behaviors are affected
+- impact_level: none, low, medium, high, or critical
+- breaking_changes: List any breaking changes (empty list if none)
+- dependencies_changed: List any dependency changes (empty list if none)
+
+IMPORTANT: Your description MUST be based on the actual git diff and file list shown above. Do NOT say "no changes detected" when files clearly changed."""
         )
 
         context = self.conversation.get_context_for_llm()

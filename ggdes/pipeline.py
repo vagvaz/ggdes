@@ -175,10 +175,18 @@ class AnalysisPipeline:
             )
 
         console.print("  [dim]Running git analysis (this may take a moment)...[/dim]")
+
+        # Get storage policy from metadata
+        from ggdes.schemas import StoragePolicy
+
+        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
+        storage_policy = StoragePolicy(storage_policy_str)
+
         change_summary = asyncio.run(
             analyzer.analyze(
                 commit_range=commit_range,
                 focus_commits=focus_commits,
+                storage_policy=storage_policy,
             )
         )
 
@@ -321,6 +329,7 @@ class AnalysisPipeline:
     def _run_technical_author(self) -> bool:
         """Run technical author agent."""
         from ggdes.agents import TechnicalAuthor
+        from ggdes.schemas import StoragePolicy
 
         console.print("  [dim]Initializing Technical Author...[/dim]")
         author = TechnicalAuthor(self.repo_path, self.config, self.analysis_id)
@@ -328,7 +337,11 @@ class AnalysisPipeline:
         console.print("  [dim]Synthesizing technical facts from analysis...[/dim]")
         import asyncio
 
-        facts = asyncio.run(author.synthesize())
+        # Get storage policy from metadata
+        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
+        storage_policy = StoragePolicy(storage_policy_str)
+
+        facts = asyncio.run(author.synthesize(storage_policy=storage_policy))
 
         console.print(f"  [dim]Synthesized {len(facts)} technical facts[/dim]")
 
@@ -346,6 +359,7 @@ class AnalysisPipeline:
     def _run_coordinator_plan(self) -> bool:
         """Run coordinator planning stage."""
         from ggdes.agents import Coordinator
+        from ggdes.schemas import StoragePolicy
 
         console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
         coordinator = Coordinator(self.repo_path, self.config, self.analysis_id)
@@ -363,10 +377,15 @@ class AnalysisPipeline:
         if auto_mode:
             console.print("  [dim]Running in auto mode (no user prompts)[/dim]")
 
+        # Get storage policy from metadata
+        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
+        storage_policy = StoragePolicy(storage_policy_str)
+
         plans = asyncio.run(
             coordinator.create_plan(
                 target_formats=target_formats,
                 interactive=not auto_mode,
+                storage_policy=storage_policy,
             )
         )
 
@@ -401,8 +420,12 @@ class AnalysisPipeline:
         if "markdown" in formats:
             console.print("  [dim]Generating markdown source document...[/dim]")
             try:
+                # Get storage policy from metadata
+                storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
+                storage_policy = StoragePolicy(storage_policy_str)
+
                 agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
-                path = asyncio.run(agent.generate())
+                path = asyncio.run(agent.generate(storage_policy=storage_policy))
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:
