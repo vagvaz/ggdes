@@ -118,6 +118,15 @@ class AnalysisMetadata(BaseModel):
         stage.error_message = error_message
         self.updated_at = datetime.now()
 
+    def reset_stage(self, stage_name: str) -> None:
+        """Reset a stage to pending status (for retry)."""
+        stage = self.get_stage(stage_name)
+        stage.status = StageStatus.PENDING
+        stage.started_at = None
+        stage.completed_at = None
+        stage.error_message = None
+        self.updated_at = datetime.now()
+
     def skip_stage(self, stage_name: str) -> None:
         """Mark a stage as skipped."""
         stage = self.get_stage(stage_name)
@@ -345,11 +354,14 @@ class KnowledgeBaseManager:
         """
         return self._get_metadata_path(analysis_id).exists()
 
-    def can_resume(self, analysis_id: str) -> tuple[bool, Optional[str]]:
+    def can_resume(
+        self, analysis_id: str, retry_failed: bool = False
+    ) -> tuple[bool, Optional[str]]:
         """Check if an analysis can be resumed.
 
         Args:
             analysis_id: Analysis identifier
+            retry_failed: If True, allow retrying failed stages
 
         Returns:
             Tuple of (can_resume, reason_if_not)
@@ -358,10 +370,14 @@ class KnowledgeBaseManager:
         if not metadata:
             return False, "Analysis not found"
 
-        # Check if any stage failed
-        for stage_name, stage in metadata.stages.items():
-            if stage.status == StageStatus.FAILED:
-                return False, f"Stage '{stage_name}' failed"
+        if not retry_failed:
+            # Check if any stage failed
+            for stage_name, stage in metadata.stages.items():
+                if stage.status == StageStatus.FAILED:
+                    return (
+                        False,
+                        f"Stage '{stage_name}' failed (use --retry-failed to retry)",
+                    )
 
         # Check if all stages completed
         if all(
@@ -370,3 +386,27 @@ class KnowledgeBaseManager:
             return False, "All stages already completed"
 
         return True, None
+
+    def reset_failed_stages(self, analysis_id: str) -> list[str]:
+        """Reset all failed stages to pending.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            List of stage names that were reset
+        """
+        metadata = self.load_metadata(analysis_id)
+        if not metadata:
+            return []
+
+        reset_stages = []
+        for stage_name, stage in metadata.stages.items():
+            if stage.status == StageStatus.FAILED:
+                metadata.reset_stage(stage_name)
+                reset_stages.append(stage_name)
+
+        if reset_stages:
+            self.save_metadata(analysis_id, metadata)
+
+        return reset_stages

@@ -239,6 +239,20 @@ def analyze(
                 target_formats=target_formats,
                 storage_policy=storage_policy,
             )
+
+            # Setup logging
+            from ggdes.logging_config import get_logger, setup_file_logging
+
+            logger = get_logger(__name__)
+            log_path = kb_manager.get_analysis_path(analysis_id) / "analysis.log"
+            setup_file_logging(log_path)
+
+            logger.info(f"Starting analysis: {analysis_id}")
+            logger.info(f"Repository: {repo_path}")
+            logger.info(f"Commit range: {commits}")
+            logger.info(f"Formats: {target_formats}")
+            logger.info(f"Storage policy: {storage_policy}")
+
             console.print(
                 f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"
             )
@@ -249,14 +263,17 @@ def analyze(
             pipeline = AnalysisPipeline(config, analysis_id)
 
             # Step 1: Setup worktrees (always needed)
+            logger.info("Setting up worktrees...")
             success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
             if not success:
+                logger.error("Worktree setup failed")
                 console.print(f"\n[red]✗ Setup failed[/red]")
                 raise typer.Exit(1)
 
             # Determine what to do next
             if setup_only:
                 # User only wanted setup
+                logger.info("Setup complete (setup-only mode)")
                 console.print(f"\n[green]✓ Setup complete:[/green] {analysis_id}")
                 console.print(f"Run 'ggdes resume {analysis_id}' to run analysis later")
                 return
@@ -268,16 +285,20 @@ def analyze(
                     f"This will analyze the commits and generate documentation."
                 )
                 if not typer.confirm("Continue with analysis?"):
+                    logger.info("Analysis paused by user")
                     console.print(f"\n[yellow]Analysis paused.[/yellow]")
                     console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
                     return
 
             # Step 2: Run full analysis
+            logger.info("Running full analysis pipeline...")
             console.print("\n[bold]Running analysis...[/bold]")
             success = pipeline.run_all_pending()
             if success:
+                logger.info(f"Analysis completed successfully: {analysis_id}")
                 console.print(f"\n[green]✓ Analysis complete:[/green] {analysis_id}")
             else:
+                logger.error(f"Analysis incomplete: {analysis_id}")
                 console.print(
                     f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
                 )
@@ -285,6 +306,7 @@ def analyze(
                 raise typer.Exit(1)
 
     except RuntimeError as e:
+        logger.exception(f"Runtime error during analysis: {e}")
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
@@ -406,8 +428,15 @@ def resume(
     stage: Annotated[
         Optional[str], typer.Option(help="Run specific stage only")
     ] = None,
+    retry_failed: Annotated[
+        bool, typer.Option(help="Retry failed stages (reset them to pending)")
+    ] = False,
 ) -> None:
     """Resume an incomplete analysis."""
+    from ggdes.logging_config import get_logger, setup_file_logging
+
+    logger = get_logger(__name__)
+
     config, _ = load_config()
     kb_manager = KnowledgeBaseManager(config)
 
@@ -422,14 +451,33 @@ def resume(
             break
 
     if not found_metadata:
+        logger.error(f"Analysis not found: {analysis}")
         console.print(f"[red]Analysis not found:[/red] {analysis}")
         raise typer.Exit(1)
 
+    # Setup logging for this analysis
+    log_path = kb_manager.get_analysis_path(found_id) / "analysis.log"
+    setup_file_logging(log_path)
+
+    logger.info(f"Resuming analysis: {found_id}")
+    logger.info(f"Repository: {found_metadata.repo_path}")
+    logger.info(f"Commit range: {found_metadata.commit_range}")
+
     # Check if can resume
-    can_resume, reason = kb_manager.can_resume(found_id)
+    can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
     if not can_resume:
+        logger.error(f"Cannot resume: {reason}")
         console.print(f"[red]Cannot resume:[/red] {reason}")
         raise typer.Exit(1)
+
+    # If retry_failed is set, reset all failed stages
+    if retry_failed:
+        reset_stages = kb_manager.reset_failed_stages(found_id)
+        if reset_stages:
+            logger.info(f"Reset failed stages for retry: {', '.join(reset_stages)}")
+            console.print(
+                f"[yellow]Reset {len(reset_stages)} failed stage(s) for retry:[/yellow] {', '.join(reset_stages)}"
+            )
 
     repo_path = Path(found_metadata.repo_path)
 
@@ -441,20 +489,27 @@ def resume(
 
         if stage:
             # Run specific stage
+            logger.info(f"Running specific stage: {stage}")
             console.print(f"[bold]Running stage:[/bold] {stage}")
             success = pipeline.run_stage(stage)
         else:
             # Run all pending stages
+            pending = found_metadata.get_pending_stages()
+            logger.info(f"Running all pending stages: {pending}")
             console.print(f"[bold]Resuming analysis:[/bold] {found_id}")
+            console.print(f"[dim]Pending stages: {', '.join(pending)}[/dim]")
             success = pipeline.run_all_pending()
 
         if success:
+            logger.info(f"Analysis completed successfully: {found_id}")
             console.print(f"\n[green]✓ Analysis updated:[/green] {found_id}")
         else:
+            logger.warning(f"Analysis incomplete: {found_id}")
             console.print(f"\n[yellow]⚠ Analysis incomplete:[/yellow] {found_id}")
             raise typer.Exit(1)
 
     except RuntimeError as e:
+        logger.exception(f"Error during analysis: {e}")
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
