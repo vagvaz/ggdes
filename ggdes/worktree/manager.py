@@ -56,9 +56,18 @@ class WorktreeManager:
         """
         import subprocess
 
-        analysis_wt_path = get_worktrees_path(self.config, analysis_id)
+        # Use absolute paths for everything
+        analysis_wt_path = get_worktrees_path(self.config, analysis_id).resolve()
         base_path = analysis_wt_path / "base"
         head_path = analysis_wt_path / "head"
+
+        # Resolve repo path to absolute
+        repo_path = self.repo_path.resolve()
+
+        print(f"[worktree] Analysis worktree path: {analysis_wt_path}")
+        print(f"[worktree] Repository path: {repo_path}")
+        print(f"[worktree] Base commit: {base_commit}")
+        print(f"[worktree] Head commit: {head_commit}")
 
         # Create parent directory
         analysis_wt_path.mkdir(parents=True, exist_ok=True)
@@ -96,7 +105,7 @@ class WorktreeManager:
             f"[worktree] Creating base worktree at {base_path} for commit {base_commit}"
         )
         try:
-            _create_worktree(self.repo_path, base_path, base_commit)
+            _create_worktree(repo_path, base_path, base_commit)
         except subprocess.CalledProcessError as e:
             error_msg = (
                 f"Failed to create base worktree: {e.stderr if e.stderr else str(e)}"
@@ -108,7 +117,7 @@ class WorktreeManager:
             f"[worktree] Creating head worktree at {head_path} for commit {head_commit}"
         )
         try:
-            _create_worktree(self.repo_path, head_path, head_commit)
+            _create_worktree(repo_path, head_path, head_commit)
         except subprocess.CalledProcessError as e:
             error_msg = (
                 f"Failed to create head worktree: {e.stderr if e.stderr else str(e)}"
@@ -124,8 +133,38 @@ class WorktreeManager:
 
         # Verify worktrees were created
         if not base_path.exists():
+            # Try to debug - maybe git created it elsewhere
+            print(
+                f"[worktree] ERROR: Base worktree directory not created at expected path: {base_path}"
+            )
+            print(f"[worktree] Checking if parent exists: {analysis_wt_path.exists()}")
+            if analysis_wt_path.exists():
+                print(
+                    f"[worktree] Contents of parent: {list(analysis_wt_path.iterdir())}"
+                )
+
+            # Check git worktree list
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    ["git", "-C", str(repo_path), "worktree", "list"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                print(f"[worktree] Git worktree list:\n{result.stdout}")
+                if result.stderr:
+                    print(f"[worktree] Git worktree list stderr: {result.stderr}")
+            except Exception as e:
+                print(f"[worktree] Could not get worktree list: {e}")
+
             raise RuntimeError(f"Base worktree directory not created: {base_path}")
+
         if not head_path.exists():
+            print(
+                f"[worktree] ERROR: Head worktree directory not created at expected path: {head_path}"
+            )
             raise RuntimeError(f"Head worktree directory not created: {head_path}")
 
         print(f"[worktree] Successfully created worktrees")
@@ -208,8 +247,28 @@ def _create_worktree(repo_path: Path, worktree_path: Path, commit: str) -> None:
     Raises:
         subprocess.CalledProcessError: If git command fails
     """
+    import subprocess
+
     cmd = ["git", "-C", str(repo_path), "worktree", "add", str(worktree_path), commit]
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    print(f"[worktree] Running: {' '.join(cmd)}")
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        error_msg = f"Git worktree add failed:\n"
+        error_msg += f"  Command: {' '.join(cmd)}\n"
+        error_msg += f"  Exit code: {result.returncode}\n"
+        if result.stderr:
+            error_msg += f"  Stderr: {result.stderr}\n"
+        if result.stdout:
+            error_msg += f"  Stdout: {result.stdout}\n"
+        print(f"[worktree] {error_msg}")
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, output=result.stdout, stderr=result.stderr
+        )
+
+    if result.stdout:
+        print(f"[worktree] {result.stdout.strip()}")
 
 
 def _remove_worktree(worktree_path: Path) -> None:
