@@ -13,6 +13,9 @@ dependencies = [
     "tree-sitter>=0.22.0",
     "tree-sitter-python>=0.21.0",
     "deepagents>=0.4.0",
+    "instructor>=1.0.0",
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
 ]
 
 [project.optional-dependencies]
@@ -41,3 +44,9 @@ python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.0",
+    "python-lsp-server[all]>=1.14.0",
+]

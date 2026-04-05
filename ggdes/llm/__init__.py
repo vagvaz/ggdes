@@ -6,6 +6,9 @@ from ggdes.llm.factory import (
     LLMProvider,
     OllamaProvider,
     OpenAIProvider,
+    OpencodeZenProvider,
+    detect_model_family,
+    resolve_api_key,
 )
 
 __all__ = [
@@ -14,4 +17,7 @@ __all__ = [
     "LLMProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "OpencodeZenProvider",
+    "detect_model_family",
+    "resolve_api_key",
 ]"

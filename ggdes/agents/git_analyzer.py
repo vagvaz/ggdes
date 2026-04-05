@@ -194,19 +194,17 @@ class GitAnalyzer:
             diff_content=diff[:50000],  # Limit diff size
         )
 
-        # Generate structured output
-        output_schema = ChangeSummary.model_json_schema()
-        result = self.llm.generate_structured(
+        # Generate structured output using Instructor
+        # This guarantees the output matches ChangeSummary schema
+        change_summary = self.llm.generate_structured(
             prompt=prompt,
-            output_schema=output_schema,
+            response_model=ChangeSummary,
             system_prompt=system_prompt,
             temperature=0.3,  # Low temp for consistent analysis
+            max_retries=3,  # Retry on validation failure
         )
 
-        # Create ChangeSummary from result
-        change_summary = ChangeSummary(**result)
-
-        # Add file info from git stats
+        # Add file info from git stats (override what LLM provided)
         from ggdes.schemas import FileChange
 
         change_summary.files_changed = [
