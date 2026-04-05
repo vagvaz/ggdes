@@ -1,5 +1,6 @@
 """LLM provider factory."""
 
+from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.llm.factory import (
     AnthropicProvider,
     LLMFactory,
@@ -13,11 +14,13 @@ from ggdes.llm.factory import (
 
 __all__ = [
     "AnthropicProvider",
+    "ConversationContext",
     "LLMFactory",
     "LLMProvider",
     "OllamaProvider",
     "OpenAIProvider",
     "OpencodeZenProvider",
     "detect_model_family",
+    "estimate_tokens",
     "resolve_api_key",
 ]"

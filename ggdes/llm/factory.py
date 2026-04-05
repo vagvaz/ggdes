@@ -83,6 +83,25 @@ class LLMProvider(ABC):
         self.options = kwargs
 
     @abstractmethod
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate text from conversation context.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+
+        Returns:
+            Generated text
+        """
+        pass
+
+    @abstractmethod
     def generate(
         self,
         prompt: str,
@@ -143,6 +162,41 @@ class AnthropicProvider(LLMProvider):
             client = anthropic.Anthropic(api_key=self.api_key)
             self._client = instructor.from_anthropic(client)
         return self._client
+
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self.api_key)
+
+        # Extract system message if present
+        system = None
+        chat_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system = msg.get("content")
+            else:
+                chat_messages.append(
+                    {
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", ""),
+                    }
+                )
+
+        response = client.messages.create(
+            model=self.model_name,
+            max_tokens=max_tokens or 4096,
+            temperature=temperature,
+            system=system,
+            messages=chat_messages,
+        )
+
+        return response.content[0].text
 
     def generate(
         self,
@@ -209,6 +263,26 @@ class OpenAIProvider(LLMProvider):
             client = openai.OpenAI(api_key=self.api_key)
             self._client = instructor.from_openai(client)
         return self._client
+
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        import openai
+
+        client = openai.OpenAI(api_key=self.api_key)
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        return response.choices[0].message.content
 
     def generate(
         self,
@@ -287,6 +361,29 @@ class OllamaProvider(LLMProvider):
             )
             self._client = instructor.from_openai(client)
         return self._client
+
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        import openai
+
+        client = openai.OpenAI(
+            api_key="ollama",
+            base_url=self.base_url,
+        )
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        return response.choices[0].message.content
 
     def generate(
         self,
@@ -379,6 +476,29 @@ class OpencodeZenProvider(LLMProvider):
             )
             self._client = instructor.from_openai(client)
         return self._client
+
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        import openai
+
+        client = openai.OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        return response.choices[0].message.content
 
     def generate(
         self,

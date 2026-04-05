@@ -1,5 +1,6 @@
 """Structured output schemas for GGDes."""
 
+from ggdes.schemas.enums import StoragePolicy
 from ggdes.schemas.models import (
     ChangeSummary,
     ChangeType,
@@ -25,5 +26,6 @@ __all__ = [
     "FileChange",
     "ImpactLevel",
     "SectionPlan",
+    "StoragePolicy",
     "TechnicalFact",
 ]
