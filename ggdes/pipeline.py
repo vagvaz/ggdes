@@ -256,6 +256,23 @@ class AnalysisPipeline:
 
     def _run_technical_author(self) -> bool:
         """Run technical author agent."""
-        # TODO: Implement Technical Author Agent in Phase 3
-        console.print("  [dim]Technical Author Agent - Phase 3 implementation[/dim]")
+        from ggdes.agents import TechnicalAuthor
+
+        author = TechnicalAuthor(self.repo_path, self.config, self.analysis_id)
+
+        import asyncio
+
+        facts = asyncio.run(author.synthesize())
+
+        console.print(f"  Synthesized {len(facts)} technical facts")
+
+        # Show sample of facts
+        for fact in facts[:3]:
+            console.print(
+                f"    - [{fact.category}] {fact.fact_id}: {fact.description[:60]}..."
+            )
+
+        if len(facts) > 3:
+            console.print(f"    ... and {len(facts) - 3} more")
+
         return True
