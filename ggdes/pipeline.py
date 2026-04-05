@@ -138,11 +138,48 @@ class AnalysisPipeline:
         )
 
         # Create worktrees
-        worktree_pair = self.wt_manager.create_for_analysis(
-            self.analysis_id,
-            base_commit=base_commit or "HEAD",
-            head_commit=head_commit or "HEAD",
-        )
+        try:
+            worktree_pair = self.wt_manager.create_for_analysis(
+                self.analysis_id,
+                base_commit=base_commit or "HEAD",
+                head_commit=head_commit or "HEAD",
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to create worktrees:[/red] {e}")
+            return False
+
+        # Verify worktrees were actually created
+        if not worktree_pair.base.exists():
+            console.print(
+                f"[red]Base worktree was not created:[/red] {worktree_pair.base}"
+            )
+            return False
+        if not worktree_pair.head.exists():
+            console.print(
+                f"[red]Head worktree was not created:[/red] {worktree_pair.head}"
+            )
+            return False
+
+        # Check if worktrees have content
+        try:
+            base_contents = list(worktree_pair.base.iterdir())
+            head_contents = list(worktree_pair.head.iterdir())
+
+            if not base_contents:
+                console.print(
+                    f"[yellow]Warning: Base worktree is empty:[/yellow] {worktree_pair.base}"
+                )
+            if not head_contents:
+                console.print(
+                    f"[yellow]Warning: Head worktree is empty:[/yellow] {worktree_pair.head}"
+                )
+
+            console.print(f"  [dim]Base worktree items: {len(base_contents)}[/dim]")
+            console.print(f"  [dim]Head worktree items: {len(head_contents)}[/dim]")
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning: Could not read worktree contents:[/yellow] {e}"
+            )
 
         # Update metadata with absolute paths
         from ggdes.kb import WorktreeInfo
@@ -152,8 +189,8 @@ class AnalysisPipeline:
             head=str(worktree_pair.head.resolve()),
         )
 
-        console.print(f"  [dim]Base worktree created:[/dim] {worktree_pair.base}")
-        console.print(f"  [dim]Head worktree created:[/dim] {worktree_pair.head}")
+        console.print(f"  [green]✓ Base worktree:[/green] {worktree_pair.base}")
+        console.print(f"  [green]✓ Head worktree:[/green] {worktree_pair.head}")
 
         return True
 

@@ -50,23 +50,85 @@ class WorktreeManager:
 
         Returns:
             WorktreePair with paths to base and head worktrees
+
+        Raises:
+            RuntimeError: If worktree creation fails
         """
+        import subprocess
+
         analysis_wt_path = get_worktrees_path(self.config, analysis_id)
         base_path = analysis_wt_path / "base"
         head_path = analysis_wt_path / "head"
 
-        # Create directories
+        # Create parent directory
         analysis_wt_path.mkdir(parents=True, exist_ok=True)
 
         # Remove existing worktrees if they exist (cleanup from previous run)
         if base_path.exists():
-            _remove_worktree(base_path)
-        if head_path.exists():
-            _remove_worktree(head_path)
+            print(f"[worktree] Removing existing base worktree: {base_path}")
+            try:
+                _remove_worktree(base_path)
+            except Exception as e:
+                print(
+                    f"[worktree] Warning: Failed to remove existing base worktree: {e}"
+                )
+                # Force remove manually if git worktree remove fails
+                import shutil
 
-        # Create worktrees
-        _create_worktree(self.repo_path, base_path, base_commit)
-        _create_worktree(self.repo_path, head_path, head_commit)
+                if base_path.exists():
+                    shutil.rmtree(base_path, ignore_errors=True)
+
+        if head_path.exists():
+            print(f"[worktree] Removing existing head worktree: {head_path}")
+            try:
+                _remove_worktree(head_path)
+            except Exception as e:
+                print(
+                    f"[worktree] Warning: Failed to remove existing head worktree: {e}"
+                )
+                import shutil
+
+                if head_path.exists():
+                    shutil.rmtree(head_path, ignore_errors=True)
+
+        # Create worktrees with better error handling
+        print(
+            f"[worktree] Creating base worktree at {base_path} for commit {base_commit}"
+        )
+        try:
+            _create_worktree(self.repo_path, base_path, base_commit)
+        except subprocess.CalledProcessError as e:
+            error_msg = (
+                f"Failed to create base worktree: {e.stderr if e.stderr else str(e)}"
+            )
+            print(f"[worktree] {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+        print(
+            f"[worktree] Creating head worktree at {head_path} for commit {head_commit}"
+        )
+        try:
+            _create_worktree(self.repo_path, head_path, head_commit)
+        except subprocess.CalledProcessError as e:
+            error_msg = (
+                f"Failed to create head worktree: {e.stderr if e.stderr else str(e)}"
+            )
+            print(f"[worktree] {error_msg}")
+            # Clean up base worktree if head fails
+            if base_path.exists():
+                try:
+                    _remove_worktree(base_path)
+                except:
+                    pass
+            raise RuntimeError(error_msg) from e
+
+        # Verify worktrees were created
+        if not base_path.exists():
+            raise RuntimeError(f"Base worktree directory not created: {base_path}")
+        if not head_path.exists():
+            raise RuntimeError(f"Head worktree directory not created: {head_path}")
+
+        print(f"[worktree] Successfully created worktrees")
 
         return WorktreePair(
             base=base_path,
