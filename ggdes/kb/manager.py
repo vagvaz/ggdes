@@ -239,7 +239,13 @@ class KnowledgeBaseManager:
             return None
 
         with open(metadata_path) as f:
-            data = yaml.safe_load(f)
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError:
+                return None
+
+        if not data:
+            return None
 
         return AnalysisMetadata(**data)
 
@@ -257,10 +263,17 @@ class KnowledgeBaseManager:
         metadata_path = self._get_metadata_path(analysis_id)
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Convert to dict and handle enums
+        data = metadata.model_dump()
+
+        # Convert StageStatus enum to string
+        if "stages" in data:
+            for stage_name, stage_data in data["stages"].items():
+                if "status" in stage_data and hasattr(stage_data["status"], "value"):
+                    stage_data["status"] = stage_data["status"].value
+
         with open(metadata_path, "w") as f:
-            yaml.dump(
-                metadata.model_dump(), f, default_flow_style=False, sort_keys=False
-            )
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     def _get_metadata_path(self, analysis_id: str) -> Path:
         """Get path to metadata file for an analysis."""

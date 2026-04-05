@@ -154,11 +154,15 @@ class AnalysisPipeline:
 
     def _run_git_analysis(self) -> bool:
         """Run git analysis agent."""
-        analyzer = GitAnalyzer(self.repo_path, self.config)
+        import asyncio
 
-        change_summary = analyzer.analyze(
-            commit_range=self.metadata.commit_range,
-            focus_commits=self.metadata.focus_commits,
+        analyzer = GitAnalyzer(self.repo_path, self.config, self.analysis_id)
+
+        change_summary = asyncio.run(
+            analyzer.analyze(
+                commit_range=self.metadata.commit_range,
+                focus_commits=self.metadata.focus_commits,
+            )
         )
 
         # Save to KB

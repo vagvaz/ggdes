@@ -1,0 +1,63 @@
+id: test-local-20260405-094045-a7b68f00
+name: test-local
+repo_path: /home/vagvaz/Projects/ai/ggdes
+commit_range: HEAD~1..HEAD
+focus_commits: null
+created_at: 2026-04-05 09:40:45.244204
+updated_at: 2026-04-05 09:40:48.050001
+prompt_version: v1.0.0
+worktrees:
+  base: .ggdes-local/worktrees/test-local-20260405-094045-a7b68f00/base
+  head: .ggdes-local/worktrees/test-local-20260405-094045-a7b68f00/head
+  created_at: 2026-04-05 09:40:45.266591
+  cleanup_policy: on_completion
+stages:
+  worktree_setup:
+    status: completed
+    started_at: 2026-04-05 09:40:45.255138
+    completed_at: 2026-04-05 09:40:45.267033
+    output_path: null
+    error_message: null
+  git_analysis:
+    status: failed
+    started_at: 2026-04-05 09:40:48.048829
+    completed_at: 2026-04-05 09:40:48.050000
+    output_path: null
+    error_message: '''coroutine'' object has no attribute ''model_dump'''
+  ast_parsing_base:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+  ast_parsing_head:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+  semantic_diff:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+  technical_author:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+  coordinator_plan:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+  output_generation:
+    status: pending
+    started_at: null
+    completed_at: null
+    output_path: null
+    error_message: null
+documents: []

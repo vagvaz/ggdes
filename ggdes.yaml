@@ -1,0 +1,17 @@
+model:
+  provider: "ollama"
+  model_name: "llama3.2"
+  api_key: "ollama"
+
+paths:
+  knowledge_base: ".ggdes-local/kb"
+  worktrees: ".ggdes-local/worktrees"
+
+output:
+  default_format: "markdown"
+  formats: ["markdown"]
+
+features:
+  dual_state_analysis: false
+  auto_cleanup: true
+  worktree_retention_days: 7
