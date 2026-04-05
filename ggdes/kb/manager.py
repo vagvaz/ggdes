@@ -222,7 +222,7 @@ class KnowledgeBaseManager:
         metadata = AnalysisMetadata(
             id=analysis_id,
             name=name,
-            repo_path=str(repo_path),
+            repo_path=str(Path(repo_path).resolve()),
             commit_range=commit_range,
             focus_commits=focus_commits,
             prompt_version=prompt_version,

@@ -144,12 +144,12 @@ class AnalysisPipeline:
             head_commit=head_commit or "HEAD",
         )
 
-        # Update metadata
+        # Update metadata with absolute paths
         from ggdes.kb import WorktreeInfo
 
         self.metadata.worktrees = WorktreeInfo(
-            base=str(worktree_pair.base),
-            head=str(worktree_pair.head),
+            base=str(worktree_pair.base.resolve()),
+            head=str(worktree_pair.head.resolve()),
         )
 
         console.print(f"  [dim]Base worktree created:[/dim] {worktree_pair.base}")
