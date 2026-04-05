@@ -5,10 +5,14 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from rich.console import Console
+
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
 from ggdes.schemas import ChangeSummary, StoragePolicy
+
+console = Console()
 
 
 class GitAnalyzer:
@@ -43,106 +47,273 @@ class GitAnalyzer:
     def get_diff(
         self, commit_range: str, focus_commits: Optional[list[str]] = None
     ) -> str:
-        """Get git diff for a commit range."""
-        cmd = ["git", "-C", str(self.repo_path), "diff", commit_range]
+        """Get git diff for a commit range or specific focus commits.
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        Args:
+            commit_range: Git commit range (used as boundary if focus_commits provided)
+            focus_commits: Optional list of specific commits to analyze.
+                          If provided, only these commits are analyzed.
 
-        diff = result.stdout
-
+        Returns:
+            Git diff as string
+        """
         if focus_commits:
-            diff = f"# Focus commits: {', '.join(focus_commits)}\n\n{diff}"
+            # When focus commits are specified, get diff only for those commits
+            # For multiple focus commits, we get diff from parent of first to last
+            if len(focus_commits) == 1:
+                # Single commit: diff against its parent
+                cmd = [
+                    "git",
+                    "-C",
+                    str(self.repo_path),
+                    "diff",
+                    f"{focus_commits[0]}~1..{focus_commits[0]}",
+                ]
+            else:
+                # Multiple commits: diff from parent of first to last
+                cmd = [
+                    "git",
+                    "-C",
+                    str(self.repo_path),
+                    "diff",
+                    f"{focus_commits[0]}~1..{focus_commits[-1]}",
+                ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            diff = result.stdout
+            # Prefix with context about which commits are being analyzed
+            diff = f"# Analyzing focus commits: {', '.join(focus_commits)}\n# Full range context: {commit_range}\n\n{diff}"
+        else:
+            # No focus commits - analyze the full range
+            cmd = ["git", "-C", str(self.repo_path), "diff", commit_range]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            diff = result.stdout
 
         return diff
 
-    def get_commit_log(self, commit_range: str) -> list[dict]:
-        """Get commit log with messages."""
+    def get_commit_log(
+        self, commit_range: str, focus_commits: Optional[list[str]] = None
+    ) -> list[dict]:
+        """Get commit log with messages.
+
+        Args:
+            commit_range: Git commit range (used as boundary if focus_commits provided)
+            focus_commits: Optional list of specific commits to include.
+                          If provided, only these commits are returned.
+
+        Returns:
+            List of commit dictionaries
+        """
         format_str = "%H|%an|%ad|%s"
 
-        cmd = [
-            "git",
-            "-C",
-            str(self.repo_path),
-            "log",
-            f"--format={format_str}",
-            "--date=short",
-            commit_range,
-        ]
+        if focus_commits:
+            # When focus commits are specified, only get those commits
+            # Use git show instead of git log for specific commits
+            commits = []
+            for commit_hash in focus_commits:
+                cmd = [
+                    "git",
+                    "-C",
+                    str(self.repo_path),
+                    "show",
+                    "-s",  # Skip the diff output
+                    f"--format={format_str}",
+                    "--date=short",
+                    commit_hash,
+                ]
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
 
-        commits = []
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                parts = line.split("|", 3)
-                if len(parts) >= 4:
-                    commits.append(
-                        {
-                            "hash": parts[0],
-                            "author": parts[1],
-                            "date": parts[2],
-                            "message": parts[3],
-                        }
-                    )
+                line = result.stdout.strip()
+                if line:
+                    parts = line.split("|", 3)
+                    if len(parts) >= 4:
+                        commits.append(
+                            {
+                                "hash": parts[0],
+                                "author": parts[1],
+                                "date": parts[2],
+                                "message": parts[3],
+                            }
+                        )
 
-        return commits
+            return commits
+        else:
+            # No focus commits - get full range
+            cmd = [
+                "git",
+                "-C",
+                str(self.repo_path),
+                "log",
+                f"--format={format_str}",
+                "--date=short",
+                commit_range,
+            ]
 
-    def get_changed_files(self, commit_range: str) -> list[dict]:
-        """Get list of changed files with stats."""
-        cmd = [
-            "git",
-            "-C",
-            str(self.repo_path),
-            "diff",
-            "--numstat",
-            commit_range,
-        ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+            commits = []
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("|", 3)
+                    if len(parts) >= 4:
+                        commits.append(
+                            {
+                                "hash": parts[0],
+                                "author": parts[1],
+                                "date": parts[2],
+                                "message": parts[3],
+                            }
+                        )
 
-        files = []
-        for line in result.stdout.strip().split("\n"):
-            parts = line.split("\t")
-            if len(parts) == 3:
-                added = parts[0]
-                deleted = parts[1]
-                path = parts[2]
+            return commits
 
-                if added == "-" or deleted == "-":
-                    files.append(
-                        {
-                            "path": path,
-                            "lines_added": 0,
-                            "lines_deleted": 0,
-                            "is_binary": True,
-                        }
-                    )
-                else:
-                    files.append(
-                        {
-                            "path": path,
-                            "lines_added": int(added) if added.isdigit() else 0,
-                            "lines_deleted": int(deleted) if deleted.isdigit() else 0,
-                            "is_binary": False,
-                        }
-                    )
+    def get_changed_files(
+        self, commit_range: str, focus_commits: Optional[list[str]] = None
+    ) -> list[dict]:
+        """Get list of changed files with stats.
 
-        return files
+        Args:
+            commit_range: Git commit range (used as boundary if focus_commits provided)
+            focus_commits: Optional list of specific commits to include.
+                          If provided, only files changed in these commits are returned.
+
+        Returns:
+            List of file dictionaries with change stats
+        """
+        if focus_commits:
+            # When focus commits are specified, aggregate changes from those commits
+            file_stats = {}
+
+            for commit_hash in focus_commits:
+                cmd = [
+                    "git",
+                    "-C",
+                    str(self.repo_path),
+                    "diff-tree",
+                    "--numstat",
+                    "-r",
+                    f"{commit_hash}~1",
+                    commit_hash,
+                ]
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+                for line in result.stdout.strip().split("\n"):
+                    if not line:
+                        continue
+                    parts = line.split("\t")
+                    if len(parts) == 3:
+                        added = parts[0]
+                        deleted = parts[1]
+                        path = parts[2]
+
+                        if path not in file_stats:
+                            file_stats[path] = {
+                                "lines_added": 0,
+                                "lines_deleted": 0,
+                                "is_binary": False,
+                            }
+
+                        if added == "-" or deleted == "-":
+                            file_stats[path]["is_binary"] = True
+                        else:
+                            file_stats[path]["lines_added"] += (
+                                int(added) if added.isdigit() else 0
+                            )
+                            file_stats[path]["lines_deleted"] += (
+                                int(deleted) if deleted.isdigit() else 0
+                            )
+
+            # Convert to list format
+            files = []
+            for path, stats in file_stats.items():
+                files.append(
+                    {
+                        "path": path,
+                        "lines_added": stats["lines_added"],
+                        "lines_deleted": stats["lines_deleted"],
+                        "is_binary": stats["is_binary"],
+                    }
+                )
+
+            return files
+        else:
+            # No focus commits - get full range
+            cmd = [
+                "git",
+                "-C",
+                str(self.repo_path),
+                "diff",
+                "--numstat",
+                commit_range,
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            files = []
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split("\t")
+                if len(parts) == 3:
+                    added = parts[0]
+                    deleted = parts[1]
+                    path = parts[2]
+
+                    if added == "-" or deleted == "-":
+                        files.append(
+                            {
+                                "path": path,
+                                "lines_added": 0,
+                                "lines_deleted": 0,
+                                "is_binary": True,
+                            }
+                        )
+                    else:
+                        files.append(
+                            {
+                                "path": path,
+                                "lines_added": int(added) if added.isdigit() else 0,
+                                "lines_deleted": int(deleted)
+                                if deleted.isdigit()
+                                else 0,
+                                "is_binary": False,
+                            }
+                        )
+
+            return files
 
     async def analyze(
         self,
@@ -164,9 +335,20 @@ class GitAnalyzer:
         self._init_conversation(storage_policy)
 
         # Gather git data
+        if focus_commits:
+            console.print(
+                f"  [dim]Analyzing {len(focus_commits)} focus commits from range: {commit_range}[/dim]"
+            )
+        else:
+            console.print(f"  [dim]Analyzing full commit range: {commit_range}[/dim]")
+
         diff = self.get_diff(commit_range, focus_commits)
-        commits = self.get_commit_log(commit_range)
-        files = self.get_changed_files(commit_range)
+        commits = self.get_commit_log(commit_range, focus_commits)
+        files = self.get_changed_files(commit_range, focus_commits)
+
+        console.print(
+            f"  [dim]Found {len(commits)} commits, {len(files)} files changed[/dim]"
+        )
 
         # Check if diff needs chunking
         diff_tokens = estimate_tokens(diff)

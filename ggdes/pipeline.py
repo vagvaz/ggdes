@@ -126,11 +126,16 @@ class AnalysisPipeline:
         """Setup worktrees for base and head commits."""
         # Parse commit range
         commit_range = self.metadata.commit_range
+        console.print(f"  [dim]Parsing commit range: {commit_range}[/dim]")
+
         if ".." not in commit_range:
             console.print(f"[red]Invalid commit range:[/red] {commit_range}")
             return False
 
         base_commit, head_commit = commit_range.split("..", 1)
+        console.print(
+            f"  [dim]Setting up worktrees for base: {base_commit or 'HEAD'}, head: {head_commit or 'HEAD'}[/dim]"
+        )
 
         # Create worktrees
         worktree_pair = self.wt_manager.create_for_analysis(
@@ -147,8 +152,8 @@ class AnalysisPipeline:
             head=str(worktree_pair.head),
         )
 
-        console.print(f"  Base worktree: {worktree_pair.base}")
-        console.print(f"  Head worktree: {worktree_pair.head}")
+        console.print(f"  [dim]Base worktree created:[/dim] {worktree_pair.base}")
+        console.print(f"  [dim]Head worktree created:[/dim] {worktree_pair.head}")
 
         return True
 
@@ -156,12 +161,24 @@ class AnalysisPipeline:
         """Run git analysis agent."""
         import asyncio
 
+        console.print(
+            f"  [dim]Initializing GitAnalyzer for repository: {self.repo_path}[/dim]"
+        )
         analyzer = GitAnalyzer(self.repo_path, self.config, self.analysis_id)
 
+        commit_range = self.metadata.commit_range
+        focus_commits = self.metadata.focus_commits
+
+        if focus_commits:
+            console.print(
+                f"  [dim]Focus commits specified: {len(focus_commits)} commits[/dim]"
+            )
+
+        console.print("  [dim]Running git analysis (this may take a moment)...[/dim]")
         change_summary = asyncio.run(
             analyzer.analyze(
-                commit_range=self.metadata.commit_range,
-                focus_commits=self.metadata.focus_commits,
+                commit_range=commit_range,
+                focus_commits=focus_commits,
             )
         )
 
@@ -175,9 +192,12 @@ class AnalysisPipeline:
         )
         output_path.write_text(json.dumps(change_summary.model_dump(), indent=2))
 
-        console.print(f"  Analyzed {len(change_summary.files_changed)} files")
-        console.print(f"  Change type: {change_summary.change_type}")
-        console.print(f"  Impact: {change_summary.impact}")
+        console.print(
+            f"  [dim]Analyzed {len(change_summary.files_changed)} files in {len(focus_commits) if focus_commits else 'full range'}[/dim]"
+        )
+        console.print(f"  [dim]Change type: {change_summary.change_type}[/dim]")
+        console.print(f"  [dim]Impact: {change_summary.impact}[/dim]")
+        console.print(f"  [dim]Results saved to: {output_path}[/dim]")
 
         return True
 
@@ -190,7 +210,8 @@ class AnalysisPipeline:
         parser = ASTParser()
         base_path = Path(self.metadata.worktrees.base)
 
-        console.print(f"  Parsing files in {base_path}...")
+        console.print(f"  [dim]Scanning base worktree: {base_path}[/dim]")
+        console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
 
         # Parse all supported files
         results = parser.parse_directory(base_path, relative_to=base_path)
@@ -200,6 +221,7 @@ class AnalysisPipeline:
 
         output_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_base"
         total_elements = 0
+        successful_parses = 0
 
         for result in results:
             if result.success:
@@ -215,9 +237,13 @@ class AnalysisPipeline:
                     )
                 )
                 total_elements += len(result.elements)
+                successful_parses += 1
 
         console.print(
-            f"  Parsed {len(results)} files, extracted {total_elements} elements"
+            f"  [dim]Parsed {successful_parses}/{len(results)} files successfully[/dim]"
+        )
+        console.print(
+            f"  [dim]Extracted {total_elements} code elements (functions, classes, etc.)[/dim]"
         )
 
         return True
@@ -231,7 +257,8 @@ class AnalysisPipeline:
         parser = ASTParser()
         head_path = Path(self.metadata.worktrees.head)
 
-        console.print(f"  Parsing files in {head_path}...")
+        console.print(f"  [dim]Scanning head worktree: {head_path}[/dim]")
+        console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
 
         results = parser.parse_directory(head_path, relative_to=head_path)
 
@@ -240,6 +267,7 @@ class AnalysisPipeline:
 
         output_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
         total_elements = 0
+        successful_parses = 0
 
         for result in results:
             if result.success:
@@ -255,9 +283,13 @@ class AnalysisPipeline:
                     )
                 )
                 total_elements += len(result.elements)
+                successful_parses += 1
 
         console.print(
-            f"  Parsed {len(results)} files, extracted {total_elements} elements"
+            f"  [dim]Parsed {successful_parses}/{len(results)} files successfully[/dim]"
+        )
+        console.print(
+            f"  [dim]Extracted {total_elements} code elements (functions, classes, etc.)[/dim]"
         )
 
         return True
@@ -266,22 +298,24 @@ class AnalysisPipeline:
         """Run technical author agent."""
         from ggdes.agents import TechnicalAuthor
 
+        console.print("  [dim]Initializing Technical Author...[/dim]")
         author = TechnicalAuthor(self.repo_path, self.config, self.analysis_id)
 
+        console.print("  [dim]Synthesizing technical facts from analysis...[/dim]")
         import asyncio
 
         facts = asyncio.run(author.synthesize())
 
-        console.print(f"  Synthesized {len(facts)} technical facts")
+        console.print(f"  [dim]Synthesized {len(facts)} technical facts[/dim]")
 
         # Show sample of facts
         for fact in facts[:3]:
             console.print(
-                f"    - [{fact.category}] {fact.fact_id}: {fact.description[:60]}..."
+                f"    [dim]- [{fact.category}] {fact.fact_id}: {fact.description[:60]}...[/dim]"
             )
 
         if len(facts) > 3:
-            console.print(f"    ... and {len(facts) - 3} more")
+            console.print(f"    [dim]... and {len(facts) - 3} more[/dim]")
 
         return True
 
@@ -289,16 +323,21 @@ class AnalysisPipeline:
         """Run coordinator planning stage."""
         from ggdes.agents import Coordinator
 
+        console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
         coordinator = Coordinator(self.repo_path, self.config, self.analysis_id)
 
         # Get target formats from config
         target_formats = self.config.output.formats
+        console.print(f"  [dim]Target formats: {', '.join(target_formats)}[/dim]")
 
         import asyncio
 
         # Check if we should run interactively
         # In auto mode, use defaults. Otherwise, ask user (handled in Coordinator)
         auto_mode = self.config.features.auto_cleanup  # Use as proxy for auto mode
+
+        if auto_mode:
+            console.print("  [dim]Running in auto mode (no user prompts)[/dim]")
 
         plans = asyncio.run(
             coordinator.create_plan(
@@ -307,10 +346,10 @@ class AnalysisPipeline:
             )
         )
 
-        console.print(f"  Created {len(plans)} document plans:")
+        console.print(f"  [dim]Created {len(plans)} document plans:[/dim]")
         for plan in plans:
             console.print(
-                f"    - {plan.format}: {len(plan.sections)} sections, {len(plan.diagrams)} diagrams"
+                f"    [dim]- {plan.format}: {len(plan.sections)} sections, {len(plan.diagrams)} diagrams[/dim]"
             )
 
         return True
@@ -328,26 +367,29 @@ class AnalysisPipeline:
 
         # Get formats to generate from config
         formats = self.config.output.formats
+        console.print(
+            f"  [dim]Generating documents in formats: {', '.join(formats)}[/dim]"
+        )
 
         generated_files = []
 
         # Generate markdown first (source for other formats)
         if "markdown" in formats:
-            console.print("  [dim]Generating markdown...[/dim]")
+            console.print("  [dim]Generating markdown source document...[/dim]")
             try:
                 agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
                 path = asyncio.run(agent.generate())
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:
-                console.print(f"    [red]✗[/red] Markdown failed: {e}")
+                console.print(f"    [red]✗[/red] Markdown generation failed: {e}")
 
         # Generate other formats
         for fmt in formats:
             if fmt == "markdown":
                 continue  # Already done
 
-            console.print(f"  [dim]Generating {fmt}...[/dim]")
+            console.print(f"  [dim]Generating {fmt.upper()} format...[/dim]")
             try:
                 if fmt == "docx":
                     agent = DocxAgent(self.repo_path, self.config, self.analysis_id)
@@ -363,13 +405,15 @@ class AnalysisPipeline:
                 generated_files.append((fmt, path))
                 console.print(f"    [green]✓[/green] {fmt}: {path}")
             except Exception as e:
-                console.print(f"    [red]✗[/red] {fmt} failed: {e}")
+                console.print(f"    [red]✗[/red] {fmt} generation failed: {e}")
 
         if generated_files:
             console.print(
-                f"\n  [green]Generated {len(generated_files)} documents[/green]"
+                f"\n  [green]Successfully generated {len(generated_files)} document(s)[/green]"
             )
+            for fmt, path in generated_files:
+                console.print(f"    [dim]{fmt}: {path}[/dim]")
             return True
         else:
-            console.print(f"\n  [red]No documents generated[/red]")
+            console.print(f"\n  [red]No documents were generated successfully[/red]")
             return False
