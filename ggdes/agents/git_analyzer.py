@@ -69,10 +69,8 @@ class GitAnalyzer:
             "-C",
             str(self.repo_path),
             "log",
-            "--format",
-            format_str,
-            "--date",
-            "short",
+            f"--format={format_str}",
+            "--date=short",
             commit_range,
         ]
 
