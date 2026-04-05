@@ -53,7 +53,13 @@ def analyze(
         typer.Option(help="API key (or env var like ${ANTHROPIC_API_KEY})"),
     ] = None,
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
-    auto: Annotated[bool, typer.Option(help="Run all stages automatically")] = False,
+    auto: Annotated[
+        bool,
+        typer.Option(help="Run all stages without prompting (non-interactive mode)"),
+    ] = False,
+    setup_only: Annotated[
+        bool, typer.Option(help="Only set up worktrees, don't run analysis")
+    ] = False,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -110,30 +116,41 @@ def analyze(
 
             pipeline = AnalysisPipeline(config, analysis_id)
 
-            if auto:
-                # Run all stages automatically
-                console.print("\n[bold]Running all stages automatically...[/bold]")
-                success = pipeline.run_all_pending()
-                if success:
-                    console.print(
-                        f"\n[green]✓ Analysis complete:[/green] {analysis_id}"
-                    )
-                else:
-                    console.print(
-                        f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
-                    )
-                    raise typer.Exit(1)
+            # Step 1: Setup worktrees (always needed)
+            success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
+            if not success:
+                console.print(f"\n[red]✗ Setup failed[/red]")
+                raise typer.Exit(1)
+
+            # Determine what to do next
+            if setup_only:
+                # User only wanted setup
+                console.print(f"\n[green]✓ Setup complete:[/green] {analysis_id}")
+                console.print(f"Run 'ggdes resume {analysis_id}' to run analysis later")
+                return
+
+            if not auto:
+                # Interactive mode: ask user if they want to continue
+                console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
+                console.print(
+                    f"This will analyze the commits and generate documentation."
+                )
+                if not typer.confirm("Continue with analysis?"):
+                    console.print(f"\n[yellow]Analysis paused.[/yellow]")
+                    console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
+                    return
+
+            # Step 2: Run full analysis
+            console.print("\n[bold]Running analysis...[/bold]")
+            success = pipeline.run_all_pending()
+            if success:
+                console.print(f"\n[green]✓ Analysis complete:[/green] {analysis_id}")
             else:
-                # Just setup worktrees, let user resume later
-                success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
-                if success:
-                    console.print(
-                        f"\n[green]✓ Analysis initialized:[/green] {analysis_id}"
-                    )
-                    console.print(f"Run 'ggdes resume {analysis_id}' to continue")
-                else:
-                    console.print(f"\n[red]✗ Setup failed[/red]")
-                    raise typer.Exit(1)
+                console.print(
+                    f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
+                )
+                console.print(f"Run 'ggdes resume {analysis_id}' to retry")
+                raise typer.Exit(1)
 
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
