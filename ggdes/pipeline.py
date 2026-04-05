@@ -67,6 +67,8 @@ class AnalysisPipeline:
                 success = self._run_ast_parsing_head()
             elif stage_name == self.kb_manager.STAGE_TECHNICAL_AUTHOR:
                 success = self._run_technical_author()
+            elif stage_name == self.kb_manager.STAGE_COORDINATOR_PLAN:
+                success = self._run_coordinator_plan()
             else:
                 console.print(
                     f"[yellow]Stage '{stage_name}' not yet implemented[/yellow]"
@@ -274,5 +276,35 @@ class AnalysisPipeline:
 
         if len(facts) > 3:
             console.print(f"    ... and {len(facts) - 3} more")
+
+        return True
+
+    def _run_coordinator_plan(self) -> bool:
+        """Run coordinator planning stage."""
+        from ggdes.agents import Coordinator
+
+        coordinator = Coordinator(self.repo_path, self.config, self.analysis_id)
+
+        # Get target formats from config
+        target_formats = self.config.output.formats
+
+        import asyncio
+
+        # Check if we should run interactively
+        # In auto mode, use defaults. Otherwise, ask user (handled in Coordinator)
+        auto_mode = self.config.features.auto_cleanup  # Use as proxy for auto mode
+
+        plans = asyncio.run(
+            coordinator.create_plan(
+                target_formats=target_formats,
+                interactive=not auto_mode,
+            )
+        )
+
+        console.print(f"  Created {len(plans)} document plans:")
+        for plan in plans:
+            console.print(
+                f"    - {plan.format}: {len(plan.sections)} sections, {len(plan.diagrams)} diagrams"
+            )
 
         return True
