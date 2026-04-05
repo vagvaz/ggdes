@@ -326,8 +326,8 @@ class AnalysisPipeline:
         console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
         coordinator = Coordinator(self.repo_path, self.config, self.analysis_id)
 
-        # Get target formats from config
-        target_formats = self.config.output.formats
+        # Get target formats from metadata (CLI-selected formats)
+        target_formats = self.metadata.target_formats or ["markdown"]
         console.print(f"  [dim]Target formats: {', '.join(target_formats)}[/dim]")
 
         import asyncio
@@ -365,8 +365,8 @@ class AnalysisPipeline:
 
         import asyncio
 
-        # Get formats to generate from config
-        formats = self.config.output.formats
+        # Get formats to generate from metadata (CLI-selected formats)
+        formats = self.metadata.target_formats or ["markdown"]
         console.print(
             f"  [dim]Generating documents in formats: {', '.join(formats)}[/dim]"
         )

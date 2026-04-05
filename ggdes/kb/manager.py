@@ -63,6 +63,9 @@ class AnalysisMetadata(BaseModel):
     # Prompt version tracking
     prompt_version: str = "current"
 
+    # Target output formats for this analysis
+    target_formats: list[str] = Field(default_factory=list)
+
     # Worktree information
     worktrees: Optional[WorktreeInfo] = None
 
@@ -183,6 +186,7 @@ class KnowledgeBaseManager:
         commit_range: str,
         focus_commits: Optional[list[str]] = None,
         prompt_version: str = "current",
+        target_formats: Optional[list[str]] = None,
     ) -> AnalysisMetadata:
         """Create a new analysis in the knowledge base.
 
@@ -193,6 +197,7 @@ class KnowledgeBaseManager:
             commit_range: Git commit range (e.g., "abc123..def456")
             focus_commits: Optional list of focus commits for non-contiguous
             prompt_version: Version of prompts to use
+            target_formats: List of output formats to generate (e.g., ["markdown", "docx"])
 
         Returns:
             AnalysisMetadata for the new analysis
@@ -216,6 +221,8 @@ class KnowledgeBaseManager:
             commit_range=commit_range,
             focus_commits=focus_commits,
             prompt_version=prompt_version,
+            target_formats=target_formats
+            or ["markdown"],  # Default to markdown if not specified
         )
 
         # Initialize all stages as pending

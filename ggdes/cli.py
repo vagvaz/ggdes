@@ -52,6 +52,12 @@ def analyze(
         Optional[str],
         typer.Option(help="API key (or env var like ${ANTHROPIC_API_KEY})"),
     ] = None,
+    formats: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Output formats (comma-separated: markdown,docx,pdf,pptx). Default: markdown"
+        ),
+    ] = None,
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
     auto: Annotated[
         bool,
@@ -69,6 +75,20 @@ def analyze(
         cli_model_name=model,
         cli_api_key=api_key,
     )
+
+    # Parse formats if provided
+    target_formats = ["markdown"]  # Default
+    if formats:
+        target_formats = [fmt.strip().lower() for fmt in formats.split(",")]
+        # Validate formats
+        valid_formats = {"markdown", "docx", "pdf", "pptx"}
+        invalid_formats = set(target_formats) - valid_formats
+        if invalid_formats:
+            console.print(
+                f"[red]Error:[/red] Invalid format(s): {', '.join(invalid_formats)}"
+            )
+            console.print(f"Valid formats: {', '.join(sorted(valid_formats))}")
+            raise typer.Exit(1)
 
     # Check if repo is a git repo
     git_dir = repo_path / ".git"
@@ -95,6 +115,7 @@ def analyze(
     console.print(f"  Repository: {repo_path}")
     console.print(f"  Commits: {commits}")
     console.print(f"  Feature: {feature}")
+    console.print(f"  Formats: {', '.join(target_formats)}")
 
     # Acquire lock
     try:
@@ -106,6 +127,7 @@ def analyze(
                 repo_path=repo_path,
                 commit_range=commits,
                 prompt_version="v1.0.0",  # Use current version
+                target_formats=target_formats,
             )
             console.print(
                 f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"
@@ -187,6 +209,9 @@ def status(
         console.print(f"  ID: {found_id}")
         console.print(f"  Repository: {found_metadata.repo_path}")
         console.print(f"  Commits: {found_metadata.commit_range}")
+        console.print(
+            f"  Formats: {', '.join(found_metadata.target_formats) if found_metadata.target_formats else 'markdown'}"
+        )
         console.print(f"  Created: {found_metadata.created_at}")
         console.print(f"  Updated: {found_metadata.updated_at}")
         console.print(f"\n[bold]Stages:[/bold]")
@@ -225,6 +250,7 @@ def status(
         table.add_column("ID", style="cyan")
         table.add_column("Name", style="green")
         table.add_column("Repository")
+        table.add_column("Formats")
         table.add_column("Status", style="yellow")
         table.add_column("Completed", justify="right")
         table.add_column("Pending", justify="right")
@@ -233,6 +259,8 @@ def status(
             completed = len(metadata.get_completed_stages())
             pending = len(metadata.get_pending_stages())
             total = len(metadata.stages)
+            target_formats = metadata.target_formats or ["markdown"]
+            formats_str = ", ".join(target_formats)
 
             if completed == total:
                 status_text = "[green]complete[/green]"
@@ -250,6 +278,7 @@ def status(
                 aid[:40] + "..." if len(aid) > 40 else aid,
                 metadata.name,
                 repo_display,
+                formats_str,
                 status_text,
                 str(completed),
                 str(pending),
