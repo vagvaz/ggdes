@@ -41,13 +41,28 @@ def analyze(
     feature: Annotated[str, typer.Option(help="Name for this analysis")],
     commits: Annotated[str, typer.Option(help="Git commit range (e.g., HEAD~5..HEAD)")],
     repo: Annotated[Optional[str], typer.Option(help="Path to repository")] = None,
-    model: Annotated[Optional[str], typer.Option(help="LLM model to use")] = None,
+    provider: Annotated[
+        Optional[str], typer.Option(help="Model provider (anthropic, openai, ollama)")
+    ] = None,
+    model: Annotated[
+        Optional[str],
+        typer.Option(help="Model name (e.g., claude-3-5-sonnet-20241022)"),
+    ] = None,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(help="API key (or env var like ${ANTHROPIC_API_KEY})"),
+    ] = None,
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
     interactive: Annotated[bool, typer.Option(help="Interactive mode")] = False,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
-    config, repo_path = load_config(cli_repo_path=repo, cli_model=model)
+    config, repo_path = load_config(
+        cli_repo_path=repo,
+        cli_provider=provider,
+        cli_model_name=model,
+        cli_api_key=api_key,
+    )
 
     # Check if repo is a git repo
     git_dir = repo_path / ".git"
@@ -314,7 +329,16 @@ def config(
 
     if show:
         console.print("[bold]Configuration:[/bold]")
-        console.print(f"  Model: {config_obj.model.default}")
+        console.print(f"  [bold]Model Provider:[/bold] {config_obj.model.provider}")
+        console.print(f"  [bold]Model Name:[/bold] {config_obj.model.model_name}")
+        # Don't print full API key, just show if it's set
+        api_key_display = (
+            "set"
+            if config_obj.model.api_key
+            and not config_obj.model.api_key.startswith("${")
+            else "not set (will use env var)"
+        )
+        console.print(f"  [bold]API Key:[/bold] {api_key_display}")
         console.print(f"  KB Path: {config_obj.paths.knowledge_base}")
         console.print(f"  Worktrees Path: {config_obj.paths.worktrees}")
         console.print(f"  Default Format: {config_obj.output.default_format}")

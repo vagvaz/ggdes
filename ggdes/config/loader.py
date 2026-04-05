@@ -11,8 +11,22 @@ from pydantic import BaseModel, Field, field_validator
 class ModelConfig(BaseModel):
     """LLM model configuration."""
 
-    default: str = "anthropic/claude-3-5-sonnet-20241022"
+    provider: str = "anthropic"
+    model_name: str = "claude-3-5-sonnet-20241022"
+    api_key: str = "${ANTHROPIC_API_KEY}"
     # Future: per-agent overrides
+
+    @field_validator("api_key")
+    @classmethod
+    def resolve_api_key(cls, v: str) -> str:
+        """Resolve API key from environment variable if prefixed with ${}."""
+        if v.startswith("${") and v.endswith("}"):
+            env_var = v[2:-1]
+            api_key = os.getenv(env_var)
+            if api_key:
+                return api_key
+            # Return original if env var not set (will error later)
+        return v
 
 
 class PathsConfig(BaseModel):
@@ -80,7 +94,9 @@ class GGDesConfig(BaseModel):
 
 def load_config(
     cli_repo_path: Optional[str] = None,
-    cli_model: Optional[str] = None,
+    cli_provider: Optional[str] = None,
+    cli_model_name: Optional[str] = None,
+    cli_api_key: Optional[str] = None,
 ) -> tuple[GGDesConfig, Path]:
     """Load configuration with CLI overrides.
 
@@ -92,7 +108,9 @@ def load_config(
 
     Args:
         cli_repo_path: Repository path from CLI
-        cli_model: Model from CLI
+        cli_provider: Model provider from CLI
+        cli_model_name: Model name from CLI
+        cli_api_key: API key from CLI
 
     Returns:
         Tuple of (resolved config, resolved repo path)
@@ -117,8 +135,12 @@ def load_config(
     # Apply CLI overrides (highest priority)
     if cli_repo_path:
         config.repo.path = cli_repo_path
-    if cli_model:
-        config.model.default = cli_model
+    if cli_provider:
+        config.model.provider = cli_provider
+    if cli_model_name:
+        config.model.model_name = cli_model_name
+    if cli_api_key:
+        config.model.api_key = cli_api_key
 
     # Resolve repo path
     if config.repo.path:
