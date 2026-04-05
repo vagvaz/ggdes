@@ -58,6 +58,12 @@ def analyze(
             help="Output formats (comma-separated: markdown,docx,pdf,pptx). Default: markdown"
         ),
     ] = None,
+    focus: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Focus on specific commits (comma-separated hashes, e.g., 'abc123,def456')"
+        ),
+    ] = None,
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
     auto: Annotated[
         bool,
@@ -90,6 +96,11 @@ def analyze(
             console.print(f"Valid formats: {', '.join(sorted(valid_formats))}")
             raise typer.Exit(1)
 
+    # Parse focus commits if provided
+    focus_commits = None
+    if focus:
+        focus_commits = [c.strip() for c in focus.split(",") if c.strip()]
+
     # Check if repo is a git repo
     git_dir = repo_path / ".git"
     if not git_dir.exists() and not (repo_path / ".git").is_dir():
@@ -114,6 +125,8 @@ def analyze(
     console.print(f"[green]Starting analysis:[/green] {analysis_id}")
     console.print(f"  Repository: {repo_path}")
     console.print(f"  Commits: {commits}")
+    if focus_commits:
+        console.print(f"  Focus commits: {', '.join(focus_commits)}")
     console.print(f"  Feature: {feature}")
     console.print(f"  Formats: {', '.join(target_formats)}")
 
@@ -126,6 +139,7 @@ def analyze(
                 name=feature,
                 repo_path=repo_path,
                 commit_range=commits,
+                focus_commits=focus_commits,
                 prompt_version="v1.0.0",  # Use current version
                 target_formats=target_formats,
             )
@@ -209,6 +223,8 @@ def status(
         console.print(f"  ID: {found_id}")
         console.print(f"  Repository: {found_metadata.repo_path}")
         console.print(f"  Commits: {found_metadata.commit_range}")
+        if found_metadata.focus_commits:
+            console.print(f"  Focus commits: {', '.join(found_metadata.focus_commits)}")
         console.print(
             f"  Formats: {', '.join(found_metadata.target_formats) if found_metadata.target_formats else 'markdown'}"
         )
