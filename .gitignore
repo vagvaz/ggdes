@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# GGDes test data
+.ggdes-local/
+*.egg-info/
+
