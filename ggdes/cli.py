@@ -53,7 +53,7 @@ def analyze(
         typer.Option(help="API key (or env var like ${ANTHROPIC_API_KEY})"),
     ] = None,
     force: Annotated[bool, typer.Option(help="Force run even if locked")] = False,
-    interactive: Annotated[bool, typer.Option(help="Interactive mode")] = False,
+    auto: Annotated[bool, typer.Option(help="Run all stages automatically")] = False,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -105,24 +105,35 @@ def analyze(
                 f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"
             )
 
-            # Create worktrees (stub - full implementation in Phase 2)
-            wt_manager = WorktreeManager(config, repo_path)
-            console.print("[dim]Creating worktrees...[/dim]")
+            # Run pipeline
+            from ggdes.pipeline import AnalysisPipeline
 
-            # For Phase 1, just mark stage as completed with stub
-            metadata.start_stage(kb_manager.STAGE_WORKTREE_SETUP)
-            # TODO: Parse commit range, create actual worktrees
-            metadata.complete_stage(kb_manager.STAGE_WORKTREE_SETUP)
+            pipeline = AnalysisPipeline(config, analysis_id)
 
-            # Mark git analysis as pending
-            metadata.start_stage(kb_manager.STAGE_GIT_ANALYSIS)
-            console.print("[dim]Git analysis staged (Phase 2 implementation)[/dim]")
-
-            kb_manager.save_metadata(analysis_id, metadata)
-
-            console.print(f"\n[green]Analysis initialized:[/green] {analysis_id}")
-            console.print(f"Run 'ggdes status {analysis_id}' to check progress")
-            console.print(f"Run 'ggdes resume {analysis_id}' to continue (Phase 2+)")
+            if auto:
+                # Run all stages automatically
+                console.print("\n[bold]Running all stages automatically...[/bold]")
+                success = pipeline.run_all_pending()
+                if success:
+                    console.print(
+                        f"\n[green]✓ Analysis complete:[/green] {analysis_id}"
+                    )
+                else:
+                    console.print(
+                        f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
+                    )
+                    raise typer.Exit(1)
+            else:
+                # Just setup worktrees, let user resume later
+                success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
+                if success:
+                    console.print(
+                        f"\n[green]✓ Analysis initialized:[/green] {analysis_id}"
+                    )
+                    console.print(f"Run 'ggdes resume {analysis_id}' to continue")
+                else:
+                    console.print(f"\n[red]✗ Setup failed[/red]")
+                    raise typer.Exit(1)
 
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -234,6 +245,9 @@ def status(
 def resume(
     analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
     force: Annotated[bool, typer.Option(help="Force resume even if locked")] = False,
+    stage: Annotated[
+        Optional[str], typer.Option(help="Run specific stage only")
+    ] = None,
 ) -> None:
     """Resume an incomplete analysis."""
     config, _ = load_config()
@@ -261,14 +275,26 @@ def resume(
 
     repo_path = Path(found_metadata.repo_path)
 
-    # Acquire lock
+    # Run pipeline
+    from ggdes.pipeline import AnalysisPipeline
+
     try:
-        with LockContext(repo_path, found_id, force=force):
-            console.print(f"[green]Resuming analysis:[/green] {found_id}")
-            console.print(f"[dim]Phase 2+ implementation will continue from:[/dim]")
-            for stage in found_metadata.get_pending_stages()[:3]:
-                console.print(f"  - {stage}")
-            console.print("[dim]... (CLI stub for Phase 1)[/dim]")
+        pipeline = AnalysisPipeline(config, found_id)
+
+        if stage:
+            # Run specific stage
+            console.print(f"[bold]Running stage:[/bold] {stage}")
+            success = pipeline.run_stage(stage)
+        else:
+            # Run all pending stages
+            console.print(f"[bold]Resuming analysis:[/bold] {found_id}")
+            success = pipeline.run_all_pending()
+
+        if success:
+            console.print(f"\n[green]✓ Analysis updated:[/green] {found_id}")
+        else:
+            console.print(f"\n[yellow]⚠ Analysis incomplete:[/yellow] {found_id}")
+            raise typer.Exit(1)
 
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
