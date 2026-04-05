@@ -478,6 +478,10 @@ def resume(
             console.print(
                 f"[yellow]Reset {len(reset_stages)} failed stage(s) for retry:[/yellow] {', '.join(reset_stages)}"
             )
+            # Reload metadata after reset
+            found_metadata = kb_manager.load_metadata(found_id)
+        else:
+            logger.info("No failed stages to reset")
 
     repo_path = Path(found_metadata.repo_path)
 
@@ -495,6 +499,10 @@ def resume(
         else:
             # Run all pending stages
             pending = found_metadata.get_pending_stages()
+            if not pending:
+                logger.warning("No pending stages to run")
+                console.print("[yellow]No pending stages to run[/yellow]")
+                return
             logger.info(f"Running all pending stages: {pending}")
             console.print(f"[bold]Resuming analysis:[/bold] {found_id}")
             console.print(f"[dim]Pending stages: {', '.join(pending)}[/dim]")
@@ -504,13 +512,23 @@ def resume(
             logger.info(f"Analysis completed successfully: {found_id}")
             console.print(f"\n[green]✓ Analysis updated:[/green] {found_id}")
         else:
-            logger.warning(f"Analysis incomplete: {found_id}")
+            logger.error(f"Analysis incomplete: {found_id}")
             console.print(f"\n[yellow]⚠ Analysis incomplete:[/yellow] {found_id}")
+            # Show helpful message based on retry_failed
+            if retry_failed:
+                console.print("Some stages are still failing. Check the logs:")
+                console.print(
+                    f"  {kb_manager.get_analysis_path(found_id) / 'analysis.log'}"
+                )
+            else:
+                console.print(
+                    f"Run 'ggdes resume {found_id} --retry-failed' to retry failed stages"
+                )
             raise typer.Exit(1)
 
-    except RuntimeError as e:
-        logger.exception(f"Error during analysis: {e}")
-        console.print(f"[red]Error:[/red] {e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error during analysis: {e}")
+        console.print(f"[red]Unexpected error:[/red] {e}")
         raise typer.Exit(1)
 
 
