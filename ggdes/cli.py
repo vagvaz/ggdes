@@ -39,7 +39,12 @@ def generate_analysis_id(name: str, repo_path: Path, commit_range: str) -> str:
 @app.command()
 def analyze(
     feature: Annotated[str, typer.Option(help="Name for this analysis")],
-    commits: Annotated[str, typer.Option(help="Git commit range (e.g., HEAD~5..HEAD)")],
+    commits: Annotated[
+        str,
+        typer.Option(
+            help="Git commit range (e.g., 'HEAD~5..HEAD', 'abc123..def456'). Use quotes to prevent shell interpretation."
+        ),
+    ],
     repo: Annotated[Optional[str], typer.Option(help="Path to repository")] = None,
     provider: Annotated[
         Optional[str], typer.Option(help="Model provider (anthropic, openai, ollama)")
@@ -81,6 +86,79 @@ def analyze(
         cli_model_name=model,
         cli_api_key=api_key,
     )
+
+    # Validate and sanitize commit range
+    # Remove any shell escape characters that might have been added
+    original_commits = commits
+    commits = commits.strip().strip("'\"")  # Remove surrounding quotes if present
+
+    # Validate commit range format
+    if ".." not in commits:
+        console.print(
+            f"[red]Error:[/red] Invalid commit range format: {original_commits}"
+        )
+        console.print(
+            "Commit range must contain '..' (e.g., 'HEAD~5..HEAD' or 'abc123..def456')"
+        )
+        console.print(
+            "\nTip: Use quotes around the commit range to prevent shell interpretation:"
+        )
+        console.print(f'  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
+        raise typer.Exit(1)
+
+    # Validate the commit range against git
+    try:
+        import subprocess
+
+        # Check if base commit exists
+        base_commit = commits.split("..")[0] or "HEAD"
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "--verify", base_commit],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Error:[/red] Base commit not found: '{base_commit}'")
+            console.print(f"Git error: {result.stderr.strip()}")
+            raise typer.Exit(1)
+
+        # Check if head commit exists (if specified)
+        head_part = commits.split("..")[1] if ".." in commits else ""
+        if head_part:
+            result = subprocess.run(
+                ["git", "-C", str(repo_path), "rev-parse", "--verify", head_part],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                console.print(f"[red]Error:[/red] Head commit not found: '{head_part}'")
+                console.print(f"Git error: {result.stderr.strip()}")
+                raise typer.Exit(1)
+
+        # Validate the range produces results
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "log", "--oneline", commits],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Error:[/red] Invalid commit range: '{commits}'")
+            console.print(f"Git error: {result.stderr.strip()}")
+            raise typer.Exit(1)
+
+        commit_count = (
+            len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0
+        )
+        if commit_count == 0:
+            console.print(
+                f"[yellow]Warning:[/yellow] No commits found in range: '{commits}'"
+            )
+
+    except Exception as e:
+        if isinstance(e, typer.Exit):
+            raise
+        console.print(f"[red]Error validating commit range:[/red] {e}")
+        raise typer.Exit(1)
 
     # Parse formats if provided
     target_formats = ["markdown"]  # Default
@@ -125,6 +203,8 @@ def analyze(
     console.print(f"[green]Starting analysis:[/green] {analysis_id}")
     console.print(f"  Repository: {repo_path}")
     console.print(f"  Commits: {commits}")
+    if commit_count > 0:
+        console.print(f"  Commit count: {commit_count}")
     if focus_commits:
         console.print(f"  Focus commits: {', '.join(focus_commits)}")
     console.print(f"  Feature: {feature}")
