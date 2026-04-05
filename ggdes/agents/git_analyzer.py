@@ -650,9 +650,9 @@ Then provide a structured ChangeSummary.
 
     async def _generate_structured(self, context: list[dict]) -> ChangeSummary:
         """Generate structured output from conversation context."""
-        # Extract system and messages
+        # Extract system and conversation messages
         system = None
-        messages = []
+        conversation_messages = []
 
         for msg in context:
             if msg["role"] == "system":
@@ -661,7 +661,7 @@ Then provide a structured ChangeSummary.
                 else:
                     system += "\n\n" + msg["content"]
             else:
-                messages.append(msg)
+                conversation_messages.append(msg)
 
         # Add schema instruction to system
         system += (
@@ -670,10 +670,31 @@ Then provide a structured ChangeSummary.
             "breaking_changes (array), dependencies_changed (array)."
         )
 
+        # Build a comprehensive prompt from the full conversation context
+        # This ensures the LLM has all the analysis context when generating structured output
+        prompt_parts = []
+
+        # Include all user messages and assistant responses (excluding the last system prompt)
+        for msg in conversation_messages[
+            :-1
+        ]:  # Exclude the final "provide structured summary" message
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "user":
+                prompt_parts.append(f"Analysis request:\n{content}\n")
+            elif role == "assistant":
+                prompt_parts.append(f"Analysis result:\n{content}\n")
+
+        # Add the final instruction
+        prompt_parts.append(
+            "Based on all the analysis above, provide a structured JSON summary "
+            "matching the ChangeSummary schema with the actual findings from the git diff."
+        )
+
+        full_prompt = "\n---\n".join(prompt_parts)
+
         return self.llm.generate_structured(
-            prompt=messages[-1]["content"]
-            if messages
-            else "Provide structured summary",
+            prompt=full_prompt,
             response_model=ChangeSummary,
             system_prompt=system,
             temperature=0.2,
