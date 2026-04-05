@@ -452,15 +452,15 @@ Format as JSON array."""
         facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
         facts_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save as JSON array
-        facts_data = [fact.model_dump() for fact in facts]
+        # Save as JSON array (using mode="json" for datetime serialization)
+        facts_data = [fact.model_dump(mode="json") for fact in facts]
         facts_file = facts_dir / "facts.json"
         facts_file.write_text(json.dumps(facts_data, indent=2))
 
         # Also save as individual files for easy access
         for fact in facts:
             fact_file = facts_dir / f"{fact.fact_id}.json"
-            fact_file.write_text(json.dumps(fact.model_dump(), indent=2))
+            fact_file.write_text(json.dumps(fact.model_dump(mode="json"), indent=2))
 
     @classmethod
     def load_facts(cls, kb_path: Path) -> list[TechnicalFact]:
