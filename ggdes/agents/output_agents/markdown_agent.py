@@ -103,13 +103,13 @@ package "System" {{
         for element in diagram.elements_to_include[:10]:
             uml += f'  component "{element}"\n'
 
-        uml += """}
+        uml += f"""}}
 
 note right
-  {description}
+  {diagram.description}
 end note
 
-@enduml""".format(description=diagram.description)
+@enduml"""
 
         return uml
 
