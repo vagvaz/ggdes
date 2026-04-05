@@ -1,5 +1,6 @@
-"""PPTX output agent for generating PowerPoint presentations."""
+"""PPTX output agent for generating PowerPoint presentations using the pptx skill."""
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -8,20 +9,20 @@ from ggdes.agents.output_agents.base import OutputAgent
 
 
 class PptxAgent(OutputAgent):
-    """Generate PowerPoint presentation from document plan.
+    """Generate PowerPoint presentation using the pptx skill.
 
-    For now, this generates markdown and converts to pptx using pandoc.
-    Future: Direct pptx generation.
+    Uses pptxgenjs for creating professional presentations following
+    the patterns documented in the pptx skill.
     """
 
     def __init__(self, repo_path: Path, config, analysis_id: str):
         """Initialize pptx agent."""
         super().__init__(repo_path, config, analysis_id)
+        self.skill_content = self._load_skill("pptx")
 
     def _load_plan(self) -> Optional[dict]:
         """Load document plan from KB."""
         from ggdes.config import get_kb_path
-        import json
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_pptx.json"
@@ -32,58 +33,251 @@ class PptxAgent(OutputAgent):
 
         return json.loads(plan_file.read_text())
 
+    def _get_content_for_pptx(self) -> str:
+        """Extract content from markdown or plan for PPTX generation."""
+        import glob
+
+        # Try to find markdown file
+        md_path = self.repo_path / "docs" / f"{self.analysis_id}-*.md"
+        md_files = glob.glob(str(md_path))
+
+        if md_files:
+            return Path(md_files[0]).read_text()
+
+        # Fallback: use plan content
+        plan = self._load_plan()
+        if plan:
+            return plan.get("content", "")
+
+        return ""
+
     def generate(self) -> Path:
-        """Generate PowerPoint presentation.
+        """Generate PowerPoint presentation using pptx skill patterns.
 
         Returns:
             Path to generated pptx file
         """
-        # For now, convert from markdown
-        import glob
+        # Setup output path
+        output_dir = self.repo_path / "docs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / f"{self.analysis_id}-presentation.pptx"
 
-        md_path = self.repo_path / "docs" / f"{self.analysis_id}-*.md"
-        md_files = glob.glob(str(md_path))
+        # Get content
+        content = self._get_content_for_pptx()
 
-        if not md_files:
-            raise FileNotFoundError(
-                f"No markdown file found for {self.analysis_id}. "
-                "Generate markdown first."
-            )
+        # Parse content into slides
+        slides = self._parse_content_to_slides(content)
 
-        md_file = Path(md_files[0])
-        output_file = md_file.with_suffix(".pptx")
+        # Generate pptx using pptxgenjs via Node.js
+        pptx_js_script = self._generate_pptx_script(slides, output_file)
 
-        # Convert using pandoc (may not work well for pptx)
-        # Better approach: use markdown as source and create summary slides
+        # Write temporary JS file
+        js_file = output_dir / f"{self.analysis_id}_generate_pptx.js"
+        js_file.write_text(pptx_js_script)
+
         try:
-            # Create a simplified version for slides
-            summary_md = self._create_slide_markdown(md_file)
-            summary_file = md_file.with_suffix(".slides.md")
-            summary_file.write_text(summary_md)
-
+            # Run pptxgenjs script
             subprocess.run(
-                ["pandoc", str(summary_file), "-o", str(output_file)],
+                ["node", str(js_file)],
                 check=True,
                 capture_output=True,
+                text=True,
             )
 
-            # Clean up temp file
-            summary_file.unlink()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # Pandoc not available or failed
-            output_file.write_text(
-                f"PPTX generation requires pandoc.\n\n"
-                f"Source: {md_file}\n"
-                f"Install pandoc: https://pandoc.org/installing.html"
-            )
+        except subprocess.CalledProcessError as e:
+            # Fallback to pandoc
+            self._fallback_to_pandoc(content, output_file)
+        except FileNotFoundError:
+            # Node not available, use pandoc
+            self._fallback_to_pandoc(content, output_file)
+        finally:
+            # Cleanup temp file
+            if js_file.exists():
+                js_file.unlink()
 
         return output_file
 
-    def _create_slide_markdown(self, md_file: Path) -> str:
-        """Create slide-friendly markdown from full document."""
-        content = md_file.read_text()
+    def _parse_content_to_slides(self, content: str) -> list[dict]:
+        """Parse markdown content into slide structure."""
+        lines = content.split("\n")
+        slides = []
+        current_slide = None
 
-        # Extract headers and key points
+        for line in lines:
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            # Title slide (H1)
+            if stripped.startswith("# ") and not stripped.startswith("## "):
+                # Save previous slide
+                if current_slide:
+                    slides.append(current_slide)
+
+                title = stripped[2:]
+                current_slide = {
+                    "type": "title",
+                    "title": title,
+                    "bullets": [],
+                    "content": [],
+                }
+
+            # Content slide (H2)
+            elif stripped.startswith("## ") and not stripped.startswith("### "):
+                # Save previous slide
+                if current_slide:
+                    slides.append(current_slide)
+
+                title = stripped[3:]
+                current_slide = {
+                    "type": "content",
+                    "title": title,
+                    "bullets": [],
+                    "content": [],
+                }
+
+            # Subheading
+            elif stripped.startswith("### "):
+                if current_slide:
+                    current_slide["content"].append(
+                        {"type": "subheading", "text": stripped[4:]}
+                    )
+
+            # Bullet list
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                if current_slide:
+                    current_slide["bullets"].append(stripped[2:])
+
+            # Numbered list
+            elif stripped[0].isdigit() and ". " in stripped[:4]:
+                if current_slide:
+                    text = stripped[stripped.find(" ") + 1 :]
+                    current_slide["bullets"].append(text)
+
+            # Regular paragraph (add as content note)
+            else:
+                if current_slide:
+                    current_slide["content"].append({"type": "text", "text": stripped})
+
+        # Add last slide
+        if current_slide:
+            slides.append(current_slide)
+
+        return slides
+
+    def _generate_pptx_script(self, slides: list[dict], output_file: Path) -> str:
+        """Generate Node.js script for pptxgenjs presentation creation.
+
+        Following the patterns from the pptx skill documentation.
+        """
+        # Build slide definitions
+        slide_defs = []
+
+        for i, slide in enumerate(slides):
+            if slide["type"] == "title":
+                # Title slide
+                slide_def = f"""
+    // Title Slide {i + 1}
+    let slide{i} = pres.addSlide();
+    slide{i}.background = {{ color: "1E2761" }};  // Midnight Executive palette
+    slide{i}.addText("{self._escape_js_string(slide["title"])}", {{
+        x: 0.5, y: 2.5, w: 9, h: 1.5,
+        fontSize: 44, bold: true, color: "FFFFFF", align: "center",
+        fontFace: "Arial Black"
+    }});
+"""
+                slide_defs.append(slide_def)
+
+            else:
+                # Content slide
+                bullets_js = ""
+                if slide["bullets"]:
+                    bullets_text = "\\n".join(
+                        f"• {self._escape_js_string(b)}" for b in slide["bullets"]
+                    )
+                    bullets_js = f"""
+    slide{i}.addText("{bullets_text}", {{
+        x: 0.5, y: 1.8, w: 9, h: 4,
+        fontSize: 18, color: "36454F",
+        bullet: true,
+        fontFace: "Calibri"
+    }});
+"""
+
+                slide_def = f"""
+    // Content Slide {i + 1}
+    let slide{i} = pres.addSlide();
+    slide{i}.addText("{self._escape_js_string(slide["title"])}", {{
+        x: 0.5, y: 0.5, w: 9, h: 1,
+        fontSize: 36, bold: true, color: "1E2761",
+        fontFace: "Arial Black"
+    }});
+    {bullets_js}
+"""
+                slide_defs.append(slide_def)
+
+        script = f'''const PptxGenJS = require('pptxgenjs');
+const fs = require('fs');
+
+// Create presentation
+const pres = new PptxGenJS();
+
+// Set metadata
+pres.author = 'GGDes';
+pres.company = 'Generated by GGDes';
+pres.subject = 'Generated Presentation';
+pres.title = 'GGDes Presentation';
+
+// Set layout (16:9)
+pres.layout = 'LAYOUT_16x9';
+
+// Define slides
+{"".join(slide_defs)}
+
+// Save presentation
+pres.writeFile({{ fileName: "{output_file}" }})
+    .then(() => {{
+        console.log("Presentation generated successfully");
+    }})
+    .catch(err => {{
+        console.error("Error:", err);
+        process.exit(1);
+    }});
+'''
+        return script
+
+    def _escape_js_string(self, s: str) -> str:
+        """Escape string for JavaScript."""
+        return (
+            s.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+
+    def _fallback_to_pandoc(self, content: str, output_file: Path) -> None:
+        """Fallback to pandoc for pptx generation."""
+        # Create slide-friendly markdown
+        slides_md = self._create_slide_markdown(content)
+        temp_md = output_file.with_suffix(".temp.md")
+        temp_md.write_text(slides_md)
+
+        try:
+            subprocess.run(
+                ["pandoc", str(temp_md), "-o", str(output_file)],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to convert to pptx: {e}")
+        finally:
+            if temp_md.exists():
+                temp_md.unlink()
+
+    def _create_slide_markdown(self, content: str) -> str:
+        """Create slide-friendly markdown from full document."""
         lines = content.split("\n")
         slides = []
 
@@ -93,7 +287,6 @@ class PptxAgent(OutputAgent):
             elif line.startswith("## "):
                 slides.append(f"## {line[3:]}")
             elif line.startswith("- ") and len(slides) > 0:
-                # Add as bullet point
                 slides.append(line)
 
         # Add slide breaks

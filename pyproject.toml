@@ -15,6 +15,16 @@ dependencies = [
     "instructor>=1.0.0",
     "anthropic>=0.40.0",
     "openai>=1.50.0",
+    # Document generation dependencies
+    "pypdf>=4.0.0",
+    "pdfplumber>=0.10.0",
+    "reportlab>=4.0.0",
+    "Pillow>=10.0.0",
+    # Optional OCR dependencies (for scanned PDFs)
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.17.0",
+    # PPTX text extraction
+    "markitdown[pptx]>=0.1.0",
 ]
 
 [project.optional-dependencies]
