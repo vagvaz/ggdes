@@ -14,6 +14,7 @@ class ModelConfig(BaseModel):
     provider: str = "anthropic"
     model_name: str = "claude-3-5-sonnet-20241022"
     api_key: str = "${ANTHROPIC_API_KEY}"
+    base_url: Optional[str] = None  # For custom endpoints (Ollama, etc.)
     # Future: per-agent overrides
 
     @field_validator("api_key")

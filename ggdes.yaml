@@ -1,7 +1,8 @@
 model:
   provider: "ollama"
-  model_name: "llama3.2"
+  model_name: "qwen3-coder-next"
   api_key: "ollama"
+  base_url: "http://192.169.1.179:11434/v1"
 
 paths:
   knowledge_base: ".ggdes-local/kb"

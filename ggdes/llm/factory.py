@@ -614,10 +614,15 @@ class LLMFactory:
         Returns:
             LLMProvider instance
         """
+        kwargs = {}
+        if config.model.base_url:
+            kwargs["base_url"] = config.model.base_url
+
         return cls.create(
             provider=config.model.provider,
             model_name=config.model.model_name,
             api_key=config.model.api_key,
+            **kwargs,
         )
 
     @classmethod
