@@ -69,6 +69,8 @@ class AnalysisPipeline:
                 success = self._run_technical_author()
             elif stage_name == self.kb_manager.STAGE_COORDINATOR_PLAN:
                 success = self._run_coordinator_plan()
+            elif stage_name == self.kb_manager.STAGE_OUTPUT_GENERATION:
+                success = self._run_output_generation()
             else:
                 console.print(
                     f"[yellow]Stage '{stage_name}' not yet implemented[/yellow]"
@@ -308,3 +310,62 @@ class AnalysisPipeline:
             )
 
         return True
+
+    def _run_output_generation(self) -> bool:
+        """Run document output generation stage."""
+        from ggdes.agents.output_agents import (
+            MarkdownAgent,
+            DocxAgent,
+            PptxAgent,
+            PdfAgent,
+        )
+
+        import asyncio
+
+        # Get formats to generate from config
+        formats = self.config.output.formats
+
+        generated_files = []
+
+        # Generate markdown first (source for other formats)
+        if "markdown" in formats:
+            console.print("  [dim]Generating markdown...[/dim]")
+            try:
+                agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
+                path = asyncio.run(agent.generate())
+                generated_files.append(("markdown", path))
+                console.print(f"    [green]✓[/green] Markdown: {path}")
+            except Exception as e:
+                console.print(f"    [red]✗[/red] Markdown failed: {e}")
+
+        # Generate other formats
+        for fmt in formats:
+            if fmt == "markdown":
+                continue  # Already done
+
+            console.print(f"  [dim]Generating {fmt}...[/dim]")
+            try:
+                if fmt == "docx":
+                    agent = DocxAgent(self.repo_path, self.config, self.analysis_id)
+                elif fmt == "pptx":
+                    agent = PptxAgent(self.repo_path, self.config, self.analysis_id)
+                elif fmt == "pdf":
+                    agent = PdfAgent(self.repo_path, self.config, self.analysis_id)
+                else:
+                    console.print(f"    [yellow]⚠[/yellow] Unknown format: {fmt}")
+                    continue
+
+                path = agent.generate()
+                generated_files.append((fmt, path))
+                console.print(f"    [green]✓[/green] {fmt}: {path}")
+            except Exception as e:
+                console.print(f"    [red]✗[/red] {fmt} failed: {e}")
+
+        if generated_files:
+            console.print(
+                f"\n  [green]Generated {len(generated_files)} documents[/green]"
+            )
+            return True
+        else:
+            console.print(f"\n  [red]No documents generated[/red]")
+            return False
