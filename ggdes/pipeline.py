@@ -213,8 +213,20 @@ class AnalysisPipeline:
         console.print(f"  [dim]Scanning base worktree: {base_path}[/dim]")
         console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
 
-        # Parse all supported files
-        results = parser.parse_directory(base_path, relative_to=base_path)
+        # Check if directory exists
+        if not base_path.exists():
+            console.print(
+                f"  [red]Error: Base worktree does not exist: {base_path}[/red]"
+            )
+            return False
+
+        if not any(base_path.iterdir()):
+            console.print(
+                f"  [yellow]Warning: Base worktree is empty: {base_path}[/yellow]"
+            )
+
+        # Parse all supported files with verbose output
+        results = parser.parse_directory(base_path, relative_to=base_path, verbose=True)
 
         # Save results
         import json
@@ -260,7 +272,19 @@ class AnalysisPipeline:
         console.print(f"  [dim]Scanning head worktree: {head_path}[/dim]")
         console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
 
-        results = parser.parse_directory(head_path, relative_to=head_path)
+        # Check if directory exists
+        if not head_path.exists():
+            console.print(
+                f"  [red]Error: Head worktree does not exist: {head_path}[/red]"
+            )
+            return False
+
+        if not any(head_path.iterdir()):
+            console.print(
+                f"  [yellow]Warning: Head worktree is empty: {head_path}[/yellow]"
+            )
+
+        results = parser.parse_directory(head_path, relative_to=head_path, verbose=True)
 
         # Save results
         import json

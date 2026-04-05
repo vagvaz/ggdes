@@ -374,23 +374,61 @@ class ASTParser:
         return elements
 
     def parse_directory(
-        self, directory: Path, relative_to: Optional[Path] = None
+        self, directory: Path, relative_to: Optional[Path] = None, verbose: bool = False
     ) -> list[ParseResult]:
         """Parse all supported files in a directory.
 
         Args:
             directory: Directory to scan
             relative_to: Base path for relative paths in output
+            verbose: Print diagnostic information
 
         Returns:
             List of ParseResults
         """
         results = []
+        files_found = 0
+        files_skipped = 0
+        errors = []
+
+        # Check if directory exists
+        if not directory.exists():
+            raise FileNotFoundError(f"Directory does not exist: {directory}")
+
+        if not directory.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: {directory}")
+
+        # List all files first to diagnose
+        all_files = list(directory.rglob("*"))
+        total_files = len([f for f in all_files if f.is_file()])
+
+        if verbose:
+            print(f"[AST Parser] Scanning {directory}")
+            print(f"[AST Parser] Total files found: {total_files}")
+            print(
+                f"[AST Parser] Supported extensions: {list(self.SUPPORTED_LANGUAGES.keys())}"
+            )
 
         for file_path in directory.rglob("*"):
-            if file_path.is_file() and file_path.suffix in self.SUPPORTED_LANGUAGES:
-                result = self.parse_file(file_path, relative_to)
-                results.append(result)
+            if file_path.is_file():
+                if file_path.suffix.lower() in self.SUPPORTED_LANGUAGES:
+                    files_found += 1
+                    result = self.parse_file(file_path, relative_to)
+                    results.append(result)
+                    if verbose and not result.success:
+                        errors.append(f"  {result.file_path}: {result.error_message}")
+                else:
+                    files_skipped += 1
+
+        if verbose:
+            print(f"[AST Parser] Files matching supported extensions: {files_found}")
+            print(f"[AST Parser] Files skipped (unsupported): {files_skipped}")
+            if errors:
+                print(f"[AST Parser] Parse errors ({len(errors)}):")
+                for error in errors[:10]:  # Show first 10 errors
+                    print(error)
+                if len(errors) > 10:
+                    print(f"  ... and {len(errors) - 10} more errors")
 
         return results
 
