@@ -378,7 +378,14 @@ class AnalysisPipeline:
         storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
         storage_policy = StoragePolicy(storage_policy_str)
 
-        facts = asyncio.run(author.synthesize(storage_policy=storage_policy))
+        try:
+            facts = asyncio.run(author.synthesize(storage_policy=storage_policy))
+        except Exception as e:
+            import traceback
+
+            console.print(f"  [red]Technical author failed:[/red] {e}")
+            console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            return False
 
         console.print(f"  [dim]Synthesized {len(facts)} technical facts[/dim]")
 
@@ -418,13 +425,20 @@ class AnalysisPipeline:
         storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
         storage_policy = StoragePolicy(storage_policy_str)
 
-        plans = asyncio.run(
-            coordinator.create_plan(
-                target_formats=target_formats,
-                interactive=not auto_mode,
-                storage_policy=storage_policy,
+        try:
+            plans = asyncio.run(
+                coordinator.create_plan(
+                    target_formats=target_formats,
+                    interactive=not auto_mode,
+                    storage_policy=storage_policy,
+                )
             )
-        )
+        except Exception as e:
+            import traceback
+
+            console.print(f"  [red]Coordinator planning failed:[/red] {e}")
+            console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            return False
 
         console.print(f"  [dim]Created {len(plans)} document plans:[/dim]")
         for plan in plans:
