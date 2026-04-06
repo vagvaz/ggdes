@@ -466,7 +466,10 @@ class AnalysisPipeline:
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:
+                import traceback
+
                 console.print(f"    [red]✗[/red] Markdown generation failed: {e}")
+                console.print(f"    [dim]{traceback.format_exc()}[/dim]")
 
         # Generate other formats
         for fmt in formats:
