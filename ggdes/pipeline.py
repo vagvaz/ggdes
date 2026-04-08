@@ -72,6 +72,8 @@ class AnalysisPipeline:
                 success = self._run_coordinator_plan()
             elif stage_name == self.kb_manager.STAGE_OUTPUT_GENERATION:
                 success = self._run_output_generation()
+            elif stage_name == self.kb_manager.STAGE_SEMANTIC_DIFF:
+                success = self._run_semantic_diff()
             else:
                 console.print(
                     f"[yellow]Stage '{stage_name}' not yet implemented[/yellow]"
@@ -556,6 +558,80 @@ class AnalysisPipeline:
             )
 
         return True
+
+    def _run_semantic_diff(self) -> bool:
+        """Run semantic diff analysis stage."""
+        from ggdes.semantic_diff import SemanticDiffAnalyzer, save_semantic_diff
+
+        if not self.metadata.worktrees:
+            console.print("[red]Worktrees not set up[/red]")
+            return False
+
+        console.print("  [dim]Initializing Semantic Diff Analyzer...[/dim]")
+
+        analyzer = SemanticDiffAnalyzer(self.config)
+
+        # Get changed files from git analysis
+        changed_files = self._get_changed_files_from_analysis()
+
+        if not changed_files:
+            console.print("  [yellow]No changed files to analyze[/yellow]")
+            # Skip stage successfully if nothing to analyze
+            return True
+
+        # Parse commit range
+        commit_range = self.metadata.commit_range
+        if ".." in commit_range:
+            base_commit, head_commit = commit_range.split("..", 1)
+        else:
+            base_commit = ""
+            head_commit = commit_range
+
+        try:
+            result = analyzer.analyze(
+                base_path=Path(self.metadata.worktrees.base),
+                head_path=Path(self.metadata.worktrees.head),
+                base_commit=base_commit or "HEAD",
+                head_commit=head_commit or "HEAD",
+                changed_files=changed_files,
+            )
+
+            # Save results
+            output_path = (
+                self.kb_manager.get_analysis_path(self.analysis_id)
+                / "semantic_diff"
+                / "result.json"
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            save_semantic_diff(result, output_path)
+
+            # Print summary
+            console.print(
+                f"  [dim]Detected {len(result.semantic_changes)} semantic change(s):[/dim]"
+            )
+            console.print(f"    - Breaking changes: {len(result.breaking_changes)}")
+            console.print(f"    - Behavioral changes: {len(result.behavioral_changes)}")
+            console.print(
+                f"    - Refactoring changes: {len(result.refactoring_changes)}"
+            )
+            console.print(
+                f"    - Documentation changes: {len(result.documentation_changes)}"
+            )
+            console.print(
+                f"    - Total impact score: {result.total_impact_score:.1f}/10"
+            )
+
+            if result.has_breaking_changes:
+                console.print(f"  [yellow]⚠ Breaking changes detected![/yellow]")
+
+            return True
+
+        except Exception as e:
+            import traceback
+
+            console.print(f"  [red]Semantic diff analysis failed:[/red] {e}")
+            console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            return False
 
     def _run_output_generation(self) -> bool:
         """Run document output generation stage."""
