@@ -55,22 +55,66 @@ class DocxAgent(OutputAgent):
 
         return ""
 
-    def generate(self) -> Path:
-        """Generate Word document using docx skill patterns.
+    def generate(self, auto_generate_diagrams: bool = True) -> Path:
+        """Generate Word document using docx skill patterns with integrated diagrams.
+
+        Args:
+            auto_generate_diagrams: Whether to auto-generate diagrams from facts
 
         Returns:
             Path to generated docx file
         """
+        from rich.console import Console
+
+        console = Console()
+
         # Setup output path
         output_dir = self.repo_path / "docs"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-document.docx"
 
+        console.print(f"\n[bold blue]Generating Word Document...[/bold blue]")
+
         # Get content
         content = self._get_content_for_docx()
 
+        # Generate diagrams
+        diagrams_dir = output_dir / "diagrams"
+        diagrams_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load facts for diagram generation
+        all_facts = []
+        plan = self._load_plan()
+        if plan and auto_generate_diagrams:
+            console.print("  [dim]Generating diagrams...[/dim]")
+            from ggdes.schemas import TechnicalFact
+
+            # Try to load technical facts from KB
+            try:
+                from ggdes.config import get_kb_path
+                import json
+
+                facts_dir = (
+                    get_kb_path(self.config, self.analysis_id) / "technical_facts"
+                )
+                if facts_dir.exists():
+                    for fact_file in facts_dir.glob("*.json"):
+                        data = json.loads(fact_file.read_text())
+                        all_facts.append(TechnicalFact(**data))
+            except Exception as e:
+                console.print(f"  [dim]Could not load facts for diagrams: {e}[/dim]")
+
+            # Generate diagrams
+            if all_facts:
+                diagram_list = self._generate_diagrams_for_facts(
+                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
+                )
+                console.print(
+                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
+                )
+
         # Generate docx using docx-js via Node.js
-        docx_js_script = self._generate_docx_script(content)
+        docx_js_script = self._generate_docx_script(content, diagrams_dir)
 
         # Write temporary JS file
         js_file = output_dir / f"{self.analysis_id}_generate_docx.js"
@@ -85,14 +129,18 @@ class DocxAgent(OutputAgent):
                 text=True,
             )
 
+            console.print(f"  [green]✓ Document generated:[/green] {output_file}")
+
             # Validate output if validation script exists
             self._validate_docx(output_file)
 
         except subprocess.CalledProcessError as e:
             # Fallback to pandoc if docx-js fails
+            console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except FileNotFoundError:
             # Node not available, use pandoc
+            console.print("  [yellow]⚠ Node.js not available, using pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         finally:
             # Cleanup temp file
@@ -101,15 +149,49 @@ class DocxAgent(OutputAgent):
 
         return output_file
 
-    def _generate_docx_script(self, content: str) -> str:
-        """Generate Node.js script for docx-js document creation.
+    def _generate_docx_script(self, content: str, diagrams_dir: Path) -> str:
+        """Generate Node.js script for docx-js document creation with diagrams.
 
         Following the patterns from the docx skill documentation.
         """
         # Parse content into structured sections
-        sections = self._parse_content_to_sections(content)
+        sections = self._parse_content_to_sections(content, diagrams_dir)
 
-        script = f'''const {{ Document, Packer, Paragraph, TextRun, HeadingLevel,
+        # Find diagram images
+        diagram_images = []
+        if diagrams_dir.exists():
+            for img_file in diagrams_dir.glob("*.png"):
+                diagram_images.append(str(img_file))
+
+        # Generate image inclusion code if we have diagrams
+        image_code = ""
+        if diagram_images:
+            image_code = """
+    // Add diagram section with images
+    new Paragraph({ children: [new PageBreak()] }),
+    new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({ text: "Diagrams", bold: true })]
+    }),
+    new Paragraph({
+        children: [new TextRun("Visual representations of the system architecture and component relationships.")]
+    }),"""
+
+            for img_path in diagram_images[:3]:  # Limit to 3 diagrams
+                image_code += f"""
+    new Paragraph({{
+        children: [
+            new ImageRun({{
+                type: "png",
+                data: fs.readFileSync("{img_path}"),
+                transformation: {{ width: 550, height: 400 }},
+                altText: {{ title: "Diagram", description: "System diagram", name: "diagram" }}
+            }})
+        ]
+    }}),
+    new Paragraph({{ children: [] }}),"""
+
+        script = f'''const {{ Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun,
             Table, TableRow, TableCell, Header, Footer, PageNumber,
             AlignmentType, BorderStyle, WidthType, ShadingType,
             LevelFormat, PageBreak }} = require('docx');
@@ -204,7 +286,10 @@ const doc = new Document({{
                 }}
             }}
         }},
-        children: {sections}
+        children: [
+            {sections}
+            {image_code}
+        ]
     }}]
 }});
 
@@ -219,7 +304,7 @@ Packer.toBuffer(doc).then(buffer => {{
 '''
         return script
 
-    def _parse_content_to_sections(self, content: str) -> str:
+    def _parse_content_to_sections(self, content: str, diagrams_dir: Path) -> str:
         """Parse markdown content into docx-js section structure."""
         lines = content.split("\n")
         paragraphs = []

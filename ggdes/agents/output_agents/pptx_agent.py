@@ -55,16 +55,25 @@ class PptxAgent(OutputAgent):
 
         return ""
 
-    def generate(self) -> Path:
-        """Generate PowerPoint presentation using pptx skill patterns.
+    def generate(self, auto_generate_diagrams: bool = True) -> Path:
+        """Generate PowerPoint presentation using pptx skill patterns with integrated diagrams.
+
+        Args:
+            auto_generate_diagrams: Whether to auto-generate diagrams from facts
 
         Returns:
             Path to generated pptx file
         """
+        from rich.console import Console
+
+        console = Console()
+
         # Setup output path
         output_dir = self.repo_path / "docs"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-presentation.pptx"
+
+        console.print(f"\n[bold blue]Generating PowerPoint Presentation...[/bold blue]")
 
         # Get content
         content = self._get_content_for_pptx()
@@ -72,8 +81,44 @@ class PptxAgent(OutputAgent):
         # Parse content into slides
         slides = self._parse_content_to_slides(content)
 
+        # Generate diagrams
+        diagrams_dir = output_dir / "diagrams"
+        diagrams_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load facts for diagram generation
+        all_facts = []
+        plan = self._load_plan()
+
+        if auto_generate_diagrams and plan:
+            console.print("  [dim]Generating diagrams...[/dim]")
+
+            # Try to load technical facts from KB
+            try:
+                from ggdes.config import get_kb_path
+                from ggdes.schemas import TechnicalFact
+                import json
+
+                facts_dir = (
+                    get_kb_path(self.config, self.analysis_id) / "technical_facts"
+                )
+                if facts_dir.exists():
+                    for fact_file in facts_dir.glob("*.json"):
+                        data = json.loads(fact_file.read_text())
+                        all_facts.append(TechnicalFact(**data))
+            except Exception as e:
+                console.print(f"  [dim]Could not load facts: {e}[/dim]")
+
+            # Generate diagrams
+            if all_facts:
+                diagram_list = self._generate_diagrams_for_facts(
+                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
+                )
+                console.print(
+                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
+                )
+
         # Generate pptx using pptxgenjs via Node.js
-        pptx_js_script = self._generate_pptx_script(slides, output_file)
+        pptx_js_script = self._generate_pptx_script(slides, output_file, diagrams_dir)
 
         # Write temporary JS file
         js_file = output_dir / f"{self.analysis_id}_generate_pptx.js"
@@ -87,12 +132,13 @@ class PptxAgent(OutputAgent):
                 capture_output=True,
                 text=True,
             )
+            console.print(f"  [green]✓ Presentation saved:[/green] {output_file}")
 
         except subprocess.CalledProcessError as e:
-            # Fallback to pandoc
+            console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except FileNotFoundError:
-            # Node not available, use pandoc
+            console.print("  [yellow]⚠ Node.js not available, using pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         finally:
             # Cleanup temp file
@@ -170,8 +216,10 @@ class PptxAgent(OutputAgent):
 
         return slides
 
-    def _generate_pptx_script(self, slides: list[dict], output_file: Path) -> str:
-        """Generate Node.js script for pptxgenjs presentation creation.
+    def _generate_pptx_script(
+        self, slides: list[dict], output_file: Path, diagrams_dir: Path
+    ) -> str:
+        """Generate Node.js script for pptxgenjs presentation creation with diagrams.
 
         Following the patterns from the pptx skill documentation.
         """
@@ -197,12 +245,15 @@ class PptxAgent(OutputAgent):
                 # Content slide
                 bullets_js = ""
                 if slide["bullets"]:
+                    # Limit to 6 bullets per slide (as per skill guidelines)
+                    limited_bullets = slide["bullets"][:6]
                     bullets_text = "\\n".join(
-                        f"• {self._escape_js_string(b)}" for b in slide["bullets"]
+                        f"• {self._escape_js_string(b)[:50]}"
+                        for b in limited_bullets  # Limit to 6 words per bullet
                     )
                     bullets_js = f"""
     slide{i}.addText("{bullets_text}", {{
-        x: 0.5, y: 1.8, w: 9, h: 4,
+        x: 0.5, y: 1.8, w: 5.5, h: 4,
         fontSize: 18, color: "36454F",
         bullet: true,
         fontFace: "Calibri"
@@ -221,6 +272,32 @@ class PptxAgent(OutputAgent):
 """
                 slide_defs.append(slide_def)
 
+        # Add diagram slides
+        diagram_slides = ""
+        if diagrams_dir.exists():
+            diagram_files = list(diagrams_dir.glob("*.png"))
+            if diagram_files:
+                diagram_slides = """
+    // Diagram Overview Slide
+    let diagramSlide = pres.addSlide();
+    diagramSlide.addText("System Architecture", {{
+        x: 0.5, y: 0.5, w: 9, h: 1,
+        fontSize: 36, bold: true, color: "1E2761",
+        fontFace: "Arial Black"
+    }});
+"""
+                for i, diag_file in enumerate(
+                    diagram_files[:3]
+                ):  # Max 3 diagram slides
+                    diagram_slides += f"""
+    // Add diagram image
+    diagramSlide.addImage({{
+        path: "{str(diag_file)}",
+        x: 0.5, y: 1.8, w: 9, h: 4.5,
+        sizing: {{ type: 'contain', w: 9, h: 4.5 }}
+    }});
+"""
+
         script = f'''const PptxGenJS = require('pptxgenjs');
 const fs = require('fs');
 
@@ -230,14 +307,15 @@ const pres = new PptxGenJS();
 // Set metadata
 pres.author = 'GGDes';
 pres.company = 'Generated by GGDes';
-pres.subject = 'Generated Presentation';
-pres.title = 'GGDes Presentation';
+pres.subject = 'Technical Design Changes';
+pres.title = 'Design Documentation';
 
 // Set layout (16:9)
 pres.layout = 'LAYOUT_16x9';
 
 // Define slides
 {"".join(slide_defs)}
+{diagram_slides}
 
 // Save presentation
 pres.writeFile({{ fileName: "{output_file}" }})

@@ -55,38 +55,94 @@ class PdfAgent(OutputAgent):
 
         return ""
 
-    def generate(self) -> Path:
-        """Generate PDF document using pdf skill patterns.
+    def generate(self, auto_generate_diagrams: bool = True) -> Path:
+        """Generate PDF document using pdf skill patterns with integrated diagrams.
+
+        Args:
+            auto_generate_diagrams: Whether to auto-generate diagrams from facts
 
         Returns:
             Path to generated pdf file
         """
+        from rich.console import Console
+
+        console = Console()
+
         # Setup output path
         output_dir = self.repo_path / "docs"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-document.pdf"
 
+        console.print(f"\n[bold blue]Generating PDF Document...[/bold blue]")
+
         # Get content
         content = self._get_content_for_pdf()
 
+        # Generate diagrams
+        diagrams_dir = output_dir / "diagrams"
+        diagrams_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load facts for diagram generation
+        if auto_generate_diagrams:
+            console.print("  [dim]Generating diagrams...[/dim]")
+            all_facts = []
+            plan = self._load_plan()
+
+            if plan:
+                # Try to load technical facts from KB
+                try:
+                    from ggdes.config import get_kb_path
+                    from ggdes.schemas import TechnicalFact
+                    import json
+
+                    facts_dir = (
+                        get_kb_path(self.config, self.analysis_id) / "technical_facts"
+                    )
+                    if facts_dir.exists():
+                        for fact_file in facts_dir.glob("*.json"):
+                            data = json.loads(fact_file.read_text())
+                            all_facts.append(TechnicalFact(**data))
+                except Exception as e:
+                    console.print(f"  [dim]Could not load facts: {e}[/dim]")
+
+                # Generate diagrams
+                if all_facts:
+                    diagram_list = self._generate_diagrams_for_facts(
+                        all_facts, diagrams_dir, ["architecture", "flow", "class"]
+                    )
+                    console.print(
+                        f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
+                    )
+
         try:
-            # Try reportlab first
-            self._generate_with_reportlab(content, output_file)
+            # Try reportlab first with diagram integration
+            self._generate_with_reportlab(content, output_file, diagrams_dir)
+            console.print(f"  [green]✓ Document saved:[/green] {output_file}")
         except ImportError:
             # Fallback to pandoc
+            console.print("  [yellow]⚠ Using pandoc fallback[/yellow]")
             self._fallback_to_pandoc(content, output_file)
-        except Exception:
+        except Exception as e:
             # Any other error, try pandoc
+            console.print(f"  [yellow]⚠ Reportlab failed ({e}), using pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
 
         return output_file
 
-    def _generate_with_reportlab(self, content: str, output_file: Path) -> None:
-        """Generate PDF using reportlab following skill patterns."""
+    def _generate_with_reportlab(
+        self, content: str, output_file: Path, diagrams_dir: Path
+    ) -> None:
+        """Generate PDF using reportlab following skill patterns with diagrams."""
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            PageBreak,
+            Image,
+        )
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
         # Create document
@@ -146,6 +202,17 @@ class PdfAgent(OutputAgent):
                 bulletIndent=10,
             )
         )
+        styles.add(
+            ParagraphStyle(
+                name="DiagramCaption",
+                parent=styles["Normal"],
+                fontSize=10,
+                alignment=TA_CENTER,
+                textColor="gray",
+                spaceBefore=6,
+                spaceAfter=12,
+            )
+        )
 
         # Parse and build content
         story = []
@@ -203,6 +270,41 @@ class PdfAgent(OutputAgent):
                 story.append(
                     Paragraph(self._escape_xml(stripped), styles["CustomBody"])
                 )
+
+        # Add diagrams section if diagrams exist
+        if diagrams_dir.exists():
+            diagram_files = list(diagrams_dir.glob("*.png"))
+            if diagram_files:
+                story.append(PageBreak())
+                story.append(Paragraph("Diagrams", styles["CustomHeading2"]))
+                story.append(Spacer(1, 12))
+                story.append(
+                    Paragraph(
+                        "Visual representations of the system architecture and component relationships.",
+                        styles["CustomBody"],
+                    )
+                )
+                story.append(Spacer(1, 12))
+
+                # Add each diagram
+                for diagram_file in diagram_files[:3]:  # Limit to 3 diagrams
+                    try:
+                        # Add image with max width of 6 inches
+                        img = Image(str(diagram_file), width=6 * inch, height=4 * inch)
+                        story.append(img)
+                        story.append(
+                            Paragraph(
+                                f"Figure: {diagram_file.stem.replace('_', ' ').title()}",
+                                styles["DiagramCaption"],
+                            )
+                        )
+                        story.append(Spacer(1, 12))
+                    except Exception as e:
+                        story.append(
+                            Paragraph(
+                                f"[Could not embed diagram: {e}]", styles["CustomBody"]
+                            )
+                        )
 
         # Build PDF
         doc.build(story)

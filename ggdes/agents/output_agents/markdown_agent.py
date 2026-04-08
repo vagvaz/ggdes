@@ -205,15 +205,21 @@ title {diagram.title}
     async def generate(
         self,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
+        auto_generate_diagrams: bool = True,
     ) -> Path:
-        """Generate markdown document.
+        """Generate markdown document with integrated diagrams.
 
         Args:
             storage_policy: How to persist conversation
+            auto_generate_diagrams: Whether to auto-generate diagrams from facts
 
         Returns:
             Path to generated markdown file
         """
+        from rich.console import Console
+
+        console = Console()
+
         # Initialize conversation
         self._init_conversation(storage_policy)
 
@@ -222,6 +228,10 @@ title {diagram.title}
         if not plan:
             raise ValueError(f"No markdown plan found for {self.analysis_id}")
 
+        console.print(
+            f"\n[bold blue]Generating Markdown Document:[/bold blue] {plan.title}"
+        )
+
         # Generate document content
         sections_content = []
 
@@ -229,17 +239,38 @@ title {diagram.title}
             content = await self._generate_section(section)
             sections_content.append((section.title, content))
 
-        # Generate diagrams
-        diagrams_content = []
+        # Generate diagrams directory
+        output_dir = self.repo_path / "docs" / "diagrams"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Collect all facts for diagram generation
+        all_facts = []
+        for section in plan.sections:
+            all_facts.extend(self._load_facts(section.technical_facts))
+
+        # Auto-generate diagrams from facts
+        auto_diagrams = []
+        if auto_generate_diagrams and all_facts:
+            console.print("  [dim]Generating diagrams from technical facts...[/dim]")
+            auto_diagrams = self._generate_diagrams_for_facts(
+                all_facts, output_dir, ["architecture", "flow", "class"]
+            )
+
+        # Generate diagrams from plan
+        plan_diagrams = []
         for diagram in plan.diagrams:
             plantuml = self._generate_plantuml(diagram)
-            diagrams_content.append((diagram.title, plantuml, diagram.diagram_type))
+            plan_diagrams.append((diagram.title, plantuml, diagram.diagram_type))
 
-        # Build complete markdown
-        markdown = self._build_markdown(plan, sections_content, diagrams_content)
+        # Build complete markdown with integrated diagrams
+        markdown = self._build_markdown(
+            plan, sections_content, plan_diagrams, auto_diagrams
+        )
 
         # Save to output directory
         output_path = self._save_markdown(markdown, plan)
+
+        console.print(f"  [green]✓ Document saved:[/green] {output_path}")
 
         # Save conversation
         from ggdes.config import get_kb_path
@@ -298,44 +329,110 @@ Write the section content now:"""
         self,
         plan: DocumentPlan,
         sections_content: list[tuple[str, str]],
-        diagrams_content: list[tuple[str, str, str]],
+        plan_diagrams: list[tuple[str, str, str]],
+        auto_diagrams: list[tuple[str, Path, str]],
     ) -> str:
-        """Build complete markdown document."""
-        md = f"""# {plan.title}
+        """Build complete markdown document with integrated diagrams."""
+        from datetime import datetime
 
-**Target Audience:** {plan.audience}  
-**Analysis ID:** {self.analysis_id}
+        md_parts = []
 
-## Table of Contents
+        # YAML front matter
+        md_parts.append("---")
+        md_parts.append(f'title: "{plan.title}"')
+        md_parts.append(f'audience: "{plan.audience}"')
+        md_parts.append(f'analysis_id: "{self.analysis_id}"')
+        md_parts.append(f'generated: "{datetime.now().isoformat()}"')
+        md_parts.append("---")
+        md_parts.append("")
 
-"""
+        # Title
+        md_parts.append(f"# {plan.title}")
+        md_parts.append("")
 
-        # Add TOC
+        # Metadata
+        md_parts.append(f"**Target Audience:** {plan.audience}")
+        md_parts.append(f"**Analysis ID:** {self.analysis_id}")
+        md_parts.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        md_parts.append("")
+
+        # Executive summary section (if user context available)
+        if self.user_context:
+            md_parts.append("## Executive Summary")
+            md_parts.append("")
+            if "purpose" in self.user_context:
+                md_parts.append(f"**Purpose:** {self.user_context['purpose']}")
+            if "focus_areas" in self.user_context:
+                md_parts.append(f"**Focus Areas:** {self.user_context['focus_areas']}")
+            md_parts.append("")
+
+        # Table of Contents
+        md_parts.append("## Table of Contents")
+        md_parts.append("")
         for i, (title, _) in enumerate(sections_content, 1):
-            md += f"{i}. [{title}](#{title.lower().replace(' ', '-')})\n"
+            anchor = title.lower().replace(" ", "-").replace(".", "").replace(",", "")
+            md_parts.append(f"{i}. [{title}](#{anchor})")
 
-        md += "\n---\n\n"
+        # Add diagrams to TOC if we have them
+        if auto_diagrams or plan_diagrams:
+            md_parts.append(f"{len(sections_content) + 1}. [Diagrams](#diagrams)")
+
+        md_parts.append("")
+        md_parts.append("---")
+        md_parts.append("")
 
         # Add sections
         for title, content in sections_content:
-            md += f"## {title}\n\n{content}\n\n"
+            md_parts.append(f"## {title}")
+            md_parts.append("")
+            md_parts.append(content)
+            md_parts.append("")
 
-        # Add diagrams section if any
-        if diagrams_content:
-            md += "## Diagrams\n\n"
-            for title, plantuml, diagram_type in diagrams_content:
-                md += f"### {title}\n\n"
-                md += f"Type: {diagram_type}\n\n"
-                md += f"```plantuml\n{plantuml}\n```\n\n"
+        # Add diagrams section
+        if auto_diagrams or plan_diagrams:
+            md_parts.append("## Diagrams")
+            md_parts.append("")
+            md_parts.append(
+                "Visual representations of the system architecture, data flows, and component relationships."
+            )
+            md_parts.append("")
+
+            # Add auto-generated diagrams with image links
+            for title, diagram_path, diagram_type in auto_diagrams:
+                relative_path = diagram_path.relative_to(self.repo_path / "docs")
+                md_parts.append(f"### {title}")
+                md_parts.append("")
+                md_parts.append(f"![{title}]({relative_path})")
+                md_parts.append("")
+                md_parts.append(f"*Type: {diagram_type}*")
+                md_parts.append("")
+
+            # Add plan diagrams as PlantUML code blocks
+            if plan_diagrams:
+                md_parts.append("### Additional Diagrams (PlantUML)")
+                md_parts.append("")
+                md_parts.append("The following diagrams can be rendered with PlantUML:")
+                md_parts.append("")
+
+                for title, plantuml, diagram_type in plan_diagrams:
+                    md_parts.append(f"#### {title}")
+                    md_parts.append("")
+                    md_parts.append(f"Type: {diagram_type}")
+                    md_parts.append("")
+                    md_parts.append("```plantuml")
+                    md_parts.append(plantuml)
+                    md_parts.append("```")
+                    md_parts.append("")
 
         # Add footer
-        md += f"""---
+        md_parts.append("---")
+        md_parts.append("")
+        md_parts.append(
+            "*Generated by GGDes - Git-based Design Documentation Generator*"
+        )
+        md_parts.append(f"*Analysis ID: {self.analysis_id}*")
 
-*Generated by GGDes - Git-based Design Documentation Generator*  
-*Analysis: {self.analysis_id}*
-"""
-
-        return md
+        return "\n".join(md_parts)
 
     def _save_markdown(self, content: str, plan: DocumentPlan) -> Path:
         """Save markdown to output directory."""
