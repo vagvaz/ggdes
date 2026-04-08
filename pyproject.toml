@@ -12,6 +12,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "tree-sitter>=0.22.0",
     "tree-sitter-python>=0.21.0",
+    "tree-sitter-cpp>=0.23.0",
     "instructor>=1.0.0",
     "anthropic>=0.40.0",
     "openai>=1.50.0",
@@ -26,6 +27,7 @@ dependencies = [
     "pdf2image>=1.17.0",
     # PPTX text extraction
     "markitdown[pptx]>=0.1.0",
+    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
