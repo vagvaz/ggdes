@@ -7,6 +7,7 @@ from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from ggdes.config import GGDesConfig, load_config
@@ -16,6 +17,84 @@ from ggdes.worktree import WorktreeManager
 
 app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
+
+
+def _gather_user_context() -> dict:
+    """Gather user context through interactive questionnaire.
+
+    Returns:
+        Dictionary with user-provided context for all agents
+    """
+    context = {}
+
+    console.print("\n[bold cyan]Analysis Configuration[/bold cyan]")
+    console.print("Help me create the best documentation for your changes.\n")
+
+    # Question 1: Focus Areas
+    context["focus_areas"] = Prompt.ask(
+        "Which features/aspects should the analysis focus on?",
+        default="all",
+    )
+
+    # Question 2: Target Audience
+    context["audience"] = Prompt.ask(
+        "Who is the target audience?",
+        choices=["business", "technical_managers", "developers", "all"],
+        default="all",
+    )
+
+    # Question 3: Document Purpose (multi-select via comma-separated)
+    console.print("\n[yellow]Document Purpose Options:[/yellow]")
+    console.print("  1. high_level_algorithm_design")
+    console.print("  2. implementation_explanation")
+    console.print("  3. technical_spec")
+    console.print("  4. user_documentation")
+    console.print("  5. api_reference")
+    console.print("  6. migration_guide")
+    purpose_input = Prompt.ask(
+        "Select document purpose (comma-separated numbers, e.g., '1,3,5')",
+        default="2,3",
+    )
+
+    # Parse purpose selections
+    purpose_map = {
+        "1": "high_level_algorithm_design",
+        "2": "implementation_explanation",
+        "3": "technical_spec",
+        "4": "user_documentation",
+        "5": "api_reference",
+        "6": "migration_guide",
+    }
+
+    purposes = []
+    for num in purpose_input.split(","):
+        num = num.strip()
+        if num in purpose_map:
+            purposes.append(purpose_map[num])
+
+    if not purposes:
+        purposes = ["implementation_explanation", "technical_spec"]
+
+    context["purpose"] = purposes
+
+    # Question 4: Detail Level
+    context["detail_level"] = Prompt.ask(
+        "What level of detail?",
+        choices=["quick_summary", "medium", "comprehensive"],
+        default="medium",
+    )
+
+    # Question 5: Anything else?
+    additional = Prompt.ask(
+        "Do you want to add anything else? (optional)",
+        default="",
+    )
+    if additional.strip():
+        context["additional_context"] = additional.strip()
+
+    console.print("\n[green]✓ Preferences captured[/green]\n")
+
+    return context
 
 
 def generate_analysis_id(name: str, repo_path: Path, commit_range: str) -> str:
@@ -278,8 +357,10 @@ def analyze(
                 console.print(f"Run 'ggdes resume {analysis_id}' to run analysis later")
                 return
 
+            # Gather user context for analysis
+            user_context = {}
             if not auto:
-                # Interactive mode: ask user if they want to continue
+                # Interactive mode: ask user for context
                 console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
                 console.print(
                     f"This will analyze the commits and generate documentation."
@@ -289,6 +370,15 @@ def analyze(
                     console.print(f"\n[yellow]Analysis paused.[/yellow]")
                     console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
                     return
+
+                # Gather user context
+                user_context = _gather_user_context()
+
+                # Store user context in metadata
+                if user_context:
+                    metadata.user_context = user_context
+                    kb_manager.save_metadata(analysis_id, metadata)
+                    logger.info(f"User context saved: {user_context}")
 
             # Step 2: Run full analysis
             logger.info("Running full analysis pipeline...")
@@ -431,6 +521,16 @@ def resume(
     retry_failed: Annotated[
         bool, typer.Option(help="Retry failed stages (reset them to pending)")
     ] = False,
+    formats: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Output formats (comma-separated: markdown,docx,pdf,pptx). Default: use existing formats"
+        ),
+    ] = None,
+    overwrite_context: Annotated[
+        bool,
+        typer.Option(help="Reask user questions to update context for new formats"),
+    ] = False,
 ) -> None:
     """Resume an incomplete analysis."""
     from ggdes.logging_config import get_logger, setup_file_logging
@@ -463,6 +563,48 @@ def resume(
     logger.info(f"Repository: {found_metadata.repo_path}")
     logger.info(f"Commit range: {found_metadata.commit_range}")
 
+    # Determine target formats
+    target_formats = found_metadata.target_formats or ["markdown"]
+    if formats:
+        target_formats = [fmt.strip().lower() for fmt in formats.split(",")]
+        valid_formats = {"markdown", "docx", "pdf", "pptx"}
+        invalid_formats = set(target_formats) - valid_formats
+        if invalid_formats:
+            console.print(
+                f"[red]Error:[/red] Invalid format(s): {', '.join(invalid_formats)}"
+            )
+            console.print(f"Valid formats: {', '.join(sorted(valid_formats))}")
+            raise typer.Exit(1)
+        logger.info(f"Updated target formats: {target_formats}")
+        found_metadata.target_formats = target_formats
+        kb_manager.save_metadata(found_id, found_metadata)
+        console.print(
+            f"[green]✓ Target formats updated:[/green] {', '.join(target_formats)}"
+        )
+
+        # Reset coordinator_plan and output_generation stages to regenerate plans for new formats
+        from ggdes.kb import StageStatus
+
+        stages_to_reset = []
+        coordinator_stage = found_metadata.get_stage(kb_manager.STAGE_COORDINATOR_PLAN)
+        if coordinator_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
+            coordinator_stage.status = StageStatus.PENDING
+            coordinator_stage.output_path = None
+            stages_to_reset.append(kb_manager.STAGE_COORDINATOR_PLAN)
+
+        output_stage = found_metadata.get_stage(kb_manager.STAGE_OUTPUT_GENERATION)
+        if output_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
+            output_stage.status = StageStatus.PENDING
+            output_stage.output_path = None
+            stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
+
+        if stages_to_reset:
+            kb_manager.save_metadata(found_id, found_metadata)
+            logger.info(f"Reset stages for new formats: {', '.join(stages_to_reset)}")
+            console.print(
+                f"[yellow]Reset {len(stages_to_reset)} stage(s) for new formats:[/yellow] {', '.join(stages_to_reset)}"
+            )
+
     # Check if can resume
     can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
     if not can_resume:
@@ -485,6 +627,59 @@ def resume(
 
     repo_path = Path(found_metadata.repo_path)
 
+    # Handle user context
+    user_context = found_metadata.user_context or {}
+
+    # Reask user questions if requested
+    if overwrite_context:
+        console.print("\n[bold]Reasking analysis configuration[/bold]")
+        console.print("Update preferences for this analysis.\n")
+
+        user_context = _gather_user_context()
+
+        # Update metadata with new context
+        found_metadata.user_context = user_context
+        kb_manager.save_metadata(found_id, found_metadata)
+        logger.info(f"Updated user context: {user_context}")
+        console.print("[green]✓ User context updated[/green]")
+
+        # Reset coordinator_plan and output_generation stages to regenerate with new context
+        from ggdes.kb import StageStatus
+
+        stages_to_reset = []
+        coordinator_stage = found_metadata.get_stage(kb_manager.STAGE_COORDINATOR_PLAN)
+        if coordinator_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
+            coordinator_stage.status = StageStatus.PENDING
+            coordinator_stage.output_path = None
+            stages_to_reset.append(kb_manager.STAGE_COORDINATOR_PLAN)
+
+        output_stage = found_metadata.get_stage(kb_manager.STAGE_OUTPUT_GENERATION)
+        if output_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
+            output_stage.status = StageStatus.PENDING
+            output_stage.output_path = None
+            stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
+
+        if stages_to_reset:
+            kb_manager.save_metadata(found_id, found_metadata)
+            logger.info(f"Reset stages for new context: {', '.join(stages_to_reset)}")
+            console.print(
+                f"[yellow]Reset {len(stages_to_reset)} stage(s) for new context:[/yellow] {', '.join(stages_to_reset)}"
+            )
+        console.print()
+
+    # If no context exists, gather it now
+    if not user_context:
+        console.print("\n[bold]Analysis Configuration[/bold]")
+        console.print("No user context found. Please configure the analysis.\n")
+
+        user_context = _gather_user_context()
+        found_metadata.user_context = user_context
+        kb_manager.save_metadata(found_id, found_metadata)
+        logger.info(f"User context saved: {user_context}")
+
+    console.print(f"[dim]Target formats: {', '.join(target_formats)}[/dim]")
+    console.print(f"[dim]User context: {bool(user_context)}[/dim]\n")
+
     # Run pipeline
     from ggdes.pipeline import AnalysisPipeline
 
@@ -495,6 +690,7 @@ def resume(
             # Run specific stage
             logger.info(f"Running specific stage: {stage}")
             console.print(f"[bold]Running stage:[/bold] {stage}")
+            console.print(f"[dim]Target formats: {', '.join(target_formats)}[/dim]")
             success = pipeline.run_stage(stage)
         else:
             # Run all pending stages
@@ -506,6 +702,7 @@ def resume(
             logger.info(f"Running all pending stages: {pending}")
             console.print(f"[bold]Resuming analysis:[/bold] {found_id}")
             console.print(f"[dim]Pending stages: {', '.join(pending)}[/dim]")
+            console.print(f"[dim]Target formats: {', '.join(target_formats)}[/dim]")
             success = pipeline.run_all_pending()
 
         if success:
@@ -718,6 +915,159 @@ def tui() -> None:
     from ggdes.tui import run_tui
 
     run_tui()
+
+
+@app.command()
+def debug(
+    analysis: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="Analysis ID or name (optional - will show selector if not provided)"
+        ),
+    ] = None,
+) -> None:
+    """Launch the debug TUI to browse agent conversations and outputs."""
+    from textual.app import App, ComposeResult
+    from textual.widgets import Header, Footer
+    from textual.containers import Container
+
+    from ggdes.tui.debug_view import DebugView
+    from ggdes.config import load_config
+    from ggdes.kb import KnowledgeBaseManager
+
+    class DebugTUI(App):
+        """Standalone debug TUI application."""
+
+        CSS = """
+        Screen {
+            align: center middle;
+        }
+
+        #debug-view {
+            height: 1fr;
+            width: 100%;
+        }
+
+        .debug-view-container {
+            height: 100%;
+            width: 100%;
+        }
+
+        .analysis-selector-container {
+            height: auto;
+            max-height: 8;
+            padding: 1;
+            border: solid $primary-darken-2;
+        }
+
+        AnalysisSelector {
+            height: auto;
+        }
+
+        .analysis-selector-header {
+            height: auto;
+        }
+
+
+
+        .debug-tabs {
+            height: 1fr;
+        }
+        
+        .browser-container {
+            height: 100%;
+        }
+        
+        .agent-list-panel {
+            width: 25%;
+            border: solid $primary-darken-2;
+            padding: 1;
+        }
+        
+        .message-list-panel {
+            width: 35%;
+            border: solid $primary-darken-2;
+            padding: 1;
+        }
+        
+        .message-detail-panel {
+            width: 40%;
+            border: solid $primary-darken-2;
+            padding: 1;
+        }
+        
+        .file-tree-panel {
+            width: 30%;
+            border: solid $primary-darken-2;
+            padding: 1;
+        }
+        
+        .content-viewer-panel {
+            width: 70%;
+            border: solid $primary-darken-2;
+            padding: 1;
+        }
+        
+        #message-detail {
+            height: 1fr;
+        }
+        
+        #content-viewer {
+            height: 1fr;
+        }
+        
+        #file-tree {
+            height: 1fr;
+        }
+        
+        #agent-list {
+            height: 1fr;
+        }
+        
+        #message-list {
+            height: 1fr;
+        }
+        """
+
+        def __init__(self, analysis_id: Optional[str] = None, **kwargs):
+            super().__init__(**kwargs)
+            self.analysis_id = analysis_id
+
+        def compose(self) -> ComposeResult:
+            yield Header(show_clock=True)
+            yield DebugView(id="debug-view")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            """Set initial analysis if provided."""
+            if self.analysis_id:
+                debug_view = self.query_one("#debug-view", DebugView)
+                # Set the analysis selector's value
+                selector = debug_view.query_one("#analysis-selector")
+                select_widget = selector.query_one("#analysis-select", Select)
+                if select_widget:
+                    select_widget.value = self.analysis_id
+
+    # If analysis provided, try to find it
+    if analysis:
+        config, _ = load_config()
+        kb_manager = KnowledgeBaseManager(config)
+
+        found_id = None
+        for aid, metadata in kb_manager.list_analyses():
+            if aid == analysis or metadata.name == analysis:
+                found_id = aid
+                break
+
+        if not found_id:
+            console.print(f"[red]Analysis not found:[/red] {analysis}")
+            raise typer.Exit(1)
+
+        analysis = found_id
+
+    # Run the debug TUI
+    app = DebugTUI(analysis_id=analysis)
+    app.run()
 
 
 def main() -> None:
