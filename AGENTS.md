@@ -435,3 +435,164 @@ Each output format skill includes medium-specific guidelines:
 ## Current Status
 
 Output agents implemented with skill-based architecture. Agents load skill documentation at initialization and use the documented patterns for document generation. Diagram generation module integrated with all output formats.
+
+## New Features
+
+### 1. Semantic Diff Analysis
+
+GGDes now includes a semantic diff module that analyzes code changes beyond simple text diffs:
+
+**Change Types Detected:**
+- API changes (added, removed, modified, deprecated)
+- Behavior changes (logic, algorithms, control flow)
+- Refactoring (extraction, inlining, renaming)
+- Documentation changes
+- Error handling improvements
+- Performance optimizations
+
+**Usage:**
+```bash
+# Enable semantic diff (default)
+ggdes analyze --feature X --commits "HEAD~5..HEAD"
+
+# Disable for faster analysis
+ggdes analyze --feature X --commits "HEAD~5..HEAD" --no-semantic-diff
+```
+
+**When Disabled:**
+- Base AST parsing stage is skipped
+- Semantic diff stage is skipped
+- Only HEAD AST parsing runs
+- Analysis completes faster with less detail
+
+### 2. Analysis Comparison
+
+Compare two analyses side-by-side to understand differences:
+
+```bash
+# Compare two analyses
+ggdes compare analysis1 analysis2
+
+# Export comparison to JSON
+ggdes compare analysis1 analysis2 --output comparison.json
+```
+
+**Comparison includes:**
+- Commit range differences
+- File change metrics
+- Technical facts (added/removed/modified)
+- Breaking changes
+- Semantic analysis differences (when available)
+- Similarity score (0-100%)
+
+### 3. Web Interface
+
+Access GGDes through a modern web UI:
+
+```bash
+# Start web server
+ggdes web
+
+# Custom host/port
+ggdes web --host 0.0.0.0 --port 8080
+
+# Development mode with auto-reload
+ggdes web --reload
+```
+
+**Features:**
+- Real-time updates via WebSocket
+- View all analyses with progress bars
+- Resume analyses with one click
+- Download generated documents
+- Preview and cleanup old worktrees
+- System statistics dashboard
+
+**Dependencies:** Install web extras: `uv pip install -e ".[web]"`
+
+### 4. TUI Improvements
+
+The terminal UI now has full functionality:
+
+- **Resume Analysis:** Click "Resume" button or press Enter on analysis
+- **Delete Analysis:** Confirmation dialog with worktree cleanup
+- **New Analysis:** Create analyses directly from TUI with commit selection
+- **Git Log Integration:** Select commits visually before creating analysis
+
+### 5. Worktree Retention Cleanup
+
+Automatic cleanup of old worktrees to save disk space:
+
+```bash
+# Preview what would be cleaned up
+ggdes status  # Shows worktree ages
+
+# Via web UI: Preview Cleanup button
+```
+
+**Configuration:**
+- `worktree_retention_days` in config (default: 7 days)
+- Accessible through `WorktreeManager.cleanup_old_worktrees()`
+
+### 6. Import/Export/Archive
+
+Manage analysis lifecycle:
+
+```bash
+# Export analysis to JSON or ZIP
+ggdes export analysis-id output.zip --include-diagrams
+
+# Archive old analyses
+ggdes archive analysis-id --keep-days 30
+
+# All data preserved for future reference
+```
+
+### 7. Doctor Command
+
+System health checks and automatic fixes:
+
+```bash
+# Check system health
+ggdes doctor
+
+# Auto-fix issues
+ggdes doctor --fix
+```
+
+**Checks:**
+- Repository configuration
+- LLM provider connectivity
+- PlantUML availability
+- Knowledge base integrity
+
+## Architecture Overview
+
+### Pipeline Stages
+
+1. **worktree_setup** - Create base and head worktrees
+2. **git_analysis** - Analyze git commits and changes
+3. **ast_parsing_base** - Parse base commit AST (skipped if no semantic diff)
+4. **ast_parsing_head** - Parse head commit AST
+5. **semantic_diff** - Analyze semantic changes (optional)
+6. **technical_author** - Synthesize technical facts
+7. **coordinator_plan** - Create document plans
+8. **output_generation** - Generate documents in all formats
+
+### Data Flow
+
+```
+Git Commits → Git Analysis → AST Parsing → Semantic Diff →
+Technical Facts → Document Plans → Output Generation
+                ↓
+            Comparison → Web UI / TUI / CLI
+```
+
+### Output Formats
+
+- **Markdown** - Source format with embedded diagrams
+- **DOCX** - Word documents (requires Node.js + docx or pandoc)
+- **PDF** - Portable documents (uses reportlab)
+- **PPTX** - PowerPoint presentations (requires Node.js + pptxgenjs)
+
+All formats support diagram integration and follow medium-specific best practices.
