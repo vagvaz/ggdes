@@ -28,6 +28,7 @@ class Coordinator:
         repo_path: Path,
         config,
         analysis_id: str,
+        user_context: Optional[dict] = None,
     ):
         """Initialize coordinator.
 
@@ -35,10 +36,12 @@ class Coordinator:
             repo_path: Path to git repository
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading/writing to KB
+            user_context: Optional user-provided context from CLI questionnaire
         """
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
+        self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
         self.conversation: Optional[ConversationContext] = None
 
@@ -46,11 +49,48 @@ class Coordinator:
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
         """Initialize conversation context."""
+        # Build system prompt with user context guidance
+        system_prompt = get_prompt("coordinator", "system")
+
+        # Add user context guidance if provided
+        user_guidance = self._build_user_context_guidance()
+        if user_guidance:
+            system_prompt += (
+                f"\n\n=== USER CONTEXT ===\n{user_guidance}\n=== END USER CONTEXT ==="
+            )
+
         self.conversation = ConversationContext(
-            system_prompt=get_prompt("coordinator", "system"),
+            system_prompt=system_prompt,
             storage_policy=storage_policy,
             max_tokens=50000,
         )
+
+    def _build_user_context_guidance(self) -> str:
+        """Build guidance text from user context."""
+        guidance_parts = []
+
+        if "focus_areas" in self.user_context:
+            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
+
+        if "audience" in self.user_context:
+            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
+
+        if "purpose" in self.user_context:
+            purposes = self.user_context["purpose"]
+            if isinstance(purposes, list):
+                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
+            else:
+                guidance_parts.append(f"Document Purpose: {purposes}")
+
+        if "detail_level" in self.user_context:
+            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
+
+        if "additional_context" in self.user_context:
+            guidance_parts.append(
+                f"Additional Context: {self.user_context['additional_context']}"
+            )
+
+        return "\n".join(guidance_parts) if guidance_parts else ""
 
     def _load_facts(self) -> list[TechnicalFact]:
         """Load technical facts from KB."""
@@ -97,9 +137,10 @@ class Coordinator:
         # Categorize facts for planning
         facts_by_category = self._categorize_facts(facts)
 
-        # Get user context if interactive
-        user_context = {}
-        if interactive:
+        # Get user context - use pre-populated context from CLI if available
+        user_context = dict(self.user_context)  # Copy to avoid modifying original
+        if interactive and not user_context:
+            # Only ask questions if no context was provided from CLI
             user_context = await self._gather_user_input(facts_by_category)
 
         # Create plans for each format
@@ -135,32 +176,43 @@ class Coordinator:
 
     async def _gather_user_input(self, facts_by_category: dict) -> dict:
         """Interactive mode: ask user for context and preferences."""
-        context = {}
+        # Use pre-populated context from CLI as defaults
+        context = dict(self.user_context)
 
         console.print("\n[bold cyan]Document Planning Questions[/bold cyan]")
         console.print("Help me create the best documentation for your changes.\n")
 
-        # Target audience
+        # Target audience (use CLI value as default if available)
+        default_audience = context.get("audience", "developers")
         context["audience"] = Prompt.ask(
             "Who is the target audience?",
-            choices=["developers", "architects", "stakeholders", "all"],
-            default="developers",
+            choices=["business", "technical_managers", "developers", "all"],
+            default=default_audience,
         )
 
-        # Focus areas
+        # Focus areas (use CLI value as default if available)
         available_categories = list(facts_by_category.keys())
         if len(available_categories) > 1:
+            default_focus = context.get("focus_areas", "all")
             focus = Prompt.ask(
                 "Which aspects should the documentation focus on?",
-                default="all",
+                default=default_focus,
             )
             context["focus"] = focus
 
-        # Detail level
+        # Detail level (use CLI value as default if available)
+        default_detail = context.get("detail_level", "medium")
+        # Map CLI values to coordinator choices if needed
+        detail_map = {
+            "quick_summary": "low",
+            "medium": "medium",
+            "comprehensive": "high",
+        }
+        mapped_detail = detail_map.get(default_detail, default_detail)
         context["detail_level"] = Prompt.ask(
             "What level of detail?",
             choices=["high", "medium", "low"],
-            default="medium",
+            default=mapped_detail,
         )
 
         # Diagrams
@@ -168,22 +220,31 @@ class Coordinator:
             "Include architecture diagrams?", default=True
         )
 
-        # Special sections
-        if "api" in facts_by_category:
+        # Special sections - use CLI purpose to guide defaults
+        purposes = context.get("purpose", [])
+        if isinstance(purposes, str):
+            purposes = [purposes]
+
+        if "api" in facts_by_category or "api_reference" in purposes:
             context["include_api_reference"] = Confirm.ask(
-                "Include API reference section?", default=True
+                "Include API reference section?",
+                default="api_reference" in purposes,
             )
 
-        if "behavior" in facts_by_category:
+        if "behavior" in facts_by_category or "migration_guide" in purposes:
             context["include_migration_guide"] = Confirm.ask(
                 "Include migration guide for breaking changes?",
-                default=len(facts_by_category.get("behavior", [])) > 0,
+                default=(
+                    len(facts_by_category.get("behavior", [])) > 0
+                    or "migration_guide" in purposes
+                ),
             )
 
-        # Additional context
+        # Additional context (use CLI value as default if available)
+        default_additional = context.get("additional_context", "")
         additional = Prompt.ask(
             "Any additional context or specific aspects to cover? (optional)",
-            default="",
+            default=default_additional,
         )
         if additional:
             context["additional_context"] = additional
@@ -245,6 +306,7 @@ class Coordinator:
             audience=user_context.get("audience", "developers"),
             sections=sections,
             diagrams=diagrams,
+            user_context=user_context,
         )
 
         console.print(
@@ -281,8 +343,18 @@ User Requirements:
 - Include Diagrams: {user_context.get("include_diagrams", True)}
 """
 
-        if "focus" in user_context:
-            prompt += f"- Focus Areas: {user_context['focus']}\n"
+        # Handle focus from CLI (focus_areas) or coordinator (focus)
+        focus_value = user_context.get("focus", user_context.get("focus_areas", ""))
+        if focus_value:
+            prompt += f"- Focus Areas: {focus_value}\n"
+
+        # Handle purpose from CLI
+        purposes = user_context.get("purpose", [])
+        if purposes:
+            if isinstance(purposes, list):
+                prompt += f"- Document Purpose: {', '.join(purposes)}\n"
+            else:
+                prompt += f"- Document Purpose: {purposes}\n"
 
         if user_context.get("additional_context"):
             prompt += f"\nAdditional Context: {user_context['additional_context']}\n"

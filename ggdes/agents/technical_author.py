@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from rich.console import Console
+
 from ggdes.llm import LLMFactory, ConversationContext, estimate_tokens
 from ggdes.llm.conversation import estimate_tokens
 from ggdes.prompts import get_prompt
@@ -13,6 +15,9 @@ from ggdes.schemas import (
     StoragePolicy,
     TechnicalFact,
 )
+from ggdes.agents.skill_utils import load_skill
+
+console = Console()
 
 
 class TechnicalAuthor:
@@ -23,6 +28,8 @@ class TechnicalAuthor:
         repo_path: Path,
         config,
         analysis_id: str,
+        user_context: Optional[dict] = None,
+        language_expert_skill: Optional[str] = None,
     ):
         """Initialize technical author.
 
@@ -30,23 +37,105 @@ class TechnicalAuthor:
             repo_path: Path to git repository
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading/writing to KB
+            user_context: Optional user-provided context (focus areas, audience, purpose)
+            language_expert_skill: Optional name of language expert skill to load (e.g., 'python-expert', 'cpp-expert')
         """
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
+        self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
         self.conversation: Optional[ConversationContext] = None
         self.chunk_size_tokens = 30000  # Process AST data in chunks if needed
+        self._coauthor_skill: Optional[str] = None
+        self._language_expert_skill: Optional[str] = None
+
+        # Load skills with graceful fallback
+        self._load_skills(language_expert_skill)
+
+    def _load_skills(self, language_expert_skill: Optional[str] = None) -> None:
+        """Load coauthor and optional language expert skills."""
+        # Load coauthor skill for writing/documentation expertise (now called doc-coauthoring)
+        try:
+            self._coauthor_skill = load_skill("doc-coauthoring", self.repo_path)
+            if self._coauthor_skill:
+                console.print(
+                    f"  [dim]Loaded doc-coauthoring skill for enhanced documentation synthesis[/dim]"
+                )
+        except Exception:
+            console.print(
+                f"  [dim]Doc-coauthoring skill not available, continuing with default synthesis[/dim]"
+            )
+
+        # Load language expert skill if specified
+        if language_expert_skill:
+            try:
+                self._language_expert_skill = load_skill(
+                    language_expert_skill, self.repo_path
+                )
+                if self._language_expert_skill:
+                    console.print(
+                        f"  [dim]Loaded {language_expert_skill} skill for enhanced code analysis[/dim]"
+                    )
+            except Exception:
+                console.print(
+                    f"  [dim]Language expert skill '{language_expert_skill}' not available, continuing without it[/dim]"
+                )
 
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
         """Initialize conversation context."""
+        # Build system prompt with loaded skills
+        system_prompt = get_prompt("technical_author", "system")
+
+        # Add coauthor skill content if available
+        if self._coauthor_skill:
+            system_prompt += f"\n\n=== DOCUMENTATION EXPERTISE ===\n{self._coauthor_skill}\n=== END EXPERTISE ==="
+
+        # Add language expert skill content if available
+        if self._language_expert_skill:
+            system_prompt += f"\n\n=== LANGUAGE EXPERTISE ===\n{self._language_expert_skill}\n=== END EXPERTISE ==="
+
+        # Add user context guidance if provided
+        user_guidance = self._build_user_context_guidance()
+        if user_guidance:
+            system_prompt += (
+                f"\n\n=== USER FOCUS ===\n{user_guidance}\n=== END FOCUS ==="
+            )
+
         self.conversation = ConversationContext(
-            system_prompt=get_prompt("technical_author", "system"),
+            system_prompt=system_prompt,
             storage_policy=storage_policy,
             max_tokens=50000,
         )
+
+    def _build_user_context_guidance(self) -> str:
+        """Build guidance text from user context."""
+        guidance_parts = []
+
+        if "focus_areas" in self.user_context:
+            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
+
+        if "audience" in self.user_context:
+            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
+
+        if "purpose" in self.user_context:
+            purposes = self.user_context["purpose"]
+            if isinstance(purposes, list):
+                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
+            else:
+                guidance_parts.append(f"Document Purpose: {purposes}")
+
+        if "detail_level" in self.user_context:
+            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
+
+        if "additional_context" in self.user_context:
+            guidance_parts.append(
+                f"Additional Context: {self.user_context['additional_context']}"
+            )
+
+        return "\n".join(guidance_parts) if guidance_parts else ""
 
     def _load_git_analysis(self) -> Optional[ChangeSummary]:
         """Load git analysis results from KB."""

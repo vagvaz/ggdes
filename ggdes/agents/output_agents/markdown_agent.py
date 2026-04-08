@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
+from ggdes.agents.output_agents.base import OutputAgent
 from ggdes.llm import LLMFactory, ConversationContext
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -14,7 +15,7 @@ from ggdes.schemas import (
 )
 
 
-class MarkdownAgent:
+class MarkdownAgent(OutputAgent):
     """Generate markdown documentation from document plan."""
 
     def __init__(
@@ -30,21 +31,63 @@ class MarkdownAgent:
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading from KB
         """
-        self.repo_path = repo_path
-        self.config = config
-        self.analysis_id = analysis_id
+        super().__init__(repo_path, config, analysis_id)
         self.llm = LLMFactory.from_config(config)
         self.conversation: Optional[ConversationContext] = None
+        self.format_name = "markdown"
+
+        # Load user context from plan
+        self._load_user_context()
 
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
         """Initialize conversation context."""
+        # Build system prompt with user context if available
+        system_prompt = get_prompt("output", "markdown_system")
+
+        if self.user_context:
+            user_guidance = self._build_user_context_guidance()
+            if user_guidance:
+                system_prompt += (
+                    f"\n\n=== USER CONTEXT ===\n{user_guidance}\n=== END CONTEXT ==="
+                )
+
         self.conversation = ConversationContext(
-            system_prompt=get_prompt("output", "markdown_system"),
+            system_prompt=system_prompt,
             storage_policy=storage_policy,
             max_tokens=50000,
         )
+
+    def _build_user_context_guidance(self) -> str:
+        """Build guidance text from user context."""
+        if not self.user_context:
+            return ""
+
+        guidance_parts = []
+
+        if "audience" in self.user_context:
+            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
+
+        if "purpose" in self.user_context:
+            purposes = self.user_context["purpose"]
+            if isinstance(purposes, list):
+                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
+            else:
+                guidance_parts.append(f"Document Purpose: {purposes}")
+
+        if "detail_level" in self.user_context:
+            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
+
+        if "focus_areas" in self.user_context:
+            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
+
+        if "additional_context" in self.user_context:
+            guidance_parts.append(
+                f"Additional Context: {self.user_context['additional_context']}"
+            )
+
+        return "\n".join(guidance_parts)
 
     def _load_facts(self, fact_ids: list[str]) -> list[TechnicalFact]:
         """Load specific technical facts from KB."""

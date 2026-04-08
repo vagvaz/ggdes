@@ -11,6 +11,11 @@ from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
 from ggdes.schemas import ChangeSummary, StoragePolicy
+from ggdes.agents.skill_utils import (
+    load_skill,
+    detect_primary_language,
+    get_expert_skill_for_language,
+)
 
 console = Console()
 
@@ -18,31 +23,101 @@ console = Console()
 class GitAnalyzer:
     """Analyze git changes with multi-turn conversation and chunking."""
 
-    def __init__(self, repo_path: Path, config, analysis_id: Optional[str] = None):
+    def __init__(
+        self,
+        repo_path: Path,
+        config,
+        analysis_id: Optional[str] = None,
+        user_context: Optional[dict] = None,
+    ):
         """Initialize git analyzer.
 
         Args:
             repo_path: Path to git repository
             config: GGDesConfig instance
             analysis_id: Analysis ID for saving conversations
+            user_context: Optional user-provided context (focus areas, audience, etc.)
         """
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
+        self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
         self.conversation: Optional[ConversationContext] = None
         self.chunk_token_threshold = 25000  # Chunk diffs larger than this
         self.max_diff_tokens = 50000  # Absolute max before chunking
+        self._language_expert_skill: Optional[str] = None
+
+        # Detect language and load expert skill (with graceful fallback)
+        self._load_language_expert_skill()
+
+    def _load_language_expert_skill(self) -> None:
+        """Detect repository language and load expert skill."""
+        try:
+            language = detect_primary_language(self.repo_path)
+            if language:
+                skill_name = get_expert_skill_for_language(language)
+                if skill_name:
+                    self._language_expert_skill = load_skill(skill_name, self.repo_path)
+                    if self._language_expert_skill:
+                        console.print(
+                            f"  [dim]Loaded {skill_name} skill for enhanced analysis[/dim]"
+                        )
+        except Exception:
+            console.print(
+                f"  [dim]Language expert skill not available, continuing with default analysis[/dim]"
+            )
 
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
         """Initialize conversation context."""
+        # Build system prompt with optional expert skill
+        system_prompt = get_prompt("git_analyzer", "system")
+
+        # Add language expert skill content if available
+        if self._language_expert_skill:
+            system_prompt += f"\n\n=== LANGUAGE EXPERTISE ===\n{self._language_expert_skill}\n=== END EXPERTISE ==="
+
+        # Add user context guidance if provided
+        user_guidance = self._build_user_context_guidance()
+        if user_guidance:
+            system_prompt += (
+                f"\n\n=== USER FOCUS ===\n{user_guidance}\n=== END FOCUS ==="
+            )
+
         self.conversation = ConversationContext(
-            system_prompt=get_prompt("git_analyzer", "system"),
+            system_prompt=system_prompt,
             storage_policy=storage_policy,
             max_tokens=self.max_diff_tokens,
         )
+
+    def _build_user_context_guidance(self) -> str:
+        """Build guidance text from user context."""
+        guidance_parts = []
+
+        if "focus_areas" in self.user_context:
+            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
+
+        if "audience" in self.user_context:
+            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
+
+        if "purpose" in self.user_context:
+            purposes = self.user_context["purpose"]
+            if isinstance(purposes, list):
+                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
+            else:
+                guidance_parts.append(f"Document Purpose: {purposes}")
+
+        if "detail_level" in self.user_context:
+            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
+
+        if "additional_context" in self.user_context:
+            guidance_parts.append(
+                f"Additional Context: {self.user_context['additional_context']}"
+            )
+
+        return "\n".join(guidance_parts) if guidance_parts else ""
 
     def get_diff(
         self, commit_range: str, focus_commits: Optional[list[str]] = None

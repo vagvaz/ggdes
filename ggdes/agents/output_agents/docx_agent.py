@@ -18,7 +18,11 @@ class DocxAgent(OutputAgent):
     def __init__(self, repo_path: Path, config, analysis_id: str):
         """Initialize docx agent."""
         super().__init__(repo_path, config, analysis_id)
+        self.format_name = "docx"
         self.skill_content = self._load_skill("docx")
+
+        # Load user context from document plan
+        self._load_user_context()
 
     def _load_plan(self) -> Optional[dict]:
         """Load document plan from KB."""
