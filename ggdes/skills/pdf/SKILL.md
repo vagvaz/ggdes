@@ -6,6 +6,76 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # PDF Processing Guide
 
+## Content Guidelines for PDF Documents
+
+When creating PDF documents for technical documentation:
+
+### Document Structure
+- **Title page**: Include document title, version, date, and author
+- **Executive summary**: First page after title (1-2 paragraphs)
+- **Table of contents**: Auto-generated from headings for documents > 8 pages
+- **Consistent layout**: Same margins, fonts, and spacing throughout
+
+### PDF-Specific Considerations
+- **Page-oriented content**: Remember PDF is paginated - avoid references like "above/below"
+- **Use page numbers**: For all cross-references ("see page 12")
+- **Bookmarks**: Add for major sections to enable navigation in PDF readers
+- **Links**: Ensure hyperlinks are clickable in the final PDF
+
+### Content Density Rules
+- **Font size**: Minimum 10pt, recommended 11pt for body text
+- **Line spacing**: 1.2 for readability in print
+- **Paragraph length**: 4-6 sentences maximum
+- **Code blocks**: Syntax highlighting if possible, monospace font
+
+### Visual Elements
+PDFs should include high-quality diagrams:
+
+**Required diagrams for technical documentation:**
+- Architecture diagrams showing system components
+- Flow diagrams for process changes
+- Class diagrams for object-oriented code
+- Sequence diagrams for interaction flows
+- Entity-relationship diagrams for data changes
+
+### Diagram Generation
+Generate and embed diagrams at high resolution:
+
+```python
+from ggdes.diagrams import PlantUMLGenerator, generate_flow_diagram
+
+# Generate process flow diagram
+plantuml_code = generate_flow_diagram(
+    steps=[
+        {"id": "start", "label": "User Request", "type": "start"},
+        {"id": "auth", "label": "Authenticate", "type": "process", "next": ["validate"]},
+        {"id": "validate", "label": "Valid?", "type": "decision", "next": ["process", "error"]},
+        {"id": "process", "label": "Process", "type": "process", "next": ["end"]},
+        {"id": "error", "label": "Error", "type": "process", "next": ["end"]},
+        {"id": "end", "label": "Response", "type": "end"},
+    ],
+    title="API Request Flow",
+)
+
+# Generate SVG for vector quality in PDF
+generator = PlantUMLGenerator()
+diagram_path = generator.generate(plantuml_code, Path("diagrams/flow.svg"), "svg")
+```
+
+### Print-Friendly Guidelines
+- **Color palette**: Ensure contrast works in grayscale printing
+- **Margins**: Minimum 0.75 inches, 1 inch recommended
+- **Page breaks**: Avoid breaking tables or code blocks across pages
+- **Image resolution**: 300 DPI minimum for embedded diagrams
+
+### Professional Standards
+- **Headers/Footers**: Document title in header, page numbers in footer
+- **Consistency**: Same heading styles throughout
+- **Accessibility**: Add alt text for all diagrams
+- **Metadata**: Include title, author, and keywords in PDF properties
+
+---
+
 ## Overview
 
 This guide covers essential PDF processing operations using Python libraries and command-line tools. For advanced features, JavaScript libraries, and detailed examples, see REFERENCE.md. If you need to fill out a PDF form, read FORMS.md and follow its instructions.

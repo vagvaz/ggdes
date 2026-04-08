@@ -1,10 +1,70 @@
 ---
 name: pptx
-description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
+description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions "deck," "slides," "presentation," or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
 # PPTX Skill
+
+## Content Guidelines for Presentations
+
+When creating presentations for technical documentation:
+
+### Slide Content Rules
+- **Keep text minimal**: Maximum 6 bullet points per slide, 6 words per bullet
+- **Focus on key takeaways**: Each slide should convey ONE main idea
+- **Use the title effectively**: The slide title should summarize the point
+- **Avoid walls of text**: If you have more than 3 sentences, use a diagram instead
+
+### Visual Engagement (Required)
+- **Every slide needs a visual element**: Diagram, chart, icon, or image
+- **Include architecture diagrams** for system changes
+- **Use flow diagrams** for process changes
+- **Show code structure** with class/sequence diagrams
+- **Visual representations beat text**: Transform text descriptions into visual diagrams
+
+### Diagram Generation
+Use PlantUML for creating diagrams:
+
+```python
+from ggdes.diagrams import PlantUMLGenerator, generate_architecture_diagram
+
+# Generate architecture diagram
+plantuml_code = generate_architecture_diagram(
+    components=[
+        {"name": "API", "type": "service", "label": "REST API"},
+        {"name": "Database", "type": "database"},
+    ],
+    relationships=[
+        ("Client", "API", "HTTP requests"),
+        ("API", "Database", "queries"),
+    ],
+    title="System Architecture",
+)
+
+# Generate diagram
+generator = PlantUMLGenerator()
+diagram_path = generator.generate(
+    plantuml_code,
+    output_path=Path("output/diagram.png"),
+    format="png",
+)
+```
+
+### Text Density Guidelines
+- **Title slides**: 3-5 words maximum
+- **Content slides**: 15-20 words maximum
+- **Summary slides**: 3 key points maximum
+- **Detail slides**: Use diagrams with callouts instead of paragraphs
+
+### Engagement Principles
+- **Start with impact**: What's the one thing the audience should remember?
+- **Use progressive disclosure**: Build complex ideas across multiple slides
+- **Contrast is key**: Dark backgrounds for titles, light for content
+- **Visual hierarchy**: Most important element should be largest
+- **Animate strategically**: Only use animations to reveal information progressively
+
+---
 
 ## Quick Reference
 

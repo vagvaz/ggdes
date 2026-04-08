@@ -1,10 +1,80 @@
 ---
 name: docx
-description: "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
+description: "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
 # DOCX creation, editing, and analysis
+
+## Content Guidelines for Word Documents
+
+When creating Word documents for technical documentation:
+
+### Document Structure
+- **Start with executive summary**: 1-2 paragraphs of key findings
+- **Use descriptive headings**: H1 for sections, H2 for subsections, H3 for details
+- **Include table of contents** for documents > 5 pages
+- **Maintain consistent formatting**: Same font family throughout (Arial recommended)
+
+### Content Density Rules
+- **Paragraph length**: 3-5 sentences maximum per paragraph
+- **Section breaks**: New page for major sections using `pageBreakBefore`
+- **Code blocks**: Use monospace font (Consolas) with subtle background shading
+- **Lists**: Prefer numbered lists for sequences, bullets for related items
+
+### Visual Elements
+- **Include diagrams** for:
+  - System architecture changes
+  - Data flow modifications
+  - Class hierarchies or relationships
+  - Sequence of operations
+- **Use tables** for:
+  - Comparing before/after states
+  - Listing API endpoints with descriptions
+  - Configuration parameters
+- **Add screenshots** for UI changes
+
+### Diagram Generation
+Embed diagrams using the PlantUML generator:
+
+```python
+from ggdes.diagrams import PlantUMLGenerator, generate_class_diagram
+
+# Generate class diagram
+plantuml_code = generate_class_diagram(
+    classes=[
+        {
+            "name": "UserService",
+            "attributes": [
+                {"name": "users", "type": "List<User>", "visibility": "private"}
+            ],
+            "methods": [
+                {"signature": "getUser(id: int): User", "visibility": "public"}
+            ],
+        },
+    ],
+    relationships=[("UserService", "User", "extends")],
+    title="Updated Class Structure",
+)
+
+# Generate and embed
+generator = PlantUMLGenerator()
+diagram_path = generator.generate(plantuml_code, Path("diagrams/class.png"), "png")
+```
+
+### Typography Standards
+- **Default font**: Arial 12pt for body text
+- **Line spacing**: 1.15 for body, single for code
+- **Margins**: 1 inch on all sides (1440 DXA)
+- **Page size**: US Letter (12240 x 15840 DXA) unless specified otherwise
+
+### Professional Formatting
+- **Page numbers**: Bottom center of each page
+- **Headers**: Document title on left, chapter on right
+- **Footnotes**: Use for citations and external references
+- **Hyperlinks**: Use for internal navigation and external URLs
+
+---
 
 ## Overview
 
