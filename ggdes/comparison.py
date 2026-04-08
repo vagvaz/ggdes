@@ -41,6 +41,7 @@ class ComparisonResult:
     file_changes_diff: list[AnalysisDiff]
     facts_diff: list[AnalysisDiff]
     breaking_changes_diff: list[AnalysisDiff]
+    semantic_changes_diff: list[AnalysisDiff]  # NEW: Semantic diff comparison
     similarity_score: float  # 0-1 score of how similar the analyses are
 
 
@@ -87,15 +88,26 @@ class AnalysisComparator:
         facts1 = self._load_technical_facts(analysis1_id)
         facts2 = self._load_technical_facts(analysis2_id)
 
+        # Load semantic diff results if available
+        semantic_diff1 = self._load_semantic_diff(analysis1_id)
+        semantic_diff2 = self._load_semantic_diff(analysis2_id)
+
         # Compute differences
         commit_diff = self._compare_commits(metadata1, metadata2)
         file_changes_diff = self._compare_file_changes(summary1, summary2)
         facts_diff = self._compare_facts(facts1, facts2)
         breaking_changes_diff = self._compare_breaking_changes(summary1, summary2)
+        semantic_changes_diff = self._compare_semantic_diff(
+            semantic_diff1, semantic_diff2
+        )
 
         # Compute similarity score
         similarity = self._compute_similarity(
-            commit_diff, file_changes_diff, facts_diff, breaking_changes_diff
+            commit_diff,
+            file_changes_diff,
+            facts_diff,
+            breaking_changes_diff,
+            semantic_changes_diff,
         )
 
         return ComparisonResult(
@@ -107,6 +119,7 @@ class AnalysisComparator:
             file_changes_diff=file_changes_diff,
             facts_diff=facts_diff,
             breaking_changes_diff=breaking_changes_diff,
+            semantic_changes_diff=semantic_changes_diff,
             similarity_score=similarity,
         )
 
@@ -143,6 +156,115 @@ class AnalysisComparator:
                 continue
 
         return facts
+
+    def _load_semantic_diff(self, analysis_id: str) -> Optional[dict]:
+        """Load semantic diff result for an analysis."""
+        semantic_diff_path = (
+            self.kb_manager.get_analysis_path(analysis_id)
+            / "semantic_diff"
+            / "result.json"
+        )
+
+        if not semantic_diff_path.exists():
+            return None
+
+        try:
+            return json.loads(semantic_diff_path.read_text())
+        except Exception:
+            return None
+
+    def _compare_semantic_diff(
+        self,
+        semantic_diff1: Optional[dict],
+        semantic_diff2: Optional[dict],
+    ) -> list[AnalysisDiff]:
+        """Compare semantic diff results.
+
+        This helps identify differences in code understanding between
+        two analyses, especially when analyzing different commits.
+        """
+        diffs = []
+
+        # Handle cases where one or both don't have semantic diff
+        if not semantic_diff1 and not semantic_diff2:
+            return diffs
+
+        if semantic_diff1 and not semantic_diff2:
+            diffs.append(
+                AnalysisDiff(
+                    field="semantic_diff",
+                    analysis1_value=f"Present ({len(semantic_diff1.get('semantic_changes', []))} changes)",
+                    analysis2_value="Not computed",
+                    change_type="removed",
+                )
+            )
+            return diffs
+
+        if not semantic_diff1 and semantic_diff2:
+            diffs.append(
+                AnalysisDiff(
+                    field="semantic_diff",
+                    analysis1_value="Not computed",
+                    analysis2_value=f"Present ({len(semantic_diff2.get('semantic_changes', []))} changes)",
+                    change_type="added",
+                )
+            )
+            return diffs
+
+        # Compare summaries
+        summary1 = semantic_diff1.get("summary", {})
+        summary2 = semantic_diff2.get("summary", {})
+
+        # Compare breaking changes
+        bc1 = summary1.get("breaking_changes", 0)
+        bc2 = summary2.get("breaking_changes", 0)
+        if bc1 != bc2:
+            diffs.append(
+                AnalysisDiff(
+                    field="breaking_changes_count",
+                    analysis1_value=str(bc1),
+                    analysis2_value=str(bc2),
+                    change_type="modified" if bc1 and bc2 else "added",
+                )
+            )
+
+        # Compare impact scores
+        impact1 = summary1.get("total_impact_score", 0)
+        impact2 = summary2.get("total_impact_score", 0)
+        if abs(impact1 - impact2) > 1.0:  # Significant difference
+            diffs.append(
+                AnalysisDiff(
+                    field="total_impact_score",
+                    analysis1_value=f"{impact1:.1f}",
+                    analysis2_value=f"{impact2:.1f}",
+                    change_type="modified",
+                )
+            )
+
+        # Compare specific change types
+        change_types = [
+            "behavioral_changes",
+            "refactoring_changes",
+            "documentation_changes",
+            "test_changes",
+            "performance_changes",
+            "dependency_changes",
+        ]
+
+        for change_type in change_types:
+            count1 = summary1.get(change_type, 0)
+            count2 = summary2.get(change_types, 0)
+            if count1 != count2:
+                diffs.append(
+                    AnalysisDiff(
+                        field=change_type,
+                        analysis1_value=str(count1),
+                        analysis2_value=str(count2),
+                        change_type="modified",
+                    )
+                )
+
+        return diffs
 
     def _compare_commits(self, metadata1, metadata2) -> list[AnalysisDiff]:
         """Compare commit ranges."""
@@ -323,13 +445,14 @@ class AnalysisComparator:
         file_diff: list[AnalysisDiff],
         facts_diff: list[AnalysisDiff],
         bc_diff: list[AnalysisDiff],
+        semantic_diff: list[AnalysisDiff],
     ) -> float:
         """Compute similarity score between analyses.
 
         Returns:
             Similarity score from 0.0 (completely different) to 1.0 (identical)
         """
-        all_diffs = commit_diff + file_diff + facts_diff + bc_diff
+        all_diffs = commit_diff + file_diff + facts_diff + bc_diff + semantic_diff
 
         if not all_diffs:
             return 1.0  # Identical
@@ -444,6 +567,35 @@ def print_comparison(result: ComparisonResult) -> None:
             )
 
         console.print(table)
+        console.print()
+
+    # Semantic diff changes
+    if result.semantic_changes_diff:
+        table = Table(title="Semantic Analysis Differences")
+        table.add_column("Metric", style="cyan")
+        table.add_column(result.analysis1_name[:30], style="green")
+        table.add_column(result.analysis2_name[:30], style="blue")
+        table.add_column("Change", style="yellow")
+
+        for diff in result.semantic_changes_diff:
+            table.add_row(
+                diff.field,
+                diff.analysis1_value[:40] if diff.analysis1_value else "-",
+                diff.analysis2_value[:40] if diff.analysis2_value else "-",
+                diff.change_type,
+            )
+
+        console.print(table)
+        console.print()
+
+    # Show semantic diff availability note
+    if not result.semantic_changes_diff:
+        console.print(
+            "[dim]Note: Semantic diff analysis not available for one or both analyses.[/dim]"
+        )
+        console.print(
+            "[dim]      Run with semantic_diff stage enabled for deeper comparison.[/dim]"
+        )
 
 
 def export_comparison(result: ComparisonResult, output_path: Path) -> None:
@@ -499,6 +651,16 @@ def export_comparison(result: ComparisonResult, output_path: Path) -> None:
             }
             for d in result.breaking_changes_diff
         ],
+        "semantic_analysis_differences": [
+            {
+                "field": d.field,
+                "analysis1": d.analysis1_value,
+                "analysis2": d.analysis2_value,
+                "change_type": d.change_type,
+            }
+            for d in result.semantic_changes_diff
+        ],
+        "semantic_diff_available": len(result.semantic_changes_diff) > 0,
         "exported_at": datetime.now().isoformat(),
     }
 
