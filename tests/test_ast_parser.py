@@ -136,6 +136,101 @@ class TestClass:
         assert result.language == "unknown"
         assert "Unsupported file type" in result.error_message
 
+    def test_parse_files(self, parser, temp_dir):
+        """Test parsing specific list of files."""
+        # Create multiple files
+        file1 = temp_dir / "module1.py"
+        file1.write_text("def func1(): pass")
+        file2 = temp_dir / "module2.py"
+        file2.write_text("def func2(): pass")
+        file3 = temp_dir / "module3.py"
+        file3.write_text("def func3(): pass")
+
+        # Parse only specific files
+        results = parser.parse_files(
+            [file1, file2], relative_to=temp_dir, verbose=False
+        )
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
+
+    def test_parse_incremental_changed_only(self, parser, temp_dir):
+        """Test incremental parsing with only changed files."""
+        # Create files
+        changed_file = temp_dir / "changed_module.py"
+        changed_file.write_text("def changed_func(): pass")
+        unchanged_file = temp_dir / "unchanged_module.py"
+        unchanged_file.write_text("def unchanged_func(): pass")
+
+        # Parse only the changed file
+        results = parser.parse_incremental(
+            directory=temp_dir,
+            changed_files=["changed_module.py"],
+            relative_to=temp_dir,
+            include_referenced=False,
+            max_referenced_depth=0,
+            verbose=False,
+        )
+
+        assert len(results) == 1
+        assert results[0].file_path == "changed_module.py"
+        assert results[0].success is True
+
+    def test_find_referenced_files_python(self, parser, temp_dir):
+        """Test finding files that reference seed files in Python."""
+        # Create seed file
+        seed_file = temp_dir / "seed_module.py"
+        seed_file.write_text("def seed_func(): pass")
+
+        # Create referencing file
+        referencing_file = temp_dir / "referencing_module.py"
+        referencing_file.write_text(
+            "from seed_module import seed_func\n\ndef main():\n    seed_func()"
+        )
+
+        # Create non-referencing file
+        unrelated_file = temp_dir / "unrelated_module.py"
+        unrelated_file.write_text("def unrelated_func(): pass")
+
+        # Find references
+        referenced = parser.find_referenced_files(
+            seed_files=[seed_file],
+            directory=temp_dir,
+            max_depth=1,
+            verbose=False,
+        )
+
+        assert referencing_file in referenced
+        assert unrelated_file not in referenced
+        assert seed_file not in referenced
+
+    def test_parse_incremental_with_references(self, parser, temp_dir):
+        """Test incremental parsing including referenced files."""
+        # Create seed file
+        seed_file = temp_dir / "seed_module.py"
+        seed_file.write_text("def seed_func(): pass")
+
+        # Create referencing file
+        referencing_file = temp_dir / "referencing_module.py"
+        referencing_file.write_text(
+            "from seed_module import seed_func\n\ndef main():\n    seed_func()"
+        )
+
+        # Parse with references
+        results = parser.parse_incremental(
+            directory=temp_dir,
+            changed_files=["seed_module.py"],
+            relative_to=temp_dir,
+            include_referenced=True,
+            max_referenced_depth=1,
+            verbose=False,
+        )
+
+        file_paths = [r.file_path for r in results]
+        assert "seed_module.py" in file_paths
+        assert "referencing_module.py" in file_paths
+        assert len(results) == 2
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -1,6 +1,7 @@
 """AST parsing for code analysis using tree-sitter."""
 
 import hashlib
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -431,6 +432,244 @@ class ASTParser:
                     print(f"  ... and {len(errors) - 10} more errors")
 
         return results
+
+    def parse_files(
+        self,
+        files: list[Path],
+        relative_to: Optional[Path] = None,
+        verbose: bool = False,
+    ) -> list[ParseResult]:
+        """Parse a specific list of files.
+
+        Args:
+            files: List of file paths to parse
+            relative_to: Base path for relative paths in output
+            verbose: Print diagnostic information
+
+        Returns:
+            List of ParseResults
+        """
+        results = []
+        errors = []
+        files_found = 0
+        files_skipped = 0
+
+        for file_path in files:
+            if not file_path.exists():
+                if verbose:
+                    errors.append(f"  {file_path}: File not found")
+                files_skipped += 1
+                continue
+
+            if file_path.suffix.lower() in self.SUPPORTED_LANGUAGES:
+                files_found += 1
+                result = self.parse_file(file_path, relative_to)
+                results.append(result)
+                if verbose and not result.success:
+                    errors.append(f"  {result.file_path}: {result.error_message}")
+            else:
+                files_skipped += 1
+                if verbose:
+                    errors.append(
+                        f"  {file_path}: Unsupported extension {file_path.suffix}"
+                    )
+
+        if verbose:
+            print(f"[AST Parser] Files to parse: {len(files)}")
+            print(f"[AST Parser] Files matching supported extensions: {files_found}")
+            print(f"[AST Parser] Files skipped: {files_skipped}")
+            if errors:
+                print(f"[AST Parser] Parse errors ({len(errors)})://")
+                for error in errors[:10]:
+                    print(error)
+                if len(errors) > 10:
+                    print(f"  ... and {len(errors) - 10} more errors")
+
+        return results
+
+    def find_referenced_files(
+        self,
+        seed_files: list[Path],
+        directory: Path,
+        max_depth: int = 1,
+        verbose: bool = False,
+    ) -> set[Path]:
+        """Find files that reference/import the seed files.
+
+        This performs a simple text-based search for imports/references.
+        For Python: looks for 'from X import' and 'import X' patterns
+        For C++: looks for #include patterns
+
+        Args:
+            seed_files: Starting files to find references to
+            directory: Directory to search for referencing files
+            max_depth: How many levels of references to follow
+            verbose: Print diagnostic information
+
+        Returns:
+            Set of files that reference the seed files
+        """
+        if max_depth <= 0:
+            return set()
+
+        # Normalize seed files to module names
+        seed_modules = set()
+        seed_by_module = {}
+
+        for seed_file in seed_files:
+            if seed_file.suffix == ".py":
+                # Convert path to module name
+                rel_path = seed_file.relative_to(directory)
+                module_parts = list(rel_path.parent.parts) + [rel_path.stem]
+                module_name = ".".join(module_parts)
+                seed_modules.add(module_name)
+                seed_modules.add(rel_path.stem)  # Also add just the filename
+                seed_by_module[module_name] = seed_file
+                seed_by_module[rel_path.stem] = seed_file
+
+        referenced_files = set()
+        current_seeds = set(seed_files)
+
+        for depth in range(max_depth):
+            if verbose:
+                print(f"[AST Parser] Finding references at depth {depth + 1}...")
+
+            new_references = set()
+
+            # Search all supported files for references
+            for file_path in directory.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                if file_path.suffix.lower() not in self.SUPPORTED_LANGUAGES:
+                    continue
+                if file_path in current_seeds:
+                    continue
+                if file_path in referenced_files:
+                    continue
+
+                try:
+                    content = file_path.read_text(errors="ignore")
+                except Exception:
+                    continue
+
+                # Check for references to seed files
+                is_referenced = False
+
+                if file_path.suffix == ".py":
+                    # Python import patterns
+                    for module in seed_modules:
+                        # Match 'from module import' or 'import module'
+                        patterns = [
+                            rf"^from\s+{re.escape(module)}(?:\.[\w]+)*\s+import",
+                            rf"^import\s+{re.escape(module)}(?:\s*,|\s+as|\s*$)",
+                        ]
+                        for pattern in patterns:
+                            if re.search(pattern, content, re.MULTILINE):
+                                is_referenced = True
+                                break
+                        if is_referenced:
+                            break
+
+                elif file_path.suffix in [".cpp", ".cc", ".cxx", ".hpp", ".h"]:
+                    # C++ include patterns
+                    for seed_file in current_seeds:
+                        # Match #include "seed_file.h" or #include <seed_file.h>
+                        include_patterns = [
+                            rf'#include\s*["<]{re.escape(seed_file.name)}[">]',
+                            rf'#include\s*["<]{re.escape(seed_file.stem)}\.(h|hpp)[">]',
+                        ]
+                        for pattern in include_patterns:
+                            if re.search(pattern, content):
+                                is_referenced = True
+                                break
+                        if is_referenced:
+                            break
+
+                if is_referenced:
+                    new_references.add(file_path)
+
+            if not new_references:
+                break
+
+            referenced_files.update(new_references)
+            current_seeds = new_references
+
+            if verbose:
+                print(
+                    f"[AST Parser] Found {len(new_references)} new referenced files at depth {depth + 1}"
+                )
+
+        if verbose:
+            print(f"[AST Parser] Total referenced files found: {len(referenced_files)}")
+
+        return referenced_files
+
+    def parse_incremental(
+        self,
+        directory: Path,
+        changed_files: list[str],
+        relative_to: Optional[Path] = None,
+        include_referenced: bool = True,
+        max_referenced_depth: int = 1,
+        verbose: bool = False,
+    ) -> list[ParseResult]:
+        """Parse only changed files and optionally files that reference them.
+
+        Args:
+            directory: Base directory (worktree)
+            changed_files: List of file paths (relative to directory) that changed
+            relative_to: Base path for relative paths in output
+            include_referenced: Whether to also parse files that import/reference changed files
+            max_referenced_depth: How many levels of references to follow
+            verbose: Print diagnostic information
+
+        Returns:
+            List of ParseResults
+        """
+        if verbose:
+            print(f"[AST Parser] Incremental parsing mode")
+            print(f"[AST Parser] Base directory: {directory}")
+            print(f"[AST Parser] Changed files: {len(changed_files)}")
+
+        # Convert changed file paths to Path objects
+        changed_paths = []
+        for file_path in changed_files:
+            full_path = directory / file_path
+            if full_path.exists():
+                changed_paths.append(full_path)
+            else:
+                if verbose:
+                    print(f"[AST Parser] Warning: Changed file not found: {full_path}")
+
+        if verbose:
+            print(f"[AST Parser] Valid changed files: {len(changed_paths)}")
+
+        # Build the list of files to parse
+        files_to_parse = set(changed_paths)
+
+        # Find and add referenced files if requested
+        if include_referenced and changed_paths:
+            referenced = self.find_referenced_files(
+                changed_paths,
+                directory,
+                max_depth=max_referenced_depth,
+                verbose=verbose,
+            )
+            files_to_parse.update(referenced)
+
+        if verbose:
+            print(f"[AST Parser] Total files to parse: {len(files_to_parse)}")
+            if include_referenced:
+                referenced_count = len(files_to_parse) - len(changed_paths)
+                print(f"[AST Parser]   - Changed files: {len(changed_paths)}")
+                print(f"[AST Parser]   - Referenced files: {referenced_count}")
+
+        # Parse all collected files
+        return self.parse_files(
+            list(files_to_parse),
+            relative_to=relative_to,
+            verbose=verbose,
+        )
 
     def get_element_by_name(
         self, results: list[ParseResult], name: str
