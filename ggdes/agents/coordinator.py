@@ -48,16 +48,35 @@ class Coordinator:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context."""
-        # Build system prompt with user context guidance
-        system_prompt = get_prompt("coordinator", "system")
+        """Initialize conversation context.
 
-        # Add user context guidance if provided
+        System prompt structure (in order of priority):
+        1. Base system prompt - core instructions
+        2. User guidance - marked as VERY IMPORTANT
+        """
+        system_prompt_parts = []
+
+        # 1. BASE SYSTEM PROMPT - Core instructions
+        base_prompt = get_prompt("coordinator", "system")
+        system_prompt_parts.append(base_prompt)
+
+        # 2. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt += (
-                f"\n\n=== USER CONTEXT ===\n{user_guidance}\n=== END USER CONTEXT ==="
+            system_prompt_parts.append(
+                f"\n\n"
+                f"╔══════════════════════════════════════════════════════════════════╗\n"
+                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
+                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
+                f"╚══════════════════════════════════════════════════════════════════╝\n"
+                f"\n{user_guidance}\n"
+                f"\n═══════════════════════════════════════════════════════════════════\n"
+                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
+                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
             )
+
+        # Combine all parts
+        system_prompt = "\n\n".join(system_prompt_parts)
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,

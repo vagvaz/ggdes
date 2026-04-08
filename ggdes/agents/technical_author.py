@@ -85,24 +85,51 @@ class TechnicalAuthor:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context."""
-        # Build system prompt with loaded skills
-        system_prompt = get_prompt("technical_author", "system")
+        """Initialize conversation context.
 
-        # Add coauthor skill content if available
+        System prompt structure (in order of priority):
+        1. Skills first (coauthor + language expertise) - foundational knowledge
+        2. Base system prompt - core instructions
+        3. User guidance - marked as VERY IMPORTANT
+        """
+        system_prompt_parts = []
+
+        # 1. SKILLS FIRST - Documentation and language expertise
         if self._coauthor_skill:
-            system_prompt += f"\n\n=== DOCUMENTATION EXPERTISE ===\n{self._coauthor_skill}\n=== END EXPERTISE ==="
+            system_prompt_parts.append(
+                f"=== DOCUMENTATION EXPERTISE ===\n"
+                f"{self._coauthor_skill}\n"
+                f"=== END DOCUMENTATION EXPERTISE ==="
+            )
 
-        # Add language expert skill content if available
         if self._language_expert_skill:
-            system_prompt += f"\n\n=== LANGUAGE EXPERTISE ===\n{self._language_expert_skill}\n=== END EXPERTISE ==="
+            system_prompt_parts.append(
+                f"=== LANGUAGE EXPERTISE ===\n"
+                f"{self._language_expert_skill}\n"
+                f"=== END LANGUAGE EXPERTISE ==="
+            )
 
-        # Add user context guidance if provided
+        # 2. BASE SYSTEM PROMPT - Core instructions
+        base_prompt = get_prompt("technical_author", "system")
+        system_prompt_parts.append(base_prompt)
+
+        # 3. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt += (
-                f"\n\n=== USER FOCUS ===\n{user_guidance}\n=== END FOCUS ==="
+            system_prompt_parts.append(
+                f"\n\n"
+                f"╔══════════════════════════════════════════════════════════════════╗\n"
+                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
+                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
+                f"╚══════════════════════════════════════════════════════════════════╝\n"
+                f"\n{user_guidance}\n"
+                f"\n═══════════════════════════════════════════════════════════════════\n"
+                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
+                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
             )
+
+        # Combine all parts
+        system_prompt = "\n\n".join(system_prompt_parts)
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,
