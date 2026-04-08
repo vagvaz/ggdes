@@ -6,12 +6,13 @@ from typing import Optional
 from rich.console import Console
 
 from ggdes.agents import GitAnalyzer
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, ParsingMode
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.parsing import ASTParser
 from ggdes.schemas import ChangeSummary
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
+from ggdes.schemas import StoragePolicy
 
 console = Console()
 
@@ -201,7 +202,13 @@ class AnalysisPipeline:
         console.print(
             f"  [dim]Initializing GitAnalyzer for repository: {self.repo_path}[/dim]"
         )
-        analyzer = GitAnalyzer(self.repo_path, self.config, self.analysis_id)
+
+        # Get user context from metadata
+        user_context = getattr(self.metadata, "user_context", None)
+
+        analyzer = GitAnalyzer(
+            self.repo_path, self.config, self.analysis_id, user_context=user_context
+        )
 
         commit_range = self.metadata.commit_range
         focus_commits = self.metadata.focus_commits
@@ -214,7 +221,6 @@ class AnalysisPipeline:
         console.print("  [dim]Running git analysis (this may take a moment)...[/dim]")
 
         # Get storage policy from metadata
-        from ggdes.schemas import StoragePolicy
 
         storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
         storage_policy = StoragePolicy(storage_policy_str)
@@ -270,8 +276,32 @@ class AnalysisPipeline:
                 f"  [yellow]Warning: Base worktree is empty: {base_path}[/yellow]"
             )
 
-        # Parse all supported files with verbose output
-        results = parser.parse_directory(base_path, relative_to=base_path, verbose=True)
+        # Get list of changed files from git analysis if available
+        changed_files = self._get_changed_files_from_analysis()
+
+        # Determine parsing mode
+        parsing_config = self.config.parsing
+        if parsing_config.mode == ParsingMode.INCREMENTAL and changed_files:
+            console.print(
+                f"  [dim]Incremental parsing mode: {len(changed_files)} changed files[/dim]"
+            )
+            results = parser.parse_incremental(
+                directory=base_path,
+                changed_files=changed_files,
+                relative_to=base_path,
+                include_referenced=parsing_config.include_referenced,
+                max_referenced_depth=parsing_config.max_referenced_depth,
+                verbose=True,
+            )
+        else:
+            if parsing_config.mode == ParsingMode.INCREMENTAL and not changed_files:
+                console.print(
+                    "  [yellow]Incremental mode requested but no changed files found, falling back to full scan[/yellow]"
+                )
+            # Full scan - parse all supported files
+            results = parser.parse_directory(
+                base_path, relative_to=base_path, verbose=True
+            )
 
         # Save results
         import json
@@ -305,6 +335,31 @@ class AnalysisPipeline:
 
         return True
 
+    def _get_changed_files_from_analysis(self) -> list[str]:
+        """Get list of changed files from git analysis results.
+
+        Returns:
+            List of file paths that changed (relative to repo root)
+        """
+        import json
+
+        analysis_path = (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "git_analysis"
+            / "summary.json"
+        )
+
+        if not analysis_path.exists():
+            return []
+
+        try:
+            data = json.loads(analysis_path.read_text())
+            files_changed = data.get("files_changed", [])
+            # Extract just the path from each FileChange object
+            return [f["path"] for f in files_changed if "path" in f]
+        except Exception:
+            return []
+
     def _run_ast_parsing_head(self) -> bool:
         """Parse AST for head worktree."""
         if not self.metadata.worktrees:
@@ -329,7 +384,32 @@ class AnalysisPipeline:
                 f"  [yellow]Warning: Head worktree is empty: {head_path}[/yellow]"
             )
 
-        results = parser.parse_directory(head_path, relative_to=head_path, verbose=True)
+        # Get list of changed files from git analysis if available
+        changed_files = self._get_changed_files_from_analysis()
+
+        # Determine parsing mode
+        parsing_config = self.config.parsing
+        if parsing_config.mode == ParsingMode.INCREMENTAL and changed_files:
+            console.print(
+                f"  [dim]Incremental parsing mode: {len(changed_files)} changed files[/dim]"
+            )
+            results = parser.parse_incremental(
+                directory=head_path,
+                changed_files=changed_files,
+                relative_to=head_path,
+                include_referenced=parsing_config.include_referenced,
+                max_referenced_depth=parsing_config.max_referenced_depth,
+                verbose=True,
+            )
+        else:
+            if parsing_config.mode == ParsingMode.INCREMENTAL and not changed_files:
+                console.print(
+                    "  [yellow]Incremental mode requested but no changed files found, falling back to full scan[/yellow]"
+                )
+            # Full scan - parse all supported files
+            results = parser.parse_directory(
+                head_path, relative_to=head_path, verbose=True
+            )
 
         # Save results
         import json
@@ -366,10 +446,33 @@ class AnalysisPipeline:
     def _run_technical_author(self) -> bool:
         """Run technical author agent."""
         from ggdes.agents import TechnicalAuthor
+        from ggdes.agents.skill_utils import (
+            detect_primary_language,
+            get_expert_skill_for_language,
+        )
         from ggdes.schemas import StoragePolicy
 
         console.print("  [dim]Initializing Technical Author...[/dim]")
-        author = TechnicalAuthor(self.repo_path, self.config, self.analysis_id)
+
+        # Get user context from metadata
+        user_context = getattr(self.metadata, "user_context", None)
+
+        # Detect language for expert skill
+        language_expert_skill = None
+        try:
+            language = detect_primary_language(self.repo_path)
+            if language:
+                language_expert_skill = get_expert_skill_for_language(language)
+        except Exception:
+            pass  # Graceful fallback: continue without expert skill
+
+        author = TechnicalAuthor(
+            self.repo_path,
+            self.config,
+            self.analysis_id,
+            user_context=user_context,
+            language_expert_skill=language_expert_skill,
+        )
 
         console.print("  [dim]Synthesizing technical facts from analysis...[/dim]")
         import asyncio
@@ -406,7 +509,13 @@ class AnalysisPipeline:
         from ggdes.schemas import StoragePolicy
 
         console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
-        coordinator = Coordinator(self.repo_path, self.config, self.analysis_id)
+
+        # Get user context from metadata
+        user_context = getattr(self.metadata, "user_context", None)
+
+        coordinator = Coordinator(
+            self.repo_path, self.config, self.analysis_id, user_context=user_context
+        )
 
         # Get target formats from metadata (CLI-selected formats)
         target_formats = self.metadata.target_formats or ["markdown"]
