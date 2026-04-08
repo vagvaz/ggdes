@@ -3,6 +3,7 @@
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.llm.factory import (
     AnthropicProvider,
+    CustomOpenAIProvider,
     LLMFactory,
     LLMProvider,
     OllamaProvider,
@@ -10,11 +11,13 @@ from ggdes.llm.factory import (
     OpencodeZenProvider,
     detect_model_family,
     resolve_api_key,
+    retry_on_failure,
 )
 
 __all__ = [
     "AnthropicProvider",
     "ConversationContext",
+    "CustomOpenAIProvider",
     "LLMFactory",
     "LLMProvider",
     "OllamaProvider",
@@ -23,4 +26,5 @@ __all__ = [
     "detect_model_family",
     "estimate_tokens",
     "resolve_api_key",
+    "retry_on_failure",
 ]

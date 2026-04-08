@@ -9,6 +9,14 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 
+class StructuredOutputFormat(str, Enum):
+    """Structured output format for LLM responses."""
+
+    AUTO = "auto"  # Automatically choose based on provider
+    JSON = "json"  # JSON format
+    XML = "xml"  # XML format
+
+
 class ModelConfig(BaseModel):
     """LLM model configuration."""
 
@@ -16,7 +24,10 @@ class ModelConfig(BaseModel):
     model_name: str = "claude-3-5-sonnet-20241022"
     api_key: str = "${ANTHROPIC_API_KEY}"
     base_url: Optional[str] = None  # For custom endpoints (Ollama, etc.)
-    # Future: per-agent overrides
+    structured_format: StructuredOutputFormat = Field(
+        default=StructuredOutputFormat.AUTO,
+        description="Output format for structured responses: 'auto', 'json', or 'xml'",
+    )
 
     @field_validator("api_key")
     @classmethod
