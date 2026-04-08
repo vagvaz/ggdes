@@ -169,6 +169,9 @@ class DocumentPlan(BaseModel):
     diagrams: list[DiagramSpec] = Field(description="Diagrams to generate")
     template: Optional[str] = Field(None, description="Template to use if any")
     created_at: datetime = Field(default_factory=datetime.now)
+    user_context: Optional[dict] = Field(
+        None, description="User-provided context for output generation"
+    )
 
 
 class AnalysisResult(BaseModel):

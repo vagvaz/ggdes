@@ -1,6 +1,7 @@
 """Configuration management for GGDes."""
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
@@ -51,6 +52,32 @@ class FeaturesConfig(BaseModel):
     worktree_retention_days: int = 7
 
 
+class ParsingMode(str, Enum):
+    """AST parsing mode."""
+
+    FULL = "full"  # Parse all supported files in the repository
+    INCREMENTAL = "incremental"  # Parse only changed and referenced files
+
+
+class ParsingConfig(BaseModel):
+    """AST parsing configuration."""
+
+    mode: ParsingMode = Field(
+        default=ParsingMode.FULL,
+        description="Parsing mode: 'full' for all files, 'incremental' for changed + referenced only",
+    )
+    include_referenced: bool = Field(
+        default=True,
+        description="In incremental mode, also parse files that import/reference changed files",
+    )
+    max_referenced_depth: int = Field(
+        default=1,
+        ge=0,
+        le=3,
+        description="How many levels of references to follow (0 = only changed files, 1 = direct imports, etc.)",
+    )
+
+
 class OutputConfig(BaseModel):
     """Output configuration."""
 
@@ -72,6 +99,7 @@ class GGDesConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    parsing: ParsingConfig = Field(default_factory=ParsingConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     repo: RepoConfig = Field(default_factory=RepoConfig)
 

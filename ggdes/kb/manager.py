@@ -69,6 +69,9 @@ class AnalysisMetadata(BaseModel):
     # Conversation storage policy
     storage_policy: str = "summary"
 
+    # User-provided context for all agents
+    user_context: Optional[dict] = None
+
     # Worktree information
     worktrees: Optional[WorktreeInfo] = None
 
