@@ -113,24 +113,33 @@ class ConversationBrowser(Vertical):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="browser-container"):
-            # Left sidebar: Agent list
+            # Left sidebar: Agent list (compact, 20%)
             with Vertical(classes="agent-list-panel"):
                 yield Label("[bold]Agents[/bold]")
                 yield ListView(
                     ListItem(Label("[dim]Loading...[/dim]")), id="agent-list"
                 )
 
-            # Middle: Message list with controls
+            # Middle: Message list with compact header (40% - more space for messages)
             with Vertical(classes="message-list-panel"):
-                yield Label("[bold]Messages[/bold]")
-                with Horizontal(classes="message-controls"):
-                    yield Checkbox("Follow", id="follow-checkbox", value=False)
-                yield Label("[dim]Select an agent[/dim]", id="agent-info")
+                # Compact header with follow checkbox inline
+                with Horizontal(classes="message-header"):
+                    yield Label("[bold]Messages[/bold]", classes="header-label")
+                    yield Checkbox(
+                        "Follow",
+                        id="follow-checkbox",
+                        value=False,
+                        classes="follow-checkbox",
+                    )
+                yield Label(
+                    "[dim]Select an agent[/dim]", id="agent-info", classes="agent-info"
+                )
+                # Message list takes remaining space
                 yield ListView(
                     ListItem(Label("[dim]No messages[/dim]")), id="message-list"
                 )
 
-            # Right: Message detail
+            # Right: Message detail (40%)
             with Vertical(classes="message-detail-panel"):
                 yield Label("[bold]Message Detail[/bold]")
                 with VerticalScroll(id="message-detail"):
@@ -445,14 +454,20 @@ class OutputsBrowser(Vertical):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="browser-container"):
-            # Left: File tree
+            # Left: File tree (compact, 25%)
             with Vertical(classes="file-tree-panel"):
+                # Compact header with refresh button inline
                 with Horizontal(classes="outputs-header"):
-                    yield Label("[bold]Output Files[/bold]")
-                    yield Button("🔄 Refresh", id="refresh-outputs", variant="default")
+                    yield Label("[bold]Output Files[/bold]", classes="header-label")
+                    yield Button(
+                        "🔄 Refresh",
+                        id="refresh-outputs",
+                        variant="default",
+                        classes="refresh-btn",
+                    )
                 yield Tree("Analysis Outputs", id="file-tree")
 
-            # Right: Content viewer
+            # Right: Content viewer (75% - more space for content)
             with Vertical(classes="content-viewer-panel"):
                 yield Label("[bold]Content[/bold]")
                 with VerticalScroll(id="content-viewer"):
