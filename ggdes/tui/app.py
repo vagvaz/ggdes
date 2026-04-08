@@ -2,15 +2,18 @@
 
 import subprocess
 from pathlib import Path
+from typing import Callable, Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Grid
 from textual.reactive import reactive
+from textual.screen import Screen
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
+    Input,
     Label,
     ListItem,
     ListView,
@@ -19,6 +22,7 @@ from textual.widgets import (
     TabPane,
     ProgressBar,
     RichLog,
+    Checkbox,
 )
 from textual.binding import Binding
 
@@ -583,6 +587,178 @@ class CommandHelp(Static):
         yield Label(self.COMMANDS)
 
 
+class ConfirmDialog(Screen):
+    """Simple confirmation dialog."""
+
+    def __init__(
+        self,
+        title: str,
+        message: str,
+        on_confirm: Callable[[], None],
+        on_cancel: Callable[[], None],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.title = title
+        self.message = message
+        self.on_confirm = on_confirm
+        self.on_cancel = on_cancel
+
+    def compose(self) -> ComposeResult:
+        with Container(id="dialog-container"):
+            yield Label(f"[bold]{self.title}[/bold]", id="dialog-title")
+            yield Label(self.message, id="dialog-message")
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Cancel", id="cancel-btn", variant="default")
+                yield Button("Confirm", id="confirm-btn", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "confirm-btn":
+            self.dismiss()
+            self.on_confirm()
+        else:
+            self.dismiss()
+            self.on_cancel()
+
+    CSS = """
+    #dialog-container {
+        width: 60;
+        height: auto;
+        border: solid $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+    #dialog-title {
+        text-align: center;
+        margin-bottom: 1;
+    }
+    #dialog-message {
+        margin-bottom: 1;
+    }
+    #dialog-buttons {
+        align: center middle;
+        height: auto;
+    }
+    """
+
+
+class NewAnalysisDialog(Screen):
+    """Dialog for creating a new analysis."""
+
+    def __init__(
+        self,
+        on_create: Callable[[str, str, Optional[list[str]], list[str]], None],
+        commit_range: str = "",
+        focus_commits: Optional[list[str]] = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.on_create = on_create
+        self.commit_range = commit_range
+        self.focus_commits = focus_commits or []
+
+    def compose(self) -> ComposeResult:
+        with Container(id="new-analysis-dialog"):
+            yield Label("[bold]Create New Analysis[/bold]", id="dialog-title")
+
+            yield Label("Name:", classes="field-label")
+            yield Input(placeholder="e.g., Feature X Implementation", id="name-input")
+
+            yield Label("Commit Range:", classes="field-label")
+            yield Input(
+                value=self.commit_range,
+                placeholder="abc123..def456",
+                id="range-input",
+            )
+
+            yield Label("Focus Commits (optional):", classes="field-label")
+            focus_text = ",".join(c[:8] for c in self.focus_commits)
+            yield Input(
+                value=focus_text,
+                placeholder="comma-separated commit hashes",
+                id="focus-input",
+            )
+
+            yield Label("Output Formats:", classes="field-label")
+            with Horizontal(id="formats-row"):
+                yield Checkbox("Markdown", id="fmt-markdown", value=True)
+                yield Checkbox("DOCX", id="fmt-docx")
+                yield Checkbox("PDF", id="fmt-pdf")
+                yield Checkbox("PPTX", id="fmt-pptx")
+
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Cancel", id="cancel-btn", variant="default")
+                yield Button("Create", id="create-btn", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "cancel-btn":
+            self.dismiss()
+            return
+
+        # Get values from inputs
+        name = self.query_one("#name-input", Input).value.strip()
+        commit_range = self.query_one("#range-input", Input).value.strip()
+        focus_text = self.query_one("#focus-input", Input).value.strip()
+
+        # Validate
+        if not name:
+            self.notify("Please enter a name", severity="error")
+            return
+        if not commit_range:
+            self.notify("Please enter a commit range", severity="error")
+            return
+
+        # Parse focus commits
+        focus_commits = None
+        if focus_text:
+            focus_commits = [c.strip() for c in focus_text.split(",") if c.strip()]
+
+        # Get selected formats
+        formats = []
+        if self.query_one("#fmt-markdown", Checkbox).value:
+            formats.append("markdown")
+        if self.query_one("#fmt-docx", Checkbox).value:
+            formats.append("docx")
+        if self.query_one("#fmt-pdf", Checkbox).value:
+            formats.append("pdf")
+        if self.query_one("#fmt-pptx", Checkbox).value:
+            formats.append("pptx")
+
+        if not formats:
+            formats = ["markdown"]  # Default
+
+        self.dismiss()
+        self.on_create(name, commit_range, focus_commits, formats)
+
+    CSS = """
+    #new-analysis-dialog {
+        width: 80;
+        height: auto;
+        border: solid $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+    #dialog-title {
+        text-align: center;
+        margin-bottom: 1;
+    }
+    .field-label {
+        margin-top: 1;
+    }
+    #formats-row {
+        height: auto;
+        margin-top: 1;
+    }
+    #dialog-buttons {
+        align: center middle;
+        height: auto;
+        margin-top: 2;
+    }
+    """
+
+
 class GGDesTUI(App):
     """Main TUI application for GGDes."""
 
@@ -740,11 +916,56 @@ class GGDesTUI(App):
         self.refresh()
 
     def action_new_analysis(self) -> None:
-        """Start new analysis."""
-        # For now, just show a notification
-        self.notify(
-            "Use CLI: ggdes analyze --feature <name> <commits>", title="New Analysis"
+        """Start new analysis from TUI."""
+        # Get the GitLog view to use its commit selection
+        gitlog = self._get_gitlog_view()
+
+        if gitlog and gitlog.start_commit and gitlog.end_commit:
+            # Use selected commits from Git Log
+            commit_range = f"{gitlog.start_commit}..{gitlog.end_commit}"
+            focus_commits = list(gitlog.focus_commits) if gitlog.focus_commits else None
+
+            # Show create analysis dialog
+            self.push_screen(
+                NewAnalysisDialog(
+                    commit_range=commit_range,
+                    focus_commits=focus_commits,
+                    on_create=self._on_create_analysis,
+                )
+            )
+        else:
+            # Show dialog without pre-filled commits
+            self.push_screen(
+                NewAnalysisDialog(
+                    on_create=self._on_create_analysis,
+                )
+            )
+
+    def _on_create_analysis(
+        self,
+        name: str,
+        commit_range: str,
+        focus_commits: Optional[list[str]],
+        formats: list[str],
+    ) -> None:
+        """Handle new analysis creation from dialog."""
+        analysis_id = self._create_analysis(
+            name=name,
+            commit_range=commit_range,
+            focus_commits=focus_commits,
+            formats=formats,
         )
+
+        if analysis_id:
+            # Ask if user wants to run it now
+            self.push_screen(
+                ConfirmDialog(
+                    title="Run Analysis?",
+                    message=f"Run '{name}' now?\n\nCommit range: {commit_range[:50]}...",
+                    on_confirm=lambda: self._resume_analysis(analysis_id),
+                    on_cancel=lambda: None,
+                )
+            )
 
     def _get_gitlog_view(self) -> GitLogView | None:
         """Get the git log view if it exists."""
@@ -848,12 +1069,150 @@ class GGDesTUI(App):
             )
 
     def _resume_analysis(self, analysis_id: str) -> None:
-        """Resume an analysis."""
-        self.notify(f"Resuming {analysis_id[:20]}...", title="Resume")
+        """Resume an analysis by running the pipeline."""
+        from ggdes.pipeline import AnalysisPipeline
+
+        self.notify(f"Resuming analysis {analysis_id[:20]}...", title="Resume")
+
+        try:
+            pipeline = AnalysisPipeline(self.config, analysis_id)
+            success = pipeline.run_all_pending()
+
+            if success:
+                self.notify(
+                    f"Analysis {analysis_id[:20]}... completed successfully!",
+                    title="Resume",
+                    severity="information",
+                )
+            else:
+                self.notify(
+                    f"Analysis {analysis_id[:20]}... incomplete. Check CLI for details.",
+                    title="Resume",
+                    severity="warning",
+                )
+
+            # Refresh the UI
+            self.refresh()
+
+        except Exception as e:
+            self.notify(
+                f"Failed to resume: {str(e)[:100]}",
+                title="Resume Error",
+                severity="error",
+            )
 
     def _delete_analysis(self, analysis_id: str) -> None:
-        """Delete an analysis."""
-        self.notify(f"Deleting {analysis_id[:20]}...", title="Delete")
+        """Delete an analysis after confirmation."""
+        from textual.widgets import Checkbox
+
+        # Get analysis metadata for the name
+        metadata = self.kb_manager.load_metadata(analysis_id)
+        if not metadata:
+            self.notify("Analysis not found", title="Delete", severity="error")
+            return
+
+        analysis_name = metadata.name
+
+        # Show confirmation dialog
+        def confirm_delete(confirmed: bool) -> None:
+            if not confirmed:
+                self.notify("Delete cancelled", title="Delete")
+                return
+
+            try:
+                # Clean up worktrees first
+                wt_manager = WorktreeManager(self.config, Path(metadata.repo_path))
+                wt_manager.cleanup(analysis_id)
+
+                # Delete from knowledge base
+                deleted = self.kb_manager.delete_analysis(analysis_id)
+
+                if deleted:
+                    self.notify(
+                        f"Analysis '{analysis_name}' deleted",
+                        title="Delete",
+                        severity="information",
+                    )
+                    # Clear the detail view and refresh
+                    detail_view = self.query_one("#detail-view", AnalysisDetailView)
+                    detail_view.analysis_id = None
+                    self.refresh()
+                else:
+                    self.notify(
+                        "Analysis not found in knowledge base",
+                        title="Delete",
+                        severity="warning",
+                    )
+
+            except Exception as e:
+                self.notify(
+                    f"Failed to delete: {str(e)[:100]}",
+                    title="Delete Error",
+                    severity="error",
+                )
+
+        # Use a simple notification with action buttons pattern
+        self.app.push_screen(
+            ConfirmDialog(
+                title="Delete Analysis",
+                message=f"Delete '{analysis_name}'?\n\nThis will remove:\n- Analysis data\n- Generated documents\n- Worktrees",
+                on_confirm=lambda: confirm_delete(True),
+                on_cancel=lambda: confirm_delete(False),
+            )
+        )
+
+    def _create_analysis(
+        self,
+        name: str,
+        commit_range: str,
+        focus_commits: Optional[list[str]] = None,
+        formats: Optional[list[str]] = None,
+    ) -> Optional[str]:
+        """Create a new analysis.
+
+        Args:
+            name: Analysis name
+            commit_range: Git commit range (e.g., "abc123..def456")
+            focus_commits: Optional list of focus commits
+            formats: Optional list of target formats
+
+        Returns:
+            Analysis ID if created successfully, None otherwise
+        """
+        import uuid
+
+        try:
+            # Generate analysis ID
+            analysis_id = str(uuid.uuid4())
+
+            # Default formats
+            target_formats = formats or ["markdown"]
+
+            # Create analysis in KB
+            metadata = self.kb_manager.create_analysis(
+                analysis_id=analysis_id,
+                name=name,
+                repo_path=self.config.repo_path or Path.cwd(),
+                commit_range=commit_range,
+                focus_commits=focus_commits,
+                target_formats=target_formats,
+            )
+
+            self.notify(
+                f"Analysis '{name}' created",
+                title="New Analysis",
+                severity="information",
+            )
+
+            return analysis_id
+
+        except Exception as e:
+            self.notify(
+                f"Failed to create analysis: {str(e)[:100]}",
+                title="New Analysis Error",
+                severity="error",
+            )
+            return None
 
 
 def run_tui() -> None:

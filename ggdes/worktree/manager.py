@@ -3,6 +3,7 @@
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from ggdes.config import GGDesConfig, get_worktrees_path
 
@@ -214,6 +215,89 @@ class WorktreeManager:
         # Clean up empty analysis directory
         if analysis_wt_path.exists() and not any(analysis_wt_path.iterdir()):
             analysis_wt_path.rmdir()
+
+    def cleanup_old_worktrees(
+        self,
+        max_age_days: int = 7,
+        dry_run: bool = False,
+    ) -> list[tuple[str, Path, float]]:
+        """Clean up worktrees older than specified days.
+
+        Args:
+            max_age_days: Maximum age in days (default from config)
+            dry_run: If True, only report what would be deleted
+
+        Returns:
+            List of (analysis_id, path, age_days) tuples that were cleaned up
+        """
+        from datetime import datetime, timedelta
+        import os
+
+        # Use config value if available
+        if hasattr(self.config, "worktree_retention_days"):
+            max_age_days = self.config.worktree_retention_days
+
+        cutoff_date = datetime.now() - timedelta(days=max_age_days)
+        cleaned = []
+
+        if not self.worktrees_base.exists():
+            return cleaned
+
+        for analysis_dir in self.worktrees_base.iterdir():
+            if not analysis_dir.is_dir():
+                continue
+
+            # Check modification time of the directory
+            try:
+                stat = analysis_dir.stat()
+                mod_time = datetime.fromtimestamp(stat.st_mtime)
+                age_days = (datetime.now() - mod_time).total_seconds() / 86400
+
+                if mod_time < cutoff_date:
+                    # Found an old worktree
+                    analysis_id = analysis_dir.name
+
+                    if not dry_run:
+                        # Actually clean it up
+                        try:
+                            self.cleanup(analysis_id)
+                            cleaned.append((analysis_id, analysis_dir, age_days))
+                        except Exception as e:
+                            print(
+                                f"[worktree] Warning: Failed to cleanup {analysis_id}: {e}"
+                            )
+                    else:
+                        # Just report
+                        cleaned.append((analysis_id, analysis_dir, age_days))
+
+            except (OSError, FileNotFoundError):
+                continue
+
+        return cleaned
+
+    def get_worktree_age(self, analysis_id: str) -> Optional[float]:
+        """Get the age of a worktree in days.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            Age in days, or None if worktree doesn't exist
+        """
+        from datetime import datetime
+
+        analysis_wt_path = get_worktrees_path(self.config, analysis_id)
+
+        if not analysis_wt_path.exists():
+            return None
+
+        try:
+            stat = analysis_wt_path.stat()
+            mod_time = datetime.fromtimestamp(stat.st_mtime)
+            age_days = (datetime.now() - mod_time).total_seconds() / 86400
+            return age_days
+        except (OSError, FileNotFoundError):
+            return None
 
     def list_all(self) -> list[tuple[str, Path, Path]]:
         """List all worktree pairs in the worktrees directory.
