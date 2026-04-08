@@ -1,0 +1,81 @@
+name: Scheduled Documentation Update
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      commit_range:
+        description: 'Commit range to analyze (e.g., HEAD~5..HEAD)'
+        required: false
+        default: 'HEAD~10..HEAD'
+        type: string
+
+env:
+  UV_VERSION: "0.5.x"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Configure Git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Generate documentation
+        run: |
+          COMMIT_RANGE="${{ github.event.inputs.commit_range || 'HEAD~10..HEAD' }}"
+          echo "Analyzing commits: $COMMIT_RANGE"
+          
+          # Run ggdes in auto mode
+          uv run ggdes analyze \
+            --name "weekly-docs-$(date +%Y%m%d)" \
+            --commit-range "$COMMIT_RANGE" \
+            --formats markdown \
+            --auto \
+            --debug || true
+
+      - name: Check generated files
+        run: |
+          if [ -d ".ggdes-local/output" ]; then
+            echo "Documentation generated successfully"
+            ls -la .ggdes-local/output/
+          else
+            echo "No output directory found"
+          fi
+
+      - name: Upload documentation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-docs
+          path: |
+            .ggdes-local/output/
+            .ggdes-local/kb/
+          if-no-files-found: ignore
+          retention-days: 7
