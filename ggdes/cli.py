@@ -162,6 +162,12 @@ def analyze(
     setup_only: Annotated[
         bool, typer.Option(help="Only set up worktrees, don't run analysis")
     ] = False,
+    semantic_diff: Annotated[
+        bool,
+        typer.Option(
+            help="Enable semantic diff analysis (slower but more detailed). Disable for faster analysis."
+        ),
+    ] = True,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -379,6 +385,26 @@ def analyze(
                     metadata.user_context = user_context
                     kb_manager.save_metadata(analysis_id, metadata)
                     logger.info(f"User context saved: {user_context}")
+
+            # Configure pipeline stages based on semantic_diff flag
+            if not semantic_diff:
+                logger.info(
+                    "Semantic diff disabled - skipping base AST parsing and semantic diff stages"
+                )
+                console.print(
+                    "[dim]Semantic diff disabled - running faster analysis[/dim]"
+                )
+
+                # Mark base AST parsing and semantic diff as skipped
+                from ggdes.kb import StageStatus
+
+                metadata.stages[
+                    kb_manager.STAGE_AST_PARSING_BASE
+                ].status = StageStatus.SKIPPED
+                metadata.stages[
+                    kb_manager.STAGE_SEMANTIC_DIFF
+                ].status = StageStatus.SKIPPED
+                kb_manager.save_metadata(analysis_id, metadata)
 
             # Step 2: Run full analysis
             logger.info("Running full analysis pipeline...")
@@ -986,33 +1012,65 @@ def debug(
         }
         
         .agent-list-panel {
-            width: 25%;
+            width: 20%;
             border: solid $primary-darken-2;
-            padding: 1;
+            padding: 0 1;
         }
         
         .message-list-panel {
-            width: 35%;
+            width: 40%;
             border: solid $primary-darken-2;
-            padding: 1;
+            padding: 0 1;
+        }
+
+        .message-header {
+            height: auto;
+            margin-bottom: 0;
+            padding: 0;
+        }
+
+        .header-label {
+            width: 1fr;
+        }
+
+        .follow-checkbox {
+            width: auto;
+            margin-left: 1;
+        }
+
+        .agent-info {
+            height: auto;
+            margin-top: 0;
+            margin-bottom: 1;
         }
         
         .message-detail-panel {
             width: 40%;
             border: solid $primary-darken-2;
-            padding: 1;
+            padding: 0 1;
         }
         
         .file-tree-panel {
-            width: 30%;
+            width: 25%;
             border: solid $primary-darken-2;
-            padding: 1;
+            padding: 0 1;
+        }
+        
+        .outputs-header {
+            height: auto;
+            margin-bottom: 1;
+            padding: 0;
+        }
+
+        .refresh-btn {
+            width: auto;
+            margin-left: 1;
         }
         
         .content-viewer-panel {
-            width: 70%;
+            width: 75%;
             border: solid $primary-darken-2;
-            padding: 1;
+            padding: 0 1;
         }
         
         #message-detail {
@@ -1432,6 +1490,44 @@ def doctor(
             console.print(
                 "[dim]Run 'ggdes doctor --fix' to attempt automatic fixes[/dim]"
             )
+
+
+@app.command()
+def web(
+    host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on")] = 8000,
+    reload: Annotated[bool, typer.Option(help="Enable auto-reload (dev mode)")] = False,
+):
+    """Start the web interface."""
+    try:
+        import uvicorn
+        from ggdes.web import app as web_app
+
+        console.print(f"[bold]Starting GGDes Web Interface[/bold]")
+        console.print(f"[dim]Host:[/dim] {host}")
+        console.print(f"[dim]Port:[/dim] {port}")
+        console.print(f"[dim]URL:[/dim] http://{host}:{port}")
+        console.print()
+        console.print("[green]Press Ctrl+C to stop the server[/green]")
+        console.print()
+
+        uvicorn.run(
+            "ggdes.web:app",
+            host=host,
+            port=port,
+            reload=reload,
+            log_level="info",
+        )
+
+    except ImportError:
+        console.print("[red]Error:[/red] Web dependencies not installed.")
+        console.print(
+            "[dim]Install with: uv pip install fastapi uvicorn websockets[/dim]"
+        )
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Failed to start web server:[/red] {e}")
+        raise typer.Exit(1)
 
 
 def main() -> None:
