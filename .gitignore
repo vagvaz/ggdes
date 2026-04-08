@@ -13,3 +13,4 @@ wheels/
 .ggdes-local/
 *.egg-info/
 
+node_modules/
