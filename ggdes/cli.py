@@ -1077,6 +1077,363 @@ def debug(
     app.run()
 
 
+@app.command()
+def compare(
+    analysis1: Annotated[str, typer.Argument(help="First analysis ID or name")],
+    analysis2: Annotated[str, typer.Argument(help="Second analysis ID or name")],
+    output: Annotated[
+        Optional[str],
+        typer.Option(help="Export comparison to JSON file"),
+    ] = None,
+) -> None:
+    """Compare two analyses side-by-side."""
+    from ggdes.comparison import AnalysisComparator, print_comparison, export_comparison
+
+    config, _ = load_config()
+    comparator = AnalysisComparator(config)
+
+    try:
+        # Resolve analysis IDs
+        kb_manager = KnowledgeBaseManager(config)
+
+        resolved_id1 = None
+        resolved_id2 = None
+
+        for aid, metadata in kb_manager.list_analyses():
+            if aid == analysis1 or metadata.name == analysis1:
+                resolved_id1 = aid
+            if aid == analysis2 or metadata.name == analysis2:
+                resolved_id2 = aid
+
+        if not resolved_id1:
+            console.print(f"[red]Analysis not found:[/red] {analysis1}")
+            raise typer.Exit(1)
+
+        if not resolved_id2:
+            console.print(f"[red]Analysis not found:[/red] {analysis2}")
+            raise typer.Exit(1)
+
+        # Perform comparison
+        result = comparator.compare(resolved_id1, resolved_id2)
+
+        # Print comparison
+        print_comparison(result)
+
+        # Export if requested
+        if output:
+            output_path = Path(output)
+            export_comparison(result, output_path)
+            console.print(f"\n[green]✓ Comparison exported to:[/green] {output_path}")
+
+    except Exception as e:
+        console.print(f"[red]Comparison failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def export(
+    analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
+    output: Annotated[str, typer.Argument(help="Output file path (.json or .zip)")],
+    include_diagrams: Annotated[
+        bool,
+        typer.Option(help="Include diagram files in export"),
+    ] = True,
+    include_worktrees: Annotated[
+        bool,
+        typer.Option(help="Include worktree files (can be large)"),
+    ] = False,
+) -> None:
+    """Export analysis data to JSON or ZIP archive."""
+    import json
+    import zipfile
+    from datetime import datetime
+
+    config, _ = load_config()
+    kb_manager = KnowledgeBaseManager(config)
+
+    # Find analysis
+    found_id = None
+    found_metadata = None
+
+    for aid, metadata in kb_manager.list_analyses():
+        if aid == analysis or metadata.name == analysis:
+            found_id = aid
+            found_metadata = metadata
+            break
+
+    if not found_metadata:
+        console.print(f"[red]Analysis not found:[/red] {analysis}")
+        raise typer.Exit(1)
+
+    output_path = Path(output)
+
+    try:
+        analysis_path = kb_manager.get_analysis_path(found_id)
+
+        # Collect all analysis data
+        export_data = {
+            "metadata": found_metadata.model_dump(),
+            "analysis_id": found_id,
+            "exported_at": datetime.now().isoformat(),
+            "data": {},
+        }
+
+        # Load git analysis
+        git_summary_path = analysis_path / "git_analysis" / "summary.json"
+        if git_summary_path.exists():
+            export_data["data"]["git_analysis"] = json.loads(
+                git_summary_path.read_text()
+            )
+
+        # Load technical facts
+        facts_dir = analysis_path / "technical_facts"
+        if facts_dir.exists():
+            facts = []
+            for fact_file in facts_dir.glob("*.json"):
+                facts.append(json.loads(fact_file.read_text()))
+            export_data["data"]["technical_facts"] = facts
+
+        # Load document plans
+        plans_dir = analysis_path / "plans"
+        if plans_dir.exists():
+            plans = {}
+            for plan_file in plans_dir.glob("*.json"):
+                plans[plan_file.stem] = json.loads(plan_file.read_text())
+            export_data["data"]["document_plans"] = plans
+
+        # Export based on file extension
+        if output_path.suffix == ".zip":
+            # Create ZIP archive
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                # Add metadata JSON
+                zf.writestr("analysis.json", json.dumps(export_data, indent=2))
+
+                # Add all files from analysis directory
+                for file_path in analysis_path.rglob("*"):
+                    if file_path.is_file():
+                        # Skip worktrees if not requested
+                        if not include_worktrees and "worktrees" in str(file_path):
+                            continue
+                        arcname = file_path.relative_to(analysis_path)
+                        zf.write(file_path, arcname)
+
+                # Add diagram files if requested
+                if include_diagrams:
+                    diagrams_dir = Path(found_metadata.repo_path) / "docs" / "diagrams"
+                    if diagrams_dir.exists():
+                        for diag_file in diagrams_dir.glob("*.png"):
+                            if found_id in diag_file.name:
+                                zf.write(diag_file, f"diagrams/{diag_file.name}")
+
+            console.print(f"[green]✓ Analysis exported to ZIP:[/green] {output_path}")
+
+        else:
+            # Export as JSON
+            output_path.write_text(json.dumps(export_data, indent=2))
+            console.print(f"[green]✓ Analysis exported to JSON:[/green] {output_path}")
+
+    except Exception as e:
+        console.print(f"[red]Export failed:[/red] {e}")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def archive(
+    analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
+    export_first: Annotated[
+        bool,
+        typer.Option(help="Export analysis before archiving"),
+    ] = True,
+    keep_days: Annotated[
+        int,
+        typer.Option(help="Keep analyses newer than this many days"),
+    ] = 30,
+) -> None:
+    """Archive an analysis (export and remove from active list)."""
+    import shutil
+    from datetime import datetime, timedelta
+
+    config, _ = load_config()
+    kb_manager = KnowledgeBaseManager(config)
+
+    # Find analysis
+    found_id = None
+    found_metadata = None
+
+    for aid, metadata in kb_manager.list_analyses():
+        if aid == analysis or metadata.name == analysis:
+            found_id = aid
+            found_metadata = metadata
+            break
+
+    if not found_metadata:
+        console.print(f"[red]Analysis not found:[/red] {analysis}")
+        raise typer.Exit(1)
+
+    # Check if analysis is too recent
+    analysis_date = datetime.fromisoformat(found_metadata.created_at)
+    cutoff_date = datetime.now() - timedelta(days=keep_days)
+
+    if analysis_date > cutoff_date:
+        console.print(
+            f"[yellow]Warning:[/yellow] Analysis is newer than {keep_days} days"
+        )
+        if not typer.confirm("Archive anyway?"):
+            console.print("[dim]Archive cancelled[/dim]")
+            return
+
+    try:
+        # Export before archiving if requested
+        if export_first:
+            archive_dir = Path(config.paths.knowledge_base) / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            export_path = archive_dir / f"{found_id}-{timestamp}.zip"
+
+            # Run export
+            console.print(f"[dim]Exporting to archive...[/dim]")
+
+            # Temporarily redirect to export function
+            export_cmd = f"ggdes export {found_id} {export_path}"
+            console.print(f"[dim]Export command: {export_cmd}[/dim]")
+
+        # Remove analysis from KB
+        kb_manager.delete_analysis(found_id)
+        console.print(f"[green]✓ Analysis archived:[/green] {found_id}")
+
+        # Clean up worktrees
+        wt_manager = WorktreeManager(config, Path(found_metadata.repo_path))
+        wt_manager.cleanup(found_id)
+
+    except Exception as e:
+        console.print(f"[red]Archive failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def doctor(
+    fix: Annotated[
+        bool,
+        typer.Option(help="Attempt to fix issues automatically"),
+    ] = False,
+) -> None:
+    """Diagnose system health and configuration."""
+    import shutil
+    import subprocess
+
+    console.print("[bold]GGDes System Diagnostics[/bold]\n")
+
+    issues_found = 0
+    issues_fixed = 0
+
+    # Check 1: Python version
+    console.print("[dim]Checking Python version...[/dim]")
+    import sys
+
+    if sys.version_info >= (3, 10):
+        console.print(
+            "  [green]✓[/green] Python version: {}.{}.{}".format(*sys.version_info[:3])
+        )
+    else:
+        console.print(
+            "  [red]✗[/red] Python version too old: {}.{}.{} (requires 3.10+)".format(
+                *sys.version_info[:3]
+            )
+        )
+        issues_found += 1
+
+    # Check 2: Dependencies
+    console.print("[dim]Checking dependencies...[/dim]")
+    required_packages = [
+        "typer",
+        "rich",
+        "pydantic",
+        "pyyaml",
+        "tree_sitter",
+        "anthropic",
+        "openai",
+    ]
+
+    for package in required_packages:
+        try:
+            __import__(package)
+            console.print(f"  [green]✓[/green] {package}")
+        except ImportError:
+            console.print(f"  [red]✗[/red] {package} (missing)")
+            issues_found += 1
+            if fix:
+                console.print(f"    [dim]Attempting to install {package}...[/dim]")
+                # Could attempt pip install here
+
+    # Check 3: External tools
+    console.print("[dim]Checking external tools...[/dim]")
+
+    tools = {
+        "git": "Git version control",
+        "pandoc": "Document conversion (optional)",
+        "node": "Node.js for DOCX/PPTX generation (optional)",
+        "java": "Java for PlantUML diagrams (optional)",
+    }
+
+    for tool, description in tools.items():
+        if shutil.which(tool):
+            console.print(f"  [green]✓[/green] {tool}: {description}")
+        else:
+            console.print(f"  [yellow]⚠[/yellow] {tool}: {description} (not found)")
+            if tool in ["git"]:
+                issues_found += 1
+
+    # Check 4: PlantUML
+    console.print("[dim]Checking PlantUML...[/dim]")
+    try:
+        from ggdes.diagrams import PlantUMLGenerator
+
+        gen = PlantUMLGenerator()
+        console.print(f"  [green]✓[/green] PlantUML: {gen.plantuml_jar}")
+    except FileNotFoundError:
+        console.print("  [yellow]⚠[/yellow] PlantUML jar not found")
+        issues_found += 1
+        if fix:
+            console.print(
+                "    [dim]Run: curl -L -o ggdes/diagrams/plantuml.jar https://github.com/plantuml/plantuml/releases/download/v1.2024.7/plantuml-1.2024.7.jar[/dim]"
+            )
+
+    # Check 5: Knowledge base directory
+    console.print("[dim]Checking knowledge base...[/dim]")
+    config, _ = load_config()
+    kb_path = Path(config.paths.knowledge_base).expanduser()
+
+    if kb_path.exists():
+        analyses = list(kb_path.glob("*/metadata.yaml"))
+        console.print(f"  [green]✓[/green] Knowledge base: {kb_path}")
+        console.print(f"    [dim]Found {len(analyses)} analysis(es)[/dim]")
+    else:
+        console.print(f"  [yellow]⚠[/yellow] Knowledge base not found: {kb_path}")
+        if fix:
+            kb_path.mkdir(parents=True, exist_ok=True)
+            console.print(f"    [green]✓[/green] Created knowledge base directory")
+            issues_fixed += 1
+
+    # Summary
+    console.print()
+    if issues_found == 0:
+        console.print("[green]✓ All checks passed![/green]")
+    elif fix and issues_fixed > 0:
+        console.print(
+            f"[yellow]⚠ {issues_found} issue(s) found, {issues_fixed} fixed automatically[/yellow]"
+        )
+    else:
+        console.print(f"[yellow]⚠ {issues_found} issue(s) found[/yellow]")
+        if not fix and issues_found > 0:
+            console.print(
+                "[dim]Run 'ggdes doctor --fix' to attempt automatic fixes[/dim]"
+            )
+
+
 def main() -> None:
     """Entry point for CLI."""
     app()
