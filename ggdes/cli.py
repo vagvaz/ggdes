@@ -605,6 +605,13 @@ def resume(
                 f"[yellow]Reset {len(stages_to_reset)} stage(s) for new formats:[/yellow] {', '.join(stages_to_reset)}"
             )
 
+        # When formats change, ask if user wants to update context too
+        if not overwrite_context and found_metadata.user_context:
+            if typer.confirm(
+                "\nFormats have changed. Do you want to update the analysis configuration for these new formats?"
+            ):
+                overwrite_context = True
+
     # Check if can resume
     can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
     if not can_resume:
