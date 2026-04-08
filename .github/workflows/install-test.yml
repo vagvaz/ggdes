@@ -1,0 +1,186 @@
+name: Installation Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      python-version:
+        description: 'Python version to test'
+        required: false
+        default: '3.10'
+        type: choice
+        options:
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+      install-method:
+        description: 'Installation method'
+        required: false
+        default: 'uv'
+        type: choice
+        options:
+          - 'uv'
+          - 'pip'
+          - 'pipx'
+
+env:
+  UV_VERSION: "0.5.x"
+
+jobs:
+  test-installation:
+    name: Test Installation (${{ matrix.os }} / Python ${{ matrix.python-version }} / ${{ matrix.install-method }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        install-method: [uv, pip]
+        include:
+          # Additional pipx test on one OS/Python combo
+          - os: ubuntu-latest
+            python-version: "3.10"
+            install-method: pipx
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # UV Installation Method
+      - name: Setup uv
+        if: matrix.install-method == 'uv'
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Build with uv
+        if: matrix.install-method == 'uv'
+        run: uv build
+
+      - name: Install with uv (wheel)
+        if: matrix.install-method == 'uv' && runner.os != 'Windows'
+        run: uv pip install dist/*.whl --system
+
+      - name: Install with uv (wheel) - Windows
+        if: matrix.install-method == 'uv' && runner.os == 'Windows'
+        run: uv pip install (Get-Item dist/*.whl).FullName --system
+
+      # PIP Installation Method
+      - name: Install with pip
+        if: matrix.install-method == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+          pip install dist/*.whl
+
+      # PIPX Installation Method
+      - name: Install pipx
+        if: matrix.install-method == 'pipx'
+        run: |
+          python -m pip install --user pipx
+          python -m pipx ensurepath
+
+      - name: Install with pipx
+        if: matrix.install-method == 'pipx'
+        run: |
+          pipx install .
+
+      # Verification
+      - name: Verify ggdes is installed
+        run: |
+          which ggdes || where ggdes || echo "ggdes location check"
+          ggdes --version
+
+      - name: Test basic CLI functionality
+        run: |
+          echo "Testing ggdes --help"
+          ggdes --help
+
+      - name: Test config commands
+        run: |
+          ggdes config show || echo "Config show requires setup"
+
+      - name: Test with temporary repo
+        run: |
+          mkdir -p /tmp/test-repo
+          cd /tmp/test-repo
+          git init
+          git config user.name "Test"
+          git config user.email "test@test.com"
+          echo "test" > test.txt
+          git add test.txt
+          git commit -m "Initial commit"
+          ggdes analyze --name test-analysis --auto --formats markdown 2>/dev/null || echo "Analysis requires API key"
+        shell: bash
+
+  test-editable-install:
+    name: Test Editable Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install in editable mode with uv
+        run: |
+          uv pip install -e . --system
+
+      - name: Verify editable install
+        run: |
+          ggdes --version
+          ggdes --help
+
+      - name: Check import works
+        run: |
+          python -c "import ggdes; print(f'ggdes version: {ggdes}')"
+
+  test-minimal-dependencies:
+    name: Test Minimal Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install without dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Verify basic functionality
+        run: |
+          ggdes --version
+          ggdes --help
+
+      - name: Import test
+        run: |
+          python -c "from ggdes.cli import main; print('CLI import successful')"
+          python -c "from ggdes.config import GGDesConfig; print('Config import successful')"

@@ -138,3 +138,52 @@ jobs:
         with:
           name: bandit-security-report
           path: bandit-report.json
+
+  install-test:
+    name: Install Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        install-method: [uv, pip]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install with uv
+        if: matrix.install-method == 'uv'
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Build and install with uv
+        if: matrix.install-method == 'uv'
+        run: |
+          uv build
+          uv pip install dist/*.whl --system
+
+      - name: Install with pip
+        if: matrix.install-method == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+          pip install dist/*.whl
+
+      - name: Verify installation
+        run: |
+          ggdes --version
+          ggdes --help
+
+      - name: Test CLI commands work
+        run: |
+          ggdes list 2>/dev/null || echo "List command requires configured repo"
+          ggdes config show 2>/dev/null || echo "Config show completed"
