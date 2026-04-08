@@ -48,6 +48,11 @@ class GitAnalyzer:
         self.max_diff_tokens = 50000  # Absolute max before chunking
         self._language_expert_skill: Optional[str] = None
 
+        # Store analysis data for code reference validation
+        self._current_diff: str = ""
+        self._current_files: list[dict] = []
+        self._current_commits: list[dict] = []
+
         # Detect language and load expert skill (with graceful fallback)
         self._load_language_expert_skill()
 
@@ -71,20 +76,44 @@ class GitAnalyzer:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context."""
-        # Build system prompt with optional expert skill
-        system_prompt = get_prompt("git_analyzer", "system")
+        """Initialize conversation context.
 
-        # Add language expert skill content if available
+        System prompt structure (in order of priority):
+        1. Skills first (language expertise) - foundational knowledge
+        2. Base system prompt - core instructions
+        3. User guidance - marked as VERY IMPORTANT
+        """
+        system_prompt_parts = []
+
+        # 1. SKILLS FIRST - Language expertise (if available)
         if self._language_expert_skill:
-            system_prompt += f"\n\n=== LANGUAGE EXPERTISE ===\n{self._language_expert_skill}\n=== END EXPERTISE ==="
+            system_prompt_parts.append(
+                f"=== LANGUAGE EXPERTISE ===\n"
+                f"{self._language_expert_skill}\n"
+                f"=== END LANGUAGE EXPERTISE ==="
+            )
 
-        # Add user context guidance if provided
+        # 2. BASE SYSTEM PROMPT - Core instructions
+        base_prompt = get_prompt("git_analyzer", "system")
+        system_prompt_parts.append(base_prompt)
+
+        # 3. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt += (
-                f"\n\n=== USER FOCUS ===\n{user_guidance}\n=== END FOCUS ==="
+            system_prompt_parts.append(
+                f"\n\n"
+                f"╔══════════════════════════════════════════════════════════════════╗\n"
+                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
+                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
+                f"╚══════════════════════════════════════════════════════════════════╝\n"
+                f"\n{user_guidance}\n"
+                f"\n═══════════════════════════════════════════════════════════════════\n"
+                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
+                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
             )
+
+        # Combine all parts
+        system_prompt = "\n\n".join(system_prompt_parts)
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,
@@ -438,6 +467,11 @@ class GitAnalyzer:
         commits = self.get_commit_log(commit_range, focus_commits)
         files = self.get_changed_files(commit_range, focus_commits)
 
+        # Store for code reference validation
+        self._current_diff = diff
+        self._current_files = files
+        self._current_commits = commits
+
         console.print(
             f"  [dim]Found {len(commits)} commits, {len(files)} files changed[/dim]"
         )
@@ -724,7 +758,7 @@ Then provide a structured ChangeSummary.
         )
 
     async def _generate_structured(self, context: list[dict]) -> ChangeSummary:
-        """Generate structured output from conversation context."""
+        """Generate structured output from conversation context with code reference validation."""
         # Extract system and conversation messages
         system = None
         conversation_messages = []
@@ -742,7 +776,9 @@ Then provide a structured ChangeSummary.
         system += (
             "\n\nYou must respond with a JSON object matching the ChangeSummary schema. "
             "Include fields: change_type, description, intent, impact, impact_level, "
-            "breaking_changes (array), dependencies_changed (array)."
+            "breaking_changes (array), dependencies_changed (array). "
+            "\n\nCRITICAL: All code references (file paths, function names, class names) "
+            "must exist in the git diff or parsed code. Do not reference code that wasn't changed."
         )
 
         # Build a comprehensive prompt from the full conversation context
@@ -763,18 +799,84 @@ Then provide a structured ChangeSummary.
         # Add the final instruction
         prompt_parts.append(
             "Based on all the analysis above, provide a structured JSON summary "
-            "matching the ChangeSummary schema with the actual findings from the git diff."
+            "matching the ChangeSummary schema with the actual findings from the git diff. "
+            "Only reference code that appears in the diff."
         )
 
         full_prompt = "\n---\n".join(prompt_parts)
 
-        return self.llm.generate_structured(
+        # Generate structured output
+        change_summary = self.llm.generate_structured(
             prompt=full_prompt,
             response_model=ChangeSummary,
             system_prompt=system,
             temperature=0.2,
             max_retries=3,
         )
+
+        # Validate code references in the generated summary
+        await self._validate_code_references(change_summary)
+
+        return change_summary
+
+    async def _validate_code_references(self, change_summary: ChangeSummary) -> None:
+        """Validate code references in the generated summary and request corrections if needed.
+
+        Args:
+            change_summary: The generated change summary to validate
+        """
+        from ggdes.validation.code_references import CodeReferenceValidator
+
+        # Build list of changed file paths
+        changed_files = [f["path"] for f in self._current_files]
+
+        # Create validator with code elements from analysis
+        validator = CodeReferenceValidator(
+            repo_path=self.repo_path,
+            changed_files=changed_files,
+            diff_content=self._current_diff,
+        )
+
+        # Validate and auto-correct the entire summary output
+        max_corrections = 2
+
+        # Validate description
+        if change_summary.description:
+            validated_description = validator.validate_and_correct(
+                llm_output=change_summary.description,
+                llm_provider=self.llm,
+                max_corrections=max_corrections,
+            )
+            if validated_description != change_summary.description:
+                console.print(
+                    "  [green]✓ Description corrected for invalid code references[/green]"
+                )
+                change_summary.description = validated_description
+
+        # Validate impact
+        if change_summary.impact:
+            validated_impact = validator.validate_and_correct(
+                llm_output=change_summary.impact,
+                llm_provider=self.llm,
+                max_corrections=max_corrections,
+            )
+            if validated_impact != change_summary.impact:
+                console.print(
+                    "  [green]✓ Impact section corrected for invalid code references[/green]"
+                )
+                change_summary.impact = validated_impact
+
+        # Validate breaking changes
+        if change_summary.breaking_changes:
+            validated_breaking = []
+            for change in change_summary.breaking_changes:
+                validated = validator.validate_and_correct(
+                    llm_output=change,
+                    llm_provider=self.llm,
+                    max_corrections=max_corrections,
+                )
+                validated_breaking.append(validated)
+            change_summary.breaking_changes = validated_breaking
 
     @classmethod
     def load_conversation(
