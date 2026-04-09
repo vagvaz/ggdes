@@ -8,8 +8,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -39,7 +38,7 @@ def detect_model_family(model_name: str) -> str:
     return "openai"  # Default to OpenAI-compatible
 
 
-def resolve_api_key(api_key: str | None, provider: str) -> str | None:
+def resolve_api_key(api_key: Optional[str], provider: str) -> Optional[str]:
     """Resolve API key with ${VAR} and env:VAR patterns.
 
     Args:
@@ -81,8 +80,8 @@ def retry_on_failure(
     initial_delay: float = 1.0,
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
-    retryable_exceptions: tuple = (Exception,),
-) -> Callable:
+    retryable_exceptions: Tuple[type[BaseException], ...] = (Exception,),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator that adds retry logic with exponential backoff.
 
     Args:
@@ -96,10 +95,10 @@ def retry_on_failure(
         Decorated function with retry logic
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            last_exception: Optional[BaseException] = None
 
             for attempt in range(max_retries + 1):
                 try:
@@ -182,10 +181,10 @@ def _model_to_json_schema(model_class: type[BaseModel]) -> str:
 
 
 def _add_structured_instructions(
-    system_prompt: str | None,
+    system_prompt: Optional[str],
     response_model: type[T],
     output_format: str = "json",
-    examples: list[dict] | None = None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Add structured output instructions to system prompt.
 
@@ -336,8 +335,8 @@ def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
         raise ValueError(f"XML parse error: {e}") from e
 
     # Convert XML to dict
-    def xml_to_dict(element):
-        result = {}
+    def xml_to_dict(element: ET.Element) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
         for child in element:
             if len(child) == 0:
                 # Leaf node
@@ -455,7 +454,7 @@ class LLMProvider(ABC):
         """
         return "json"  # Default to JSON
 
-    def _get_examples(self, response_model: type[T]) -> list[dict]:
+    def _get_examples(self, response_model: type[T]) -> List[Dict[str, Any]]:
         """Get example outputs for the response model.
 
         Args:
@@ -476,7 +475,7 @@ class LLMProvider(ABC):
         # Create a minimal example from schema
         schema = response_model.model_json_schema()
         properties = schema.get("properties", {})
-        example = {}
+        example: Dict[str, Any] = {}
         for field_name, field_info in properties.items():
             field_type = field_info.get("type", "string")
             if field_type == "string":
@@ -499,9 +498,9 @@ class LLMProvider(ABC):
     @abstractmethod
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text from conversation context.
 
@@ -519,9 +518,9 @@ class LLMProvider(ABC):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text from prompt.
 
@@ -540,7 +539,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         response_model: type[T],
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         max_retries: int = 3,
     ) -> T:
@@ -564,8 +563,8 @@ class LLMProvider(ABC):
             system_prompt, response_model, output_format, examples
         )
 
-        last_error = None
-        previous_response = None
+        last_error: Optional[BaseException] = None
+        previous_response: Optional[str] = None
 
         for attempt in range(max_retries + 1):
             try:
@@ -574,6 +573,8 @@ class LLMProvider(ABC):
                     current_prompt = prompt
                 else:
                     # Retry with correction prompt
+                    assert previous_response is not None
+                    assert last_error is not None
                     correction_prompt = _create_correction_prompt(
                         previous_response, str(last_error), output_format
                     )
@@ -625,9 +626,9 @@ class AnthropicProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: str | None = None,
+        base_url: Optional[str] = None,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
@@ -638,9 +639,9 @@ class AnthropicProvider(LLMProvider):
     )
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using full conversation context."""
         import anthropic
@@ -683,9 +684,9 @@ class AnthropicProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using Anthropic Claude."""
         import anthropic
@@ -720,17 +721,17 @@ class OpenAIProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: str | None = None,
+        base_url: Optional[str] = None,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         """Get OpenAI client."""
         import openai
 
-        client_kwargs = {"api_key": self.api_key}
+        client_kwargs: Dict[str, str] = {"api_key": self.api_key}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
 
@@ -743,9 +744,9 @@ class OpenAIProvider(LLMProvider):
     )
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -767,14 +768,14 @@ class OpenAIProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using OpenAI."""
         client = self._get_client()
 
-        messages = []
+        messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
@@ -800,13 +801,13 @@ class OllamaProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: str = "http://localhost:11434/v1",
+        base_url: Optional[str] = None,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         """Get OpenAI-compatible client for Ollama."""
         import openai
 
@@ -822,9 +823,9 @@ class OllamaProvider(LLMProvider):
     )
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -846,14 +847,14 @@ class OllamaProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using Ollama."""
         client = self._get_client()
 
-        messages = []
+        messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
@@ -893,7 +894,7 @@ class CustomOpenAIProvider(LLMProvider):
         model_name: str,
         base_url: str,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         """Initialize custom OpenAI-compatible provider.
 
@@ -908,7 +909,7 @@ class CustomOpenAIProvider(LLMProvider):
             raise ValueError("base_url is required for CustomOpenAIProvider")
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         """Get OpenAI client."""
         import openai
 
@@ -924,9 +925,9 @@ class CustomOpenAIProvider(LLMProvider):
     )
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -948,14 +949,14 @@ class CustomOpenAIProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using custom OpenAI-compatible API."""
         client = self._get_client()
 
-        messages = []
+        messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
@@ -988,9 +989,9 @@ class OpencodeZenProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: str | None = None,
+        base_url: Optional[str] = None,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
         self.family = detect_model_family(model_name)
@@ -1005,7 +1006,7 @@ class OpencodeZenProvider(LLMProvider):
             return normalized
         return f"{normalized}/v1"
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         """Get OpenAI client for OpencodeZen."""
         import openai
 
@@ -1021,9 +1022,9 @@ class OpencodeZenProvider(LLMProvider):
     )
     def chat(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -1045,14 +1046,14 @@ class OpencodeZenProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate text using OpencodeZen."""
         client = self._get_client()
 
-        messages = []
+        messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
@@ -1085,7 +1086,7 @@ class LLMFactory:
         model_name: str,
         api_key: str,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMProvider:
         """Create an LLM provider instance with API key resolution.
 
@@ -1123,7 +1124,7 @@ class LLMFactory:
         )
 
     @classmethod
-    def from_config(cls, config) -> LLMProvider:
+    def from_config(cls, config: Any) -> LLMProvider:
         """Create provider from GGDes config.
 
         Args:
@@ -1132,7 +1133,7 @@ class LLMFactory:
         Returns:
             LLMProvider instance
         """
-        kwargs = {}
+        kwargs: Dict[str, str] = {}
         if config.model.base_url:
             kwargs["base_url"] = config.model.base_url
 
@@ -1150,7 +1151,7 @@ class LLMFactory:
         )
 
     @classmethod
-    def list_providers(cls) -> list[str]:
+    def list_providers(cls) -> List[str]:
         """List supported providers.
 
         Returns:
@@ -1159,7 +1160,7 @@ class LLMFactory:
         return list(cls.PROVIDERS.keys())
 
     @classmethod
-    def get_opencodezen_info(cls, model_name: str) -> dict:
+    def get_opencodezen_info(cls, model_name: str) -> Dict[str, str]:
         """Get OpencodeZen routing info for a model.
 
         Args:

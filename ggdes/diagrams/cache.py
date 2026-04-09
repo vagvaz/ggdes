@@ -7,6 +7,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ggdes.schemas import TechnicalFact
 
@@ -37,9 +38,9 @@ class DiagramCache:
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cache_file = self.cache_dir / "cache_index.json"
-        self._index: dict[str, dict] = self._load_index()
+        self._index: Dict[str, Dict[str, Any]] = self._load_index()
 
-    def _load_index(self) -> dict[str, dict]:
+    def _load_index(self) -> Dict[str, Dict[str, Any]]:
         """Load cache index from disk."""
         if self._cache_file.exists():
             try:
@@ -54,7 +55,7 @@ class DiagramCache:
         with open(self._cache_file, "w") as f:
             json.dump(self._index, f, indent=2)
 
-    def _compute_facts_hash(self, facts: list[TechnicalFact]) -> str:
+    def _compute_facts_hash(self, facts: List[TechnicalFact]) -> str:
         """Compute a hash of the technical facts.
 
         Args:
@@ -161,7 +162,7 @@ class DiagramCache:
         if keys_to_remove:
             self._save_index()
 
-    def get_cache_stats(self) -> dict:
+    def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
 
         Returns:

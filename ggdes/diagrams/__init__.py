@@ -3,7 +3,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
 class PlantUMLGenerator:
@@ -308,10 +308,10 @@ class PlantUMLGenerator:
 
 
 def generate_architecture_diagram(
-    components: list[dict],
-    relationships: list[tuple[str, str, str]],
+    components: List[Dict[str, Any]],
+    relationships: List[Tuple[str, str, str]],
     title: str = "System Architecture",
-    generator: PlantUMLGenerator | None = None,
+    generator: Optional[PlantUMLGenerator] = None,
 ) -> str:
     """Generate PlantUML code for an architecture diagram.
 
@@ -357,7 +357,7 @@ def generate_architecture_diagram(
 
 
 def generate_flow_diagram(
-    steps: list[dict],
+    steps: List[Dict[str, Any]],
     title: str = "Process Flow",
     direction: str = "TB",
 ) -> str:
@@ -413,8 +413,8 @@ def generate_flow_diagram(
 
 
 def generate_class_diagram(
-    classes: list[dict],
-    relationships: list[tuple[str, str, str]] = None,
+    classes: List[Dict[str, Any]],
+    relationships: Optional[List[Tuple[str, str, str]]] = None,
     title: str = "Class Diagram",
 ) -> str:
     """Generate PlantUML code for a class diagram.
@@ -479,8 +479,8 @@ def generate_class_diagram(
 
 
 def generate_sequence_diagram(
-    participants: list[str],
-    messages: list[dict],
+    participants: List[str],
+    messages: List[Dict[str, Any]],
     title: str = "Sequence Diagram",
 ) -> str:
     """Generate PlantUML code for a sequence diagram.

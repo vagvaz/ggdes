@@ -3,14 +3,15 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class CodeReference:
     """A code reference found in LLM output."""
 
-    file_path: str | None  # File path if specified
-    line_number: int | None  # Line number if specified
+    file_path: Optional[str]  # File path if specified
+    line_number: Optional[int]  # Line number if specified
     code_snippet: str  # The referenced code
     reference_type: str  # 'function', 'class', 'variable', 'snippet'
 
@@ -32,7 +33,7 @@ class CodeReferenceValidator:
         self,
         repo_path: Path,
         changed_files: list[str] | None = None,
-        code_elements: dict[str, dict] | None = None,
+        code_elements: Optional[Dict[str, Dict[str, Any]]] = None,
         diff_content: str | None = None,
     ):
         """Initialize code reference validator.

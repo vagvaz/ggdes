@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -156,7 +157,7 @@ class AnalysisComparator:
 
         return facts
 
-    def _load_semantic_diff(self, analysis_id: str) -> dict | None:
+    def _load_semantic_diff(self, analysis_id: str) -> Optional[Dict[str, Any]]:
         """Load semantic diff result for an analysis."""
         semantic_diff_path = (
             self.kb_manager.get_analysis_path(analysis_id)
@@ -174,9 +175,9 @@ class AnalysisComparator:
 
     def _compare_semantic_diff(
         self,
-        semantic_diff1: dict | None,
-        semantic_diff2: dict | None,
-    ) -> list[AnalysisDiff]:
+        semantic_diff1: Optional[Dict[str, Any]],
+        semantic_diff2: Optional[Dict[str, Any]],
+    ) -> List[AnalysisDiff]:
         """Compare semantic diff results.
 
         This helps identify differences in code understanding between

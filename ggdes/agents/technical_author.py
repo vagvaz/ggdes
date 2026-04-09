@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 
@@ -26,8 +27,8 @@ class TechnicalAuthor:
         repo_path: Path,
         config,
         analysis_id: str,
-        user_context: dict | None = None,
-        language_expert_skill: str | None = None,
+        user_context: Optional[Dict[str, Any]] = None,
+        language_expert_skill: Optional[str] = None,
     ):
         """Initialize technical author.
 
@@ -410,8 +411,8 @@ Format as JSON array of TechnicalFact objects."""
         return facts
 
     async def _analyze_api_batch(
-        self, new_apis: list, deleted_apis: list, modified_apis: list
-    ) -> list[TechnicalFact]:
+        self, new_apis: List[str], deleted_apis: List[str], modified_apis: List[str]
+    ) -> List[TechnicalFact]:
         """Process API changes in a batch."""
         # Simplified batch processing
         facts = []
@@ -551,7 +552,7 @@ Format as JSON array."""
 
         return facts
 
-    async def _generate_facts_response(self, context: list[dict]) -> str:
+    async def _generate_facts_response(self, context: List[Dict[str, Any]]) -> str:
         """Generate response from conversation context."""
         return self.llm.chat(
             messages=context,

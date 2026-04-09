@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
@@ -27,7 +28,7 @@ class Coordinator:
         repo_path: Path,
         config,
         analysis_id: str,
-        user_context: dict | None = None,
+        user_context: Optional[Dict[str, Any]] = None,
     ):
         """Initialize coordinator.
 
@@ -182,7 +183,9 @@ class Coordinator:
 
         return plans
 
-    def _categorize_facts(self, facts: list[TechnicalFact]) -> dict:
+    def _categorize_facts(
+        self, facts: List[TechnicalFact]
+    ) -> Dict[str, List[TechnicalFact]]:
         """Group facts by category for planning."""
         categories = {}
         for fact in facts:
@@ -192,7 +195,9 @@ class Coordinator:
             categories[cat].append(fact)
         return categories
 
-    async def _gather_user_input(self, facts_by_category: dict) -> dict:
+    async def _gather_user_input(
+        self, facts_by_category: Dict[str, List[TechnicalFact]]
+    ) -> Dict[str, Any]:
         """Interactive mode: ask user for context and preferences."""
         # Use pre-populated context from CLI as defaults
         context = dict(self.user_context)
@@ -274,9 +279,9 @@ class Coordinator:
     async def _create_format_plan(
         self,
         fmt: str,
-        facts: list[TechnicalFact],
-        facts_by_category: dict,
-        user_context: dict,
+        facts: List[TechnicalFact],
+        facts_by_category: Dict[str, List[TechnicalFact]],
+        user_context: Dict[str, Any],
     ) -> DocumentPlan:
         """Create a document plan for a specific format."""
         console.print(f"[dim]Creating {fmt} plan...[/dim]")
@@ -336,9 +341,9 @@ class Coordinator:
     def _build_planning_prompt(
         self,
         fmt: str,
-        facts: list[TechnicalFact],
-        facts_by_category: dict,
-        user_context: dict,
+        facts: List[TechnicalFact],
+        facts_by_category: Dict[str, List[TechnicalFact]],
+        user_context: Dict[str, Any],
     ) -> str:
         """Build prompt for document planning."""
         prompt = f"""Create a document plan for a {fmt.upper()} format design document.
@@ -421,7 +426,9 @@ Provide a document plan as JSON:
 
         return prompt
 
-    async def _generate_plan_response(self, context: list[dict], fmt: str) -> dict:
+    async def _generate_plan_response(
+        self, context: List[Dict[str, Any]], fmt: str
+    ) -> Dict[str, Any]:
         """Generate document plan from conversation context."""
         response = self.llm.chat(
             messages=context,
