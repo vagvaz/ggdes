@@ -114,7 +114,7 @@ class DocxAgent(OutputAgent):
                 )
 
         # Generate docx using docx-js via Node.js
-        docx_js_script = self._generate_docx_script(content, diagrams_dir)
+        docx_js_script = self._generate_docx_script(content, diagrams_dir, output_file)
 
         # Write temporary JS file
         js_file = output_dir / f"{self.analysis_id}_generate_docx.js"
@@ -149,10 +149,16 @@ class DocxAgent(OutputAgent):
 
         return output_file
 
-    def _generate_docx_script(self, content: str, diagrams_dir: Path) -> str:
+    def _generate_docx_script(
+        self, content: str, diagrams_dir: Path, output_file: Path
+    ) -> str:
         """Generate Node.js script for docx-js document creation with diagrams.
 
         Following the patterns from the docx skill documentation.
+        Args:
+            content: Document content
+            diagrams_dir: Directory containing diagram images
+            output_file: Path where the output docx should be saved
         """
         # Parse content into structured sections
         sections = self._parse_content_to_sections(content, diagrams_dir)
@@ -295,7 +301,7 @@ const doc = new Document({{
 
 // Generate document
 Packer.toBuffer(doc).then(buffer => {{
-    fs.writeFileSync("{output_file}", buffer);
+    fs.writeFileSync("{self._escape_js_string(str(output_file))}", buffer);
     console.log("Document generated successfully");
 }}).catch(err => {{
     console.error("Error:", err);
