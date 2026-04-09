@@ -35,7 +35,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
         for search_root in search_paths:
             if not search_root.exists():
                 continue
-            for root, dirs, files in os.walk(search_root):
+            for root, dirs, _files in os.walk(search_root):
                 if analysis_id in dirs:
                     kb_path = Path(root) / analysis_id
                     print(f"   Found at: {kb_path}")
@@ -115,7 +115,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
         data = json.loads(facts_file.read_text())
         print(f"   Facts count: {len(data)}")
         if data:
-            categories = set(f.get("category", "unknown") for f in data)
+            categories = {f.get("category", "unknown") for f in data}
             print(f"   Categories: {', '.join(categories)}")
         print()
     else:

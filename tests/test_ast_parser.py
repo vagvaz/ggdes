@@ -59,10 +59,10 @@ def hello_world(name: str) -> str:
 
 class TestClass:
     """A test class."""
-    
+
     def __init__(self, value: int):
         self.value = value
-    
+
     def get_value(self) -> int:
         """Get the value."""
         return self.value

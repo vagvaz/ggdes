@@ -344,7 +344,7 @@ class PdfAgent(OutputAgent):
                     capture_output=True,
                 )
             except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"Failed to convert to PDF: {e}")
+                raise RuntimeError(f"Failed to convert to PDF: {e}") from e
         finally:
             if temp_md.exists():
                 temp_md.unlink()

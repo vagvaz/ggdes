@@ -7,11 +7,9 @@ updates and a modern, responsive interface.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 
 from ggdes.config import GGDesConfig, load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
@@ -236,7 +234,7 @@ async def resume_analysis(analysis_id: str):
         return {"success": success, "analysis_id": analysis_id}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/analyses/{analysis_id}/delete")
@@ -269,7 +267,7 @@ async def delete_analysis(analysis_id: str, remove_kb: bool = True):
         return {"deleted": True, "analysis_id": analysis_id}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/analyses")
@@ -289,7 +287,7 @@ async def create_analysis(
     target_formats = formats or ["markdown"]
 
     try:
-        metadata = kb.create_analysis(
+        kb.create_analysis(
             analysis_id=analysis_id,
             name=name,
             repo_path=config.repo_path or Path.cwd(),
@@ -315,7 +313,7 @@ async def create_analysis(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/api/analyses/{analysis_id}/documents")

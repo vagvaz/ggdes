@@ -218,7 +218,7 @@ class GitAnalyzer:
         except subprocess.CalledProcessError as e:
             error_msg = f"Git diff failed: {e.stderr if e.stderr else 'Unknown error'}"
             console.print(f"[red]Error: {error_msg}[/red]")
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def get_commit_log(
         self, commit_range: str, focus_commits: list[str] | None = None

@@ -117,9 +117,6 @@ class AnalysisDetailView(VerticalScroll):
             completed = sum(
                 1 for s in metadata.stages.values() if s.status == StageStatus.COMPLETED
             )
-            failed = sum(
-                1 for s in metadata.stages.values() if s.status == StageStatus.FAILED
-            )
 
             # Progress bar
             yield Label(
@@ -577,7 +574,7 @@ class CommandHelp(Static):
 
 [bold cyan]Stage Status Icons:[/bold cyan]
 
-  [dim]○[/dim] Pending  [yellow]◐[/yellow] In Progress  
+  [dim]○[/dim] Pending  [yellow]◐[/yellow] In Progress
   [green]✓[/green] Completed  [red]✗[/red] Failed  [blue]⊘[/blue] Skipped
 """
 
@@ -1185,7 +1182,7 @@ class GGDesTUI(App):
             target_formats = formats or ["markdown"]
 
             # Create analysis in KB
-            metadata = self.kb_manager.create_analysis(
+            self.kb_manager.create_analysis(
                 analysis_id=analysis_id,
                 name=name,
                 repo_path=self.config.repo_path or Path.cwd(),

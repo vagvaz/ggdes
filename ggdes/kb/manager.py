@@ -102,9 +102,7 @@ class AnalysisMetadata(BaseModel):
         stage.error_message = None
         self.updated_at = datetime.now()
 
-    def complete_stage(
-        self, stage_name: str, output_path: str | None = None
-    ) -> None:
+    def complete_stage(self, stage_name: str, output_path: str | None = None) -> None:
         """Mark a stage as completed."""
         stage = self.get_stage(stage_name)
         stage.status = StageStatus.COMPLETED
@@ -293,7 +291,7 @@ class KnowledgeBaseManager:
 
         # Convert StageStatus enum to string
         if "stages" in data:
-            for stage_name, stage_data in data["stages"].items():
+            for _stage_name, stage_data in data["stages"].items():
                 if "status" in stage_data and hasattr(stage_data["status"], "value"):
                     stage_data["status"] = stage_data["status"].value
 

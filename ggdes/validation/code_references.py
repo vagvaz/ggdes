@@ -356,7 +356,7 @@ class CodeReferenceValidator:
 {chr(10).join(errors)}
 
 You must only reference code that exists in:
-1. The changed files (diff): 
+1. The changed files (diff):
 {available_files}
 
 2. The parsed code elements:

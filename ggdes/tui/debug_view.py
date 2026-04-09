@@ -177,7 +177,7 @@ class ConversationBrowser(Vertical):
 
         # Find the file for the currently selected agent
         agent_file = None
-        for name, file_path, storage_type in self.agents:
+        for name, file_path, _storage_type in self.agents:
             if name == self.selected_agent:
                 agent_file = file_path
                 break
@@ -199,7 +199,7 @@ class ConversationBrowser(Vertical):
             return
 
         # Reload conversation data
-        for name, file_path, storage_type in self.agents:
+        for name, file_path, _storage_type in self.agents:
             if name == self.selected_agent:
                 try:
                     new_data = json.loads(file_path.read_text())
@@ -357,7 +357,7 @@ class ConversationBrowser(Vertical):
         # Find agent data
         agent_data = None
         agent_file = None
-        for name, file_path, storage_type in self.agents:
+        for name, file_path, _storage_type in self.agents:
             if name == agent_name:
                 try:
                     agent_data = json.loads(file_path.read_text())
@@ -578,8 +578,6 @@ class OutputsBrowser(Vertical):
             items = sorted(dir_path.iterdir(), key=lambda x: (x.is_file(), x.name))
 
             for item in items:
-                rel_path = item.relative_to(base_path)
-
                 if item.is_dir():
                     child_node = node.add(f"📁 {item.name}")
                     self._add_files_to_tree(child_node, item, base_path)

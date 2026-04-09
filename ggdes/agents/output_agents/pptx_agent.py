@@ -286,7 +286,7 @@ class PptxAgent(OutputAgent):
         fontFace: "Arial Black"
     }});
 """
-                for i, diag_file in enumerate(
+                for _i, diag_file in enumerate(
                     diagram_files[:3]
                 ):  # Max 3 diagram slides
                     diagram_slides += f"""
@@ -353,7 +353,7 @@ pres.writeFile({{ fileName: "{output_file}" }})
                 capture_output=True,
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to convert to pptx: {e}")
+            raise RuntimeError(f"Failed to convert to pptx: {e}") from e
         finally:
             if temp_md.exists():
                 temp_md.unlink()

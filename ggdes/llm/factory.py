@@ -146,7 +146,6 @@ def _model_to_xml_schema(model_class: type[BaseModel], root_name: str = "root") 
     """
     schema = model_class.model_json_schema()
     properties = schema.get("properties", {})
-    required = schema.get("required", [])
 
     lines = [f"<{root_name}>"]
 
@@ -334,7 +333,7 @@ def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
     try:
         root = ET.fromstring(text)
     except ET.ParseError as e:
-        raise ValueError(f"XML parse error: {e}")
+        raise ValueError(f"XML parse error: {e}") from e
 
     # Convert XML to dict
     def xml_to_dict(element):
@@ -360,7 +359,7 @@ def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
     try:
         return response_model.model_validate(data)
     except ValidationError as e:
-        raise ValueError(f"Response validation failed: {e}")
+        raise ValueError(f"Response validation failed: {e}") from e
 
 
 def _parse_json_response(response_text: str, response_model: type[T]) -> T:
@@ -398,15 +397,17 @@ def _parse_json_response(response_text: str, response_model: type[T]) -> T:
             try:
                 data = json.loads(match.group())
             except json.JSONDecodeError as e:
-                raise ValueError(f"Failed to parse JSON from response: {e}")
+                raise ValueError(f"Failed to parse JSON from response: {e}") from e
         else:
-            raise ValueError(f"No JSON object found in response: {text[:200]}")
+            raise ValueError(
+                f"No JSON object found in response: {text[:200]}"
+            ) from None
 
     # Validate with Pydantic
     try:
         return response_model.model_validate(data)
     except ValidationError as e:
-        raise ValueError(f"Response validation failed: {e}")
+        raise ValueError(f"Response validation failed: {e}") from e
 
 
 class LLMProvider(ABC):

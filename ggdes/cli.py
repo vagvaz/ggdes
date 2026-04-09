@@ -249,7 +249,7 @@ def analyze(
         if isinstance(e, typer.Exit):
             raise
         console.print(f"[red]Error validating commit range:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Parse formats if provided
     target_formats = ["markdown"]  # Default
@@ -424,14 +424,12 @@ def analyze(
     except RuntimeError as e:
         logger.exception(f"Runtime error during analysis: {e}")
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
 def status(
-    analysis: Annotated[
-        str | None, typer.Argument(help="Analysis ID or name")
-    ] = None,
+    analysis: Annotated[str | None, typer.Argument(help="Analysis ID or name")] = None,
 ) -> None:
     """Show status of analyses."""
     config, _ = load_config()
@@ -541,9 +539,7 @@ def status(
 def resume(
     analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
     force: Annotated[bool, typer.Option(help="Force resume even if locked")] = False,
-    stage: Annotated[
-        str | None, typer.Option(help="Run specific stage only")
-    ] = None,
+    stage: Annotated[str | None, typer.Option(help="Run specific stage only")] = None,
     retry_failed: Annotated[
         bool, typer.Option(help="Retry failed stages (reset them to pending)")
     ] = False,
@@ -658,8 +654,6 @@ def resume(
         else:
             logger.info("No failed stages to reset")
 
-    repo_path = Path(found_metadata.repo_path)
-
     # Handle user context
     user_context = found_metadata.user_context or {}
 
@@ -759,7 +753,7 @@ def resume(
     except Exception as e:
         logger.exception(f"Unexpected error during analysis: {e}")
         console.print(f"[red]Unexpected error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -1108,6 +1102,8 @@ def debug(
                 debug_view = self.query_one("#debug-view", DebugView)
                 # Set the analysis selector's value
                 selector = debug_view.query_one("#analysis-selector")
+                from textual.widgets import Select
+
                 select_widget = selector.query_one("#analysis-select", Select)
                 if select_widget:
                     select_widget.value = self.analysis_id
@@ -1184,7 +1180,7 @@ def compare(
 
     except Exception as e:
         console.print(f"[red]Comparison failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -1294,7 +1290,7 @@ def export(
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -1367,7 +1363,7 @@ def archive(
 
     except Exception as e:
         console.print(f"[red]Archive failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -1499,8 +1495,6 @@ def web(
     try:
         import uvicorn
 
-        from ggdes.web import app as web_app
-
         console.print("[bold]Starting GGDes Web Interface[/bold]")
         console.print(f"[dim]Host:[/dim] {host}")
         console.print(f"[dim]Port:[/dim] {port}")
@@ -1522,10 +1516,10 @@ def web(
         console.print(
             "[dim]Install with: uv pip install fastapi uvicorn websockets[/dim]"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"[red]Failed to start web server:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def main() -> None:

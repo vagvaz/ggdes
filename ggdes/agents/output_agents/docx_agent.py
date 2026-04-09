@@ -1,5 +1,6 @@
 """Docx output agent for generating Word documents using the docx skill."""
 
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -397,14 +398,12 @@ Packer.toBuffer(doc).then(buffer => {{
         )
 
         if validate_script.exists() and docx_path.exists():
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["python", str(validate_script), str(docx_path)],
                     check=False,
                     capture_output=True,
-                )
-            except Exception:
-                pass  # Validation is optional
+                )  # Validation is optional
 
     def _fallback_to_pandoc(self, content: str, output_file: Path) -> None:
         """Fallback to pandoc for docx generation."""
@@ -419,7 +418,7 @@ Packer.toBuffer(doc).then(buffer => {{
                 capture_output=True,
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to convert to docx: {e}")
+            raise RuntimeError(f"Failed to convert to docx: {e}") from e
         finally:
             if temp_md.exists():
                 temp_md.unlink()

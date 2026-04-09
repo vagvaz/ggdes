@@ -127,7 +127,7 @@ class WorktreeManager:
             if base_path.exists():
                 try:
                     _remove_worktree(base_path)
-                except:
+                except Exception:
                     pass
             raise RuntimeError(error_msg) from e
 

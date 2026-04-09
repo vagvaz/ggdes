@@ -1,11 +1,9 @@
 """Diagram generation module using PlantUML."""
 
-import hashlib
-import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 
 class PlantUMLGenerator:
@@ -93,7 +91,7 @@ class PlantUMLGenerator:
                 str(temp_input),
             ]
 
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -214,7 +212,7 @@ class PlantUMLGenerator:
 
         # Attempt repairs
         current_code = plantuml_code
-        for attempt in range(max_attempts):
+        for _attempt in range(max_attempts):
             repaired_code = self._repair_plantuml(current_code, error)
             if repaired_code == current_code:
                 # No changes made, can't repair
