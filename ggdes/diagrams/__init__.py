@@ -48,6 +48,7 @@ class PlantUMLGenerator:
         plantuml_code: str,
         output_path: Path,
         format: Literal["png", "svg", "pdf"] = "png",
+        validate_and_repair: bool = True,
     ) -> Path:
         """Generate diagram from PlantUML code.
 
@@ -55,10 +56,20 @@ class PlantUMLGenerator:
             plantuml_code: PlantUML DSL code
             output_path: Output file path (without extension)
             format: Output format (png, svg, or pdf)
+            validate_and_repair: Whether to validate and attempt to repair code
 
         Returns:
             Path to the generated diagram file
         """
+        # Validate and repair if requested
+        if validate_and_repair:
+            repaired_code, is_valid, error = self.validate_and_repair(plantuml_code)
+            if not is_valid:
+                raise RuntimeError(
+                    f"PlantUML code validation failed and could not be repaired: {error}"
+                )
+            plantuml_code = repaired_code
+
         # Create temp file with plantuml code
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".puml", delete=False
@@ -180,6 +191,122 @@ class PlantUMLGenerator:
         finally:
             if temp_input.exists():
                 temp_input.unlink()
+
+    def validate_and_repair(
+        self, plantuml_code: str, max_attempts: int = 3
+    ) -> tuple[str, bool, Optional[str]]:
+        """Validate PlantUML code and attempt to repair if invalid.
+
+        Args:
+            plantuml_code: PlantUML DSL code to validate
+            max_attempts: Maximum repair attempts
+
+        Returns:
+            Tuple of (code, is_valid, error_message)
+            - code: Original or repaired code
+            - is_valid: Whether code is valid (original or repaired)
+            - error_message: Error message if repair failed
+        """
+        # First, try to validate as-is
+        is_valid, error = self.validate(plantuml_code)
+        if is_valid:
+            return plantuml_code, True, None
+
+        # Attempt repairs
+        current_code = plantuml_code
+        for attempt in range(max_attempts):
+            repaired_code = self._repair_plantuml(current_code, error)
+            if repaired_code == current_code:
+                # No changes made, can't repair
+                break
+
+            current_code = repaired_code
+            is_valid, error = self.validate(current_code)
+            if is_valid:
+                return current_code, True, None
+
+        # Repair failed
+        return plantuml_code, False, error
+
+    def _repair_plantuml(self, code: str, error_msg: Optional[str]) -> str:
+        """Attempt to repair common PlantUML errors.
+
+        Args:
+            code: PlantUML code to repair
+            error_msg: Error message from validation
+
+        Returns:
+            Repaired code (or original if can't repair)
+        """
+        lines = code.split("\n")
+        repaired_lines = []
+        has_start = any("@startuml" in line for line in lines)
+        has_end = any("@enduml" in line for line in lines)
+
+        # Fix 1: Add missing @startuml/@enduml
+        if not has_start:
+            repaired_lines.append("@startuml")
+        repaired_lines.extend(lines)
+        if not has_end:
+            repaired_lines.append("@enduml")
+
+        # Fix 2: Fix invalid characters in identifiers
+        fixed_lines = []
+        for line in repaired_lines:
+            # Fix identifiers with spaces or special chars
+            if " as " in line and '"' not in line:
+                # Component "Label" as name -> Component "Label" as name
+                parts = line.split(" as ")
+                if len(parts) == 2:
+                    before = parts[0].strip()
+                    after = parts[1].strip()
+                    # Quote the label if it has spaces
+                    if " " in before and not before.startswith('"'):
+                        # Extract the type and label
+                        words = before.split()
+                        if len(words) >= 2:
+                            comp_type = words[0]
+                            label = " ".join(words[1:])
+                            before = f'{comp_type} "{label}"'
+                    line = f"{before} as {after}"
+
+            # Fix 3: Fix arrow syntax errors
+            if "-->" in line or "->" in line:
+                # Ensure proper spacing
+                line = line.replace(" ->", "->").replace("-> ", "->")
+                line = line.replace(" -->", "-->").replace("--> ", "-->")
+
+            # Fix 4: Remove empty parentheses in class definitions
+            if line.strip().startswith("class ") and "()" in line:
+                line = line.replace("()", "")
+
+            fixed_lines.append(line)
+
+        # Fix 5: Handle specific error patterns from error message
+        if error_msg:
+            # Fix "Some diagram description contains errors" - often missing quotes
+            if "description contains errors" in error_msg:
+                # Wrap unquoted labels in quotes
+                for i, line in enumerate(fixed_lines):
+                    if ":" in line and "-->" in line and '"' not in line:
+                        # Relationship with label: A --> B : label
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            relation = parts[0].strip()
+                            label = parts[1].strip()
+                            if " " in label and not label.startswith('"'):
+                                fixed_lines[i] = f'{relation} : "{label}"'
+
+            # Fix invalid color/style syntax
+            if "Invalid style" in error_msg or "color" in error_msg.lower():
+                for i, line in enumerate(fixed_lines):
+                    # Remove or fix invalid style definitions
+                    if "#" in line and any(c in line for c in ["[", "]", "{", "}"]):
+                        # Simplify by removing color definitions
+                        line = line.split("#")[0].strip()
+                        fixed_lines[i] = line
+
+        return "\n".join(fixed_lines)
 
 
 def generate_architecture_diagram(
