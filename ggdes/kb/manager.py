@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -70,7 +70,7 @@ class AnalysisMetadata(BaseModel):
     storage_policy: str = "summary"
 
     # User-provided context for all agents
-    user_context: dict | None = None
+    user_context: Optional[Dict[str, Any]] = None
 
     # Worktree information
     worktrees: WorktreeInfo | None = None

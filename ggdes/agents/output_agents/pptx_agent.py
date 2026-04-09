@@ -3,6 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
 
@@ -23,7 +24,7 @@ class PptxAgent(OutputAgent):
         # Load user context from document plan
         self._load_user_context()
 
-    def _load_plan(self) -> dict | None:
+    def _load_plan(self) -> Optional[Dict[str, Any]]:
         """Load document plan from KB."""
         from ggdes.config import get_kb_path
 
@@ -147,7 +148,7 @@ class PptxAgent(OutputAgent):
 
         return output_file
 
-    def _parse_content_to_slides(self, content: str) -> list[dict]:
+    def _parse_content_to_slides(self, content: str) -> List[Dict[str, Any]]:
         """Parse markdown content into slide structure."""
         lines = content.split("\n")
         slides = []
@@ -217,7 +218,7 @@ class PptxAgent(OutputAgent):
         return slides
 
     def _generate_pptx_script(
-        self, slides: list[dict], output_file: Path, diagrams_dir: Path
+        self, slides: List[Dict[str, Any]], output_file: Path, diagrams_dir: Path
     ) -> str:
         """Generate Node.js script for pptxgenjs presentation creation with diagrams.
 

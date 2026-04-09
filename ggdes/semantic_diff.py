@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 
@@ -505,7 +506,7 @@ class SemanticDiffAnalyzer:
 
         return changes
 
-    def _parse_ast_elements(self, content: str, file_path: str) -> list[dict]:
+    def _parse_ast_elements(self, content: str, file_path: str) -> List[Dict[str, Any]]:
         """Parse AST elements from code content.
 
         Returns list of dicts with:

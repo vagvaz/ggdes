@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 
@@ -23,7 +23,7 @@ class OutputAgent(ABC):
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
-        self.user_context: dict | None = None
+        self.user_context: Optional[Dict[str, Any]] = None
         self._diagram_generator: Optional = None
         self._diagram_cache = None
 
@@ -98,11 +98,11 @@ class OutputAgent(ABC):
 
     def _generate_diagrams_for_facts(
         self,
-        facts: list,
+        facts: List[Any],
         output_dir: Path,
-        diagram_types: list[str] | None = None,
+        diagram_types: Optional[List[str]] = None,
         use_cache: bool = True,
-    ) -> list[tuple[str, Path, str]]:
+    ) -> List[tuple[str, Path, str]]:
         """Generate diagrams from technical facts with caching support.
 
         Args:

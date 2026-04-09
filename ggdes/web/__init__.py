@@ -7,6 +7,7 @@ updates and a modern, responsive interface.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
@@ -34,7 +35,7 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: Dict[str, Any]):
         """Broadcast message to all connected clients."""
         disconnected = []
         for connection in self.active_connections:

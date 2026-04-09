@@ -3,6 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
 
@@ -23,7 +24,7 @@ class PdfAgent(OutputAgent):
         # Load user context from document plan
         self._load_user_context()
 
-    def _load_plan(self) -> dict | None:
+    def _load_plan(self) -> Optional[Dict[str, Any]]:
         """Load document plan from KB."""
         from ggdes.config import get_kb_path
 

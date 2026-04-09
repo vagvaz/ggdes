@@ -3,7 +3,7 @@
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
@@ -19,7 +19,7 @@ app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
 
 
-def _gather_user_context() -> dict:
+def _gather_user_context() -> Dict[str, Any]:
     """Gather user context through interactive questionnaire.
 
     Returns:
