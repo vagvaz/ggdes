@@ -19,9 +19,10 @@ import socket
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
-def get_soffice_env() -> dict:
+def get_soffice_env() -> Dict[str, str]:
     env = os.environ.copy()
     env["SAL_USE_VCLPLUGIN"] = "svp"
 
@@ -32,7 +33,7 @@ def get_soffice_env() -> dict:
     return env
 
 
-def run_soffice(args: list[str], **kwargs) -> subprocess.CompletedProcess:
+def run_soffice(args: List[str], **kwargs) -> subprocess.CompletedProcess[Any]:
     env = get_soffice_env()
     return subprocess.run(["soffice"] + args, env=env, **kwargs)
 

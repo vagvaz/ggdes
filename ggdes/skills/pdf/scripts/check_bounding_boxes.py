@@ -1,16 +1,17 @@
 import json
 import sys
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class RectAndField:
-    rect: list[float]
+    rect: List[float]
     rect_type: str
-    field: dict
+    field: Dict[str, Any]
 
 
-def get_bounding_box_messages(fields_json_stream) -> list[str]:
+def get_bounding_box_messages(fields_json_stream) -> List[str]:
     messages = []
     fields = json.load(fields_json_stream)
     messages.append(f"Read {len(fields['form_fields'])} fields")

@@ -13,6 +13,7 @@ Rules:
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import defusedxml.minidom
 
@@ -108,7 +109,7 @@ def _merge_tracked_content(target, source):
         target.appendChild(child)
 
 
-def _find_elements(root, tag: str) -> list:
+def _find_elements(root, tag: str) -> List[Any]:
     results = []
 
     def traverse(node):
