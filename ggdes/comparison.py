@@ -7,14 +7,13 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
 
 from ggdes.config import GGDesConfig
 from ggdes.kb import KnowledgeBaseManager
-from ggdes.schemas import ChangeSummary, TechnicalFact, DocumentPlan
+from ggdes.schemas import ChangeSummary, TechnicalFact
 
 console = Console()
 
@@ -123,7 +122,7 @@ class AnalysisComparator:
             similarity_score=similarity,
         )
 
-    def _load_git_summary(self, analysis_id: str) -> Optional[ChangeSummary]:
+    def _load_git_summary(self, analysis_id: str) -> ChangeSummary | None:
         """Load git analysis summary."""
         analysis_path = (
             self.kb_manager.get_analysis_path(analysis_id)
@@ -157,7 +156,7 @@ class AnalysisComparator:
 
         return facts
 
-    def _load_semantic_diff(self, analysis_id: str) -> Optional[dict]:
+    def _load_semantic_diff(self, analysis_id: str) -> dict | None:
         """Load semantic diff result for an analysis."""
         semantic_diff_path = (
             self.kb_manager.get_analysis_path(analysis_id)
@@ -175,8 +174,8 @@ class AnalysisComparator:
 
     def _compare_semantic_diff(
         self,
-        semantic_diff1: Optional[dict],
-        semantic_diff2: Optional[dict],
+        semantic_diff1: dict | None,
+        semantic_diff2: dict | None,
     ) -> list[AnalysisDiff]:
         """Compare semantic diff results.
 
@@ -313,7 +312,7 @@ class AnalysisComparator:
         return diffs
 
     def _compare_file_changes(
-        self, summary1: Optional[ChangeSummary], summary2: Optional[ChangeSummary]
+        self, summary1: ChangeSummary | None, summary2: ChangeSummary | None
     ) -> list[AnalysisDiff]:
         """Compare file changes."""
         diffs = []
@@ -406,7 +405,7 @@ class AnalysisComparator:
         return diffs
 
     def _compare_breaking_changes(
-        self, summary1: Optional[ChangeSummary], summary2: Optional[ChangeSummary]
+        self, summary1: ChangeSummary | None, summary2: ChangeSummary | None
     ) -> list[AnalysisDiff]:
         """Compare breaking changes."""
         diffs = []
@@ -472,7 +471,7 @@ def print_comparison(result: ComparisonResult) -> None:
     Args:
         result: ComparisonResult to display
     """
-    console.print(f"\n[bold]Analysis Comparison[/bold]")
+    console.print("\n[bold]Analysis Comparison[/bold]")
     console.print(f"  {result.analysis1_name} vs {result.analysis2_name}")
     console.print(f"  Similarity Score: {result.similarity_score:.1%}")
     console.print()

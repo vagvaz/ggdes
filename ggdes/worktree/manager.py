@@ -3,7 +3,6 @@
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from ggdes.config import GGDesConfig, get_worktrees_path
 
@@ -168,7 +167,7 @@ class WorktreeManager:
             )
             raise RuntimeError(f"Head worktree directory not created: {head_path}")
 
-        print(f"[worktree] Successfully created worktrees")
+        print("[worktree] Successfully created worktrees")
 
         return WorktreePair(
             base=base_path,
@@ -231,7 +230,6 @@ class WorktreeManager:
             List of (analysis_id, path, age_days) tuples that were cleaned up
         """
         from datetime import datetime, timedelta
-        import os
 
         # Use config value if available
         if hasattr(self.config, "worktree_retention_days"):
@@ -275,7 +273,7 @@ class WorktreeManager:
 
         return cleaned
 
-    def get_worktree_age(self, analysis_id: str) -> Optional[float]:
+    def get_worktree_age(self, analysis_id: str) -> float | None:
         """Get the age of a worktree in days.
 
         Args:
@@ -339,7 +337,7 @@ def _create_worktree(repo_path: Path, worktree_path: Path, commit: str) -> None:
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
-        error_msg = f"Git worktree add failed:\n"
+        error_msg = "Git worktree add failed:\n"
         error_msg += f"  Command: {' '.join(cmd)}\n"
         error_msg += f"  Exit code: {result.returncode}\n"
         if result.stderr:

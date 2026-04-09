@@ -1,21 +1,19 @@
 """Git Analysis Agent for analyzing code changes with multi-turn support."""
 
-import json
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 
+from ggdes.agents.skill_utils import (
+    detect_primary_language,
+    get_expert_skill_for_language,
+    load_skill,
+)
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
 from ggdes.schemas import ChangeSummary, StoragePolicy
-from ggdes.agents.skill_utils import (
-    load_skill,
-    detect_primary_language,
-    get_expert_skill_for_language,
-)
 
 console = Console()
 
@@ -27,8 +25,8 @@ class GitAnalyzer:
         self,
         repo_path: Path,
         config,
-        analysis_id: Optional[str] = None,
-        user_context: Optional[dict] = None,
+        analysis_id: str | None = None,
+        user_context: dict | None = None,
     ):
         """Initialize git analyzer.
 
@@ -43,10 +41,10 @@ class GitAnalyzer:
         self.analysis_id = analysis_id
         self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
-        self.conversation: Optional[ConversationContext] = None
+        self.conversation: ConversationContext | None = None
         self.chunk_token_threshold = 25000  # Chunk diffs larger than this
         self.max_diff_tokens = 50000  # Absolute max before chunking
-        self._language_expert_skill: Optional[str] = None
+        self._language_expert_skill: str | None = None
 
         # Store analysis data for code reference validation
         self._current_diff: str = ""
@@ -70,7 +68,7 @@ class GitAnalyzer:
                         )
         except Exception:
             console.print(
-                f"  [dim]Language expert skill not available, continuing with default analysis[/dim]"
+                "  [dim]Language expert skill not available, continuing with default analysis[/dim]"
             )
 
     def _init_conversation(
@@ -149,7 +147,7 @@ class GitAnalyzer:
         return "\n".join(guidance_parts) if guidance_parts else ""
 
     def get_diff(
-        self, commit_range: str, focus_commits: Optional[list[str]] = None
+        self, commit_range: str, focus_commits: list[str] | None = None
     ) -> str:
         """Get git diff for a commit range or specific focus commits.
 
@@ -223,7 +221,7 @@ class GitAnalyzer:
             raise RuntimeError(error_msg)
 
     def get_commit_log(
-        self, commit_range: str, focus_commits: Optional[list[str]] = None
+        self, commit_range: str, focus_commits: list[str] | None = None
     ) -> list[dict]:
         """Get commit log with messages.
 
@@ -310,7 +308,7 @@ class GitAnalyzer:
             return commits
 
     def get_changed_files(
-        self, commit_range: str, focus_commits: Optional[list[str]] = None
+        self, commit_range: str, focus_commits: list[str] | None = None
     ) -> list[dict]:
         """Get list of changed files with stats.
 
@@ -436,7 +434,7 @@ class GitAnalyzer:
     async def analyze(
         self,
         commit_range: str,
-        focus_commits: Optional[list[str]] = None,
+        focus_commits: list[str] | None = None,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
     ) -> ChangeSummary:
         """Analyze git changes with multi-turn conversation and chunking.
@@ -882,7 +880,7 @@ Then provide a structured ChangeSummary.
     def load_conversation(
         cls,
         kb_path: Path,
-        storage_policy: Optional[StoragePolicy] = None,
+        storage_policy: StoragePolicy | None = None,
     ) -> ConversationContext:
         """Load existing conversation from KB."""
         return ConversationContext.load(kb_path, storage_policy)

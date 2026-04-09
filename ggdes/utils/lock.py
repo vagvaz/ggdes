@@ -4,8 +4,6 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
-
 
 LOCK_FILE_NAME = ".lock-ggdes-analysis"
 LOCK_TIMEOUT_HOURS = 1  # Consider lock stale after 1 hour
@@ -17,7 +15,7 @@ class LockInfo:
 
     pid: int
     timestamp: datetime
-    analysis_id: Optional[str] = None
+    analysis_id: str | None = None
 
     @property
     def is_stale(self) -> bool:
@@ -38,7 +36,7 @@ class AnalysisLock:
         self.repo_path = repo_path.resolve()
         self.lock_file = self.repo_path / LOCK_FILE_NAME
 
-    def acquire(self, analysis_id: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    def acquire(self, analysis_id: str | None = None) -> tuple[bool, str | None]:
         """Attempt to acquire the lock.
 
         Args:
@@ -110,7 +108,7 @@ class AnalysisLock:
 
         return True
 
-    def get_lock_info(self) -> Optional[LockInfo]:
+    def get_lock_info(self) -> LockInfo | None:
         """Get information about the current lock.
 
         Returns:
@@ -127,8 +125,8 @@ class AnalysisLock:
         return lock_info
 
     def force_acquire(
-        self, analysis_id: Optional[str] = None
-    ) -> tuple[bool, Optional[str]]:
+        self, analysis_id: str | None = None
+    ) -> tuple[bool, str | None]:
         """Force acquire the lock, killing any existing lock holder.
 
         Args:
@@ -159,7 +157,7 @@ class AnalysisLock:
         # Create new lock
         return self.acquire(analysis_id)
 
-    def _read_lock(self) -> Optional[LockInfo]:
+    def _read_lock(self) -> LockInfo | None:
         """Read lock file contents."""
         try:
             with open(self.lock_file) as f:
@@ -175,7 +173,7 @@ class AnalysisLock:
         except (ValueError, IndexError, FileNotFoundError):
             return None
 
-    def _write_lock(self, analysis_id: Optional[str] = None) -> None:
+    def _write_lock(self, analysis_id: str | None = None) -> None:
         """Write lock file."""
         content = f"{os.getpid()}\n{datetime.now().isoformat()}"
         if analysis_id:
@@ -202,7 +200,7 @@ class LockContext:
     """Context manager for analysis locks."""
 
     def __init__(
-        self, repo_path: Path, analysis_id: Optional[str] = None, force: bool = False
+        self, repo_path: Path, analysis_id: str | None = None, force: bool = False
     ):
         """Initialize lock context.
 

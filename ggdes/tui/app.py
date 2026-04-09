@@ -1,15 +1,17 @@
 """Terminal UI for GGDes using Textual."""
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Grid
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import (
     Button,
+    Checkbox,
     DataTable,
     Footer,
     Header,
@@ -17,16 +19,12 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    ProgressBar,
     Static,
     TabbedContent,
     TabPane,
-    ProgressBar,
-    RichLog,
-    Checkbox,
 )
-from textual.binding import Binding
 
-from ggdes.cli import console
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.worktree import WorktreeManager
@@ -266,7 +264,7 @@ class GitLogView(VerticalScroll):
                 "-C",
                 str(self.repo_path),
                 "log",
-                f"--format=%H|%ad|%an|%s|%D",
+                "--format=%H|%ad|%an|%s|%D",
                 "--date=short",
                 f"-n{limit}",
                 "--decorate",
@@ -648,9 +646,9 @@ class NewAnalysisDialog(Screen):
 
     def __init__(
         self,
-        on_create: Callable[[str, str, Optional[list[str]], list[str]], None],
+        on_create: Callable[[str, str, list[str] | None, list[str]], None],
         commit_range: str = "",
-        focus_commits: Optional[list[str]] = None,
+        focus_commits: list[str] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -844,38 +842,37 @@ class GGDesTUI(App):
         yield Header(show_clock=True)
 
         with TabbedContent():
-            with TabPane("📊 Analyses", id="analyses"):
-                with Horizontal():
-                    # Left sidebar: Analysis list
-                    with Vertical(id="sidebar"):
-                        yield Label("[bold]Analyses[/bold]")
-                        yield Label("")
+            with TabPane("📊 Analyses", id="analyses"), Horizontal():
+                # Left sidebar: Analysis list
+                with Vertical(id="sidebar"):
+                    yield Label("[bold]Analyses[/bold]")
+                    yield Label("")
 
-                        analyses = self.kb_manager.list_analyses()
-                        if analyses:
-                            list_items = []
-                            for aid, metadata in analyses:
-                                completed = len(metadata.get_completed_stages())
-                                total = len(metadata.stages)
-                                status = f"{completed}/{total}"
-                                list_items.append(
-                                    AnalysisListItem(aid, metadata.name, status)
-                                )
-
-                            list_view = ListView(*list_items, id="analysis-list")
-                            yield list_view
-                        else:
-                            yield Label("[dim]No analyses yet.[/dim]")
-                            yield Label("")
-                            yield Button(
-                                "➕ New Analysis",
-                                id="new_analysis_btn",
-                                variant="primary",
+                    analyses = self.kb_manager.list_analyses()
+                    if analyses:
+                        list_items = []
+                        for aid, metadata in analyses:
+                            completed = len(metadata.get_completed_stages())
+                            total = len(metadata.stages)
+                            status = f"{completed}/{total}"
+                            list_items.append(
+                                AnalysisListItem(aid, metadata.name, status)
                             )
 
-                    # Right: Detail view
-                    with Vertical(id="main-content"):
-                        yield AnalysisDetailView(id="detail-view")
+                        list_view = ListView(*list_items, id="analysis-list")
+                        yield list_view
+                    else:
+                        yield Label("[dim]No analyses yet.[/dim]")
+                        yield Label("")
+                        yield Button(
+                            "➕ New Analysis",
+                            id="new_analysis_btn",
+                            variant="primary",
+                        )
+
+                # Right: Detail view
+                with Vertical(id="main-content"):
+                    yield AnalysisDetailView(id="detail-view")
 
             with TabPane("🌳 Worktrees", id="worktrees"):
                 yield WorktreeView()
@@ -945,7 +942,7 @@ class GGDesTUI(App):
         self,
         name: str,
         commit_range: str,
-        focus_commits: Optional[list[str]],
+        focus_commits: list[str] | None,
         formats: list[str],
     ) -> None:
         """Handle new analysis creation from dialog."""
@@ -1103,7 +1100,6 @@ class GGDesTUI(App):
 
     def _delete_analysis(self, analysis_id: str) -> None:
         """Delete an analysis after confirmation."""
-        from textual.widgets import Checkbox
 
         # Get analysis metadata for the name
         metadata = self.kb_manager.load_metadata(analysis_id)
@@ -1165,9 +1161,9 @@ class GGDesTUI(App):
         self,
         name: str,
         commit_range: str,
-        focus_commits: Optional[list[str]] = None,
-        formats: Optional[list[str]] = None,
-    ) -> Optional[str]:
+        focus_commits: list[str] | None = None,
+        formats: list[str] | None = None,
+    ) -> str | None:
         """Create a new analysis.
 
         Args:

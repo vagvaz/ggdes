@@ -1,18 +1,16 @@
 """Pipeline orchestrator for running analysis stages."""
 
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 
 from ggdes.agents import GitAnalyzer
 from ggdes.config import GGDesConfig, ParsingMode
-from ggdes.kb import KnowledgeBaseManager, StageStatus
+from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
-from ggdes.schemas import ChangeSummary
+from ggdes.schemas import StoragePolicy
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
-from ggdes.schemas import StoragePolicy
 
 console = Console()
 
@@ -122,7 +120,7 @@ class AnalysisPipeline:
                     console.print(f"Run 'ggdes resume {self.analysis_id}' to retry")
                     return False
 
-        console.print(f"\n[green]✓ All stages completed successfully![/green]")
+        console.print("\n[green]✓ All stages completed successfully![/green]")
         return True
 
     def _run_worktree_setup(self) -> bool:
@@ -622,7 +620,7 @@ class AnalysisPipeline:
             )
 
             if result.has_breaking_changes:
-                console.print(f"  [yellow]⚠ Breaking changes detected![/yellow]")
+                console.print("  [yellow]⚠ Breaking changes detected![/yellow]")
 
             return True
 
@@ -635,14 +633,14 @@ class AnalysisPipeline:
 
     def _run_output_generation(self) -> bool:
         """Run document output generation stage."""
-        from ggdes.agents.output_agents import (
-            MarkdownAgent,
-            DocxAgent,
-            PptxAgent,
-            PdfAgent,
-        )
-
         import asyncio
+
+        from ggdes.agents.output_agents import (
+            DocxAgent,
+            MarkdownAgent,
+            PdfAgent,
+            PptxAgent,
+        )
 
         # Get formats to generate from metadata (CLI-selected formats)
         formats = self.metadata.target_formats or ["markdown"]
@@ -701,5 +699,5 @@ class AnalysisPipeline:
                 console.print(f"    [dim]{fmt}: {path}[/dim]")
             return True
         else:
-            console.print(f"\n  [red]No documents were generated successfully[/red]")
+            console.print("\n  [red]No documents were generated successfully[/red]")
             return False

@@ -1,8 +1,7 @@
 """Prompt management with versioning for GGDes."""
 
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -10,7 +9,7 @@ import yaml
 class PromptLoader:
     """Load and manage versioned prompts."""
 
-    def __init__(self, version: Optional[str] = None):
+    def __init__(self, version: str | None = None):
         """Initialize prompt loader.
 
         Args:
@@ -131,7 +130,7 @@ def get_default_loader() -> PromptLoader:
 
 
 def get_prompt(
-    agent_name: str, prompt_key: str, version: Optional[str] = None, **format_kwargs
+    agent_name: str, prompt_key: str, version: str | None = None, **format_kwargs
 ) -> str:
     """Convenience function to get a single prompt.
 

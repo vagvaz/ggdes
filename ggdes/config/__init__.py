@@ -1,8 +1,8 @@
 """Configuration management for GGDes."""
 
 from ggdes.config.loader import (
-    GGDesConfig,
     FeaturesConfig,
+    GGDesConfig,
     ModelConfig,
     OutputConfig,
     ParsingConfig,

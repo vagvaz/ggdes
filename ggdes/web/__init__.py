@@ -276,8 +276,8 @@ async def delete_analysis(analysis_id: str, remove_kb: bool = True):
 async def create_analysis(
     name: str,
     commit_range: str,
-    focus_commits: Optional[list[str]] = None,
-    formats: Optional[list[str]] = None,
+    focus_commits: list[str] | None = None,
+    formats: list[str] | None = None,
 ):
     """Create a new analysis."""
     import uuid

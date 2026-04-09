@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -25,10 +25,10 @@ class StageInfo(BaseModel):
     """Information about a stage in the analysis pipeline."""
 
     status: StageStatus = StageStatus.PENDING
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    output_path: Optional[str] = None
-    error_message: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    output_path: str | None = None
+    error_message: str | None = None
 
 
 class WorktreeInfo(BaseModel):
@@ -44,8 +44,8 @@ class DocumentInfo(BaseModel):
     """Information about a generated document."""
 
     format: str
-    path: Optional[str] = None
-    generated_at: Optional[datetime] = None
+    path: str | None = None
+    generated_at: datetime | None = None
 
 
 class AnalysisMetadata(BaseModel):
@@ -56,7 +56,7 @@ class AnalysisMetadata(BaseModel):
     name: str
     repo_path: str
     commit_range: str
-    focus_commits: Optional[list[str]] = None  # For non-contiguous analysis
+    focus_commits: list[str] | None = None  # For non-contiguous analysis
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -70,10 +70,10 @@ class AnalysisMetadata(BaseModel):
     storage_policy: str = "summary"
 
     # User-provided context for all agents
-    user_context: Optional[dict] = None
+    user_context: dict | None = None
 
     # Worktree information
-    worktrees: Optional[WorktreeInfo] = None
+    worktrees: WorktreeInfo | None = None
 
     # Stage tracking
     stages: dict[str, StageInfo] = Field(default_factory=dict)
@@ -103,7 +103,7 @@ class AnalysisMetadata(BaseModel):
         self.updated_at = datetime.now()
 
     def complete_stage(
-        self, stage_name: str, output_path: Optional[str] = None
+        self, stage_name: str, output_path: str | None = None
     ) -> None:
         """Mark a stage as completed."""
         stage = self.get_stage(stage_name)
@@ -199,9 +199,9 @@ class KnowledgeBaseManager:
         name: str,
         repo_path: Path,
         commit_range: str,
-        focus_commits: Optional[list[str]] = None,
+        focus_commits: list[str] | None = None,
         prompt_version: str = "current",
-        target_formats: Optional[list[str]] = None,
+        target_formats: list[str] | None = None,
         storage_policy: str = "summary",
     ) -> AnalysisMetadata:
         """Create a new analysis in the knowledge base.
@@ -250,7 +250,7 @@ class KnowledgeBaseManager:
         self._save_metadata(analysis_id, metadata)
         return metadata
 
-    def load_metadata(self, analysis_id: str) -> Optional[AnalysisMetadata]:
+    def load_metadata(self, analysis_id: str) -> AnalysisMetadata | None:
         """Load metadata for an analysis.
 
         Args:
@@ -359,7 +359,7 @@ class KnowledgeBaseManager:
 
     def can_resume(
         self, analysis_id: str, retry_failed: bool = False
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Check if an analysis can be resumed.
 
         Args:

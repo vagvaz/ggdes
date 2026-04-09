@@ -2,12 +2,11 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def load_skill(skill_name: str, repo_path: Optional[Path] = None) -> Optional[str]:
+def load_skill(skill_name: str, repo_path: Path | None = None) -> str | None:
     """Load skill documentation from skills directory.
 
     Args:
@@ -43,7 +42,7 @@ def load_skill(skill_name: str, repo_path: Optional[Path] = None) -> Optional[st
     return None
 
 
-def detect_primary_language(repo_path: Path) -> Optional[str]:
+def detect_primary_language(repo_path: Path) -> str | None:
     """Detect the primary programming language in a repository.
 
     Analyzes file extensions to determine the dominant language.
@@ -96,7 +95,7 @@ def detect_primary_language(repo_path: Path) -> Optional[str]:
     return primary_lang
 
 
-def get_expert_skill_for_language(language: str) -> Optional[str]:
+def get_expert_skill_for_language(language: str) -> str | None:
     """Get the expert skill name for a programming language.
 
     Args:

@@ -1,11 +1,8 @@
 """AST parsing for code analysis using tree-sitter."""
 
-import hashlib
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from tree_sitter import Language, Parser, Tree
 
@@ -21,7 +18,7 @@ class ParseResult:
     elements: list[CodeElement]
     tree: Tree
     success: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class ASTParser:
@@ -56,7 +53,7 @@ class ASTParser:
         self._languages["cpp"] = None
         self._parsers["cpp"] = None
 
-    def _get_parser(self, language: str) -> Optional[Parser]:
+    def _get_parser(self, language: str) -> Parser | None:
         """Get or initialize parser for a language."""
         if language in self._parsers and self._parsers[language]:
             return self._parsers[language]
@@ -73,7 +70,7 @@ class ASTParser:
 
         return None
 
-    def detect_language(self, file_path: Path) -> Optional[str]:
+    def detect_language(self, file_path: Path) -> str | None:
         """Detect programming language from file extension.
 
         Args:
@@ -86,7 +83,7 @@ class ASTParser:
         return self.SUPPORTED_LANGUAGES.get(ext)
 
     def parse_file(
-        self, file_path: Path, relative_to: Optional[Path] = None
+        self, file_path: Path, relative_to: Path | None = None
     ) -> ParseResult:
         """Parse a source file and extract code elements.
 
@@ -168,7 +165,7 @@ class ASTParser:
         )
 
     def _extract_python_elements(
-        self, tree: Tree, file_path: Path, relative_to: Optional[Path] = None
+        self, tree: Tree, file_path: Path, relative_to: Path | None = None
     ) -> list[CodeElement]:
         """Extract code elements from Python AST."""
         elements = []
@@ -182,7 +179,7 @@ class ASTParser:
             except ValueError:
                 pass
 
-        def extract_from_node(node, parent_name: Optional[str] = None):
+        def extract_from_node(node, parent_name: str | None = None):
             """Recursively extract elements from AST nodes."""
             if node.type == "function_definition":
                 # Extract function
@@ -295,7 +292,7 @@ class ASTParser:
         return elements
 
     def _extract_cpp_elements(
-        self, tree: Tree, file_path: Path, relative_to: Optional[Path] = None
+        self, tree: Tree, file_path: Path, relative_to: Path | None = None
     ) -> list[CodeElement]:
         """Extract code elements from C++ AST."""
         elements = []
@@ -309,7 +306,7 @@ class ASTParser:
             except ValueError:
                 pass
 
-        def extract_from_node(node, parent_name: Optional[str] = None):
+        def extract_from_node(node, parent_name: str | None = None):
             """Recursively extract elements from AST nodes."""
             # C++ function definition
             if node.type == "function_definition":
@@ -375,7 +372,7 @@ class ASTParser:
         return elements
 
     def parse_directory(
-        self, directory: Path, relative_to: Optional[Path] = None, verbose: bool = False
+        self, directory: Path, relative_to: Path | None = None, verbose: bool = False
     ) -> list[ParseResult]:
         """Parse all supported files in a directory.
 
@@ -436,7 +433,7 @@ class ASTParser:
     def parse_files(
         self,
         files: list[Path],
-        relative_to: Optional[Path] = None,
+        relative_to: Path | None = None,
         verbose: bool = False,
     ) -> list[ParseResult]:
         """Parse a specific list of files.
@@ -608,7 +605,7 @@ class ASTParser:
         self,
         directory: Path,
         changed_files: list[str],
-        relative_to: Optional[Path] = None,
+        relative_to: Path | None = None,
         include_referenced: bool = True,
         max_referenced_depth: int = 1,
         verbose: bool = False,
@@ -627,7 +624,7 @@ class ASTParser:
             List of ParseResults
         """
         if verbose:
-            print(f"[AST Parser] Incremental parsing mode")
+            print("[AST Parser] Incremental parsing mode")
             print(f"[AST Parser] Base directory: {directory}")
             print(f"[AST Parser] Changed files: {len(changed_files)}")
 
@@ -673,7 +670,7 @@ class ASTParser:
 
     def get_element_by_name(
         self, results: list[ParseResult], name: str
-    ) -> Optional[CodeElement]:
+    ) -> CodeElement | None:
         """Find a code element by name across parse results.
 
         Args:

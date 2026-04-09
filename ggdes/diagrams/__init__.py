@@ -11,7 +11,7 @@ from typing import Literal, Optional
 class PlantUMLGenerator:
     """Generate diagrams using PlantUML."""
 
-    def __init__(self, plantuml_jar: Optional[Path] = None):
+    def __init__(self, plantuml_jar: Path | None = None):
         """Initialize PlantUML generator.
 
         Args:
@@ -25,7 +25,7 @@ class PlantUMLGenerator:
                 "https://github.com/plantuml/plantuml/releases"
             )
 
-    def _find_plantuml_jar(self) -> Optional[Path]:
+    def _find_plantuml_jar(self) -> Path | None:
         """Find plantuml.jar in default locations."""
         possible_paths = [
             # Current package directory
@@ -128,7 +128,7 @@ class PlantUMLGenerator:
     def generate_from_file(
         self,
         input_file: Path,
-        output_dir: Optional[Path] = None,
+        output_dir: Path | None = None,
         format: Literal["png", "svg", "pdf"] = "png",
     ) -> Path:
         """Generate diagram from a PlantUML file.
@@ -149,7 +149,7 @@ class PlantUMLGenerator:
 
         return self.generate(input_file.read_text(), output_path, format)
 
-    def validate(self, plantuml_code: str) -> tuple[bool, Optional[str]]:
+    def validate(self, plantuml_code: str) -> tuple[bool, str | None]:
         """Validate PlantUML code without generating.
 
         Args:
@@ -194,7 +194,7 @@ class PlantUMLGenerator:
 
     def validate_and_repair(
         self, plantuml_code: str, max_attempts: int = 3
-    ) -> tuple[str, bool, Optional[str]]:
+    ) -> tuple[str, bool, str | None]:
         """Validate PlantUML code and attempt to repair if invalid.
 
         Args:
@@ -228,7 +228,7 @@ class PlantUMLGenerator:
         # Repair failed
         return plantuml_code, False, error
 
-    def _repair_plantuml(self, code: str, error_msg: Optional[str]) -> str:
+    def _repair_plantuml(self, code: str, error_msg: str | None) -> str:
         """Attempt to repair common PlantUML errors.
 
         Args:
@@ -313,7 +313,7 @@ def generate_architecture_diagram(
     components: list[dict],
     relationships: list[tuple[str, str, str]],
     title: str = "System Architecture",
-    generator: Optional[PlantUMLGenerator] = None,
+    generator: PlantUMLGenerator | None = None,
 ) -> str:
     """Generate PlantUML code for an architecture diagram.
 

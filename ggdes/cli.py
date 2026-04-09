@@ -3,14 +3,14 @@
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 from rich.table import Table
 
-from ggdes.config import GGDesConfig, load_config
+from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
@@ -124,26 +124,26 @@ def analyze(
             help="Git commit range (e.g., 'HEAD~5..HEAD', 'abc123..def456'). Use quotes to prevent shell interpretation."
         ),
     ],
-    repo: Annotated[Optional[str], typer.Option(help="Path to repository")] = None,
+    repo: Annotated[str | None, typer.Option(help="Path to repository")] = None,
     provider: Annotated[
-        Optional[str], typer.Option(help="Model provider (anthropic, openai, ollama)")
+        str | None, typer.Option(help="Model provider (anthropic, openai, ollama)")
     ] = None,
     model: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Model name (e.g., claude-3-5-sonnet-20241022)"),
     ] = None,
     api_key: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="API key (or env var like ${ANTHROPIC_API_KEY})"),
     ] = None,
     formats: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Output formats (comma-separated: markdown,docx,pdf,pptx). Default: markdown"
         ),
     ] = None,
     focus: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Focus on specific commits (comma-separated hashes, e.g., 'abc123,def456')"
         ),
@@ -194,7 +194,7 @@ def analyze(
         console.print(
             "\nTip: Use quotes around the commit range to prevent shell interpretation:"
         )
-        console.print(f'  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
+        console.print('  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
         raise typer.Exit(1)
 
     # Validate the commit range against git
@@ -352,7 +352,7 @@ def analyze(
             success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
             if not success:
                 logger.error("Worktree setup failed")
-                console.print(f"\n[red]✗ Setup failed[/red]")
+                console.print("\n[red]✗ Setup failed[/red]")
                 raise typer.Exit(1)
 
             # Determine what to do next
@@ -369,11 +369,11 @@ def analyze(
                 # Interactive mode: ask user for context
                 console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
                 console.print(
-                    f"This will analyze the commits and generate documentation."
+                    "This will analyze the commits and generate documentation."
                 )
                 if not typer.confirm("Continue with analysis?"):
                     logger.info("Analysis paused by user")
-                    console.print(f"\n[yellow]Analysis paused.[/yellow]")
+                    console.print("\n[yellow]Analysis paused.[/yellow]")
                     console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
                     return
 
@@ -430,7 +430,7 @@ def analyze(
 @app.command()
 def status(
     analysis: Annotated[
-        Optional[str], typer.Argument(help="Analysis ID or name")
+        str | None, typer.Argument(help="Analysis ID or name")
     ] = None,
 ) -> None:
     """Show status of analyses."""
@@ -464,7 +464,7 @@ def status(
         )
         console.print(f"  Created: {found_metadata.created_at}")
         console.print(f"  Updated: {found_metadata.updated_at}")
-        console.print(f"\n[bold]Stages:[/bold]")
+        console.print("\n[bold]Stages:[/bold]")
 
         for stage_name, stage in found_metadata.stages.items():
             status_color = {
@@ -480,7 +480,7 @@ def status(
             )
 
         if found_metadata.documents:
-            console.print(f"\n[bold]Generated Documents:[/bold]")
+            console.print("\n[bold]Generated Documents:[/bold]")
             for doc in found_metadata.documents:
                 if doc.generated_at:
                     console.print(f"  [green]{doc.format}[/green]: {doc.path}")
@@ -542,13 +542,13 @@ def resume(
     analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
     force: Annotated[bool, typer.Option(help="Force resume even if locked")] = False,
     stage: Annotated[
-        Optional[str], typer.Option(help="Run specific stage only")
+        str | None, typer.Option(help="Run specific stage only")
     ] = None,
     retry_failed: Annotated[
         bool, typer.Option(help="Retry failed stages (reset them to pending)")
     ] = False,
     formats: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Output formats (comma-separated: markdown,docx,pdf,pptx). Default: use existing formats"
         ),
@@ -805,7 +805,7 @@ def cleanup(
 def conversations(
     analysis: Annotated[str, typer.Argument(help="Analysis ID or name")],
     agent: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Filter by agent (git_analyzer, technical_author, coordinator, markdown)"
         ),
@@ -860,7 +860,7 @@ def conversations(
                 conversation_files.append((agent_name, summary_file, "summary"))
 
     if not conversation_files:
-        console.print(f"[yellow]No conversation files found[/yellow]")
+        console.print("[yellow]No conversation files found[/yellow]")
         return
 
     console.print(f"[bold]Conversations for:[/bold] {found_metadata.name}")
@@ -891,7 +891,7 @@ def conversations(
                 console.print(f"  System: {data.get('system_prompt', 'N/A')[:100]}...")
                 console.print(f"  Messages: {len(data.get('messages', []))}")
                 console.print(f"  Total tokens: {data.get('total_tokens', 0)}")
-                console.print(f"  [dim]Use --raw to see full messages[/dim]")
+                console.print("  [dim]Use --raw to see full messages[/dim]")
             else:
                 # Show summary
                 summaries = data.get("summaries", [])
@@ -953,7 +953,7 @@ def tui() -> None:
 @app.command()
 def debug(
     analysis: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(
             help="Analysis ID or name (optional - will show selector if not provided)"
         ),
@@ -961,12 +961,11 @@ def debug(
 ) -> None:
     """Launch the debug TUI to browse agent conversations and outputs."""
     from textual.app import App, ComposeResult
-    from textual.widgets import Header, Footer
-    from textual.containers import Container
+    from textual.widgets import Footer, Header
 
-    from ggdes.tui.debug_view import DebugView
     from ggdes.config import load_config
     from ggdes.kb import KnowledgeBaseManager
+    from ggdes.tui.debug_view import DebugView
 
     class DebugTUI(App):
         """Standalone debug TUI application."""
@@ -1094,7 +1093,7 @@ def debug(
         }
         """
 
-        def __init__(self, analysis_id: Optional[str] = None, **kwargs):
+        def __init__(self, analysis_id: str | None = None, **kwargs):
             super().__init__(**kwargs)
             self.analysis_id = analysis_id
 
@@ -1140,12 +1139,12 @@ def compare(
     analysis1: Annotated[str, typer.Argument(help="First analysis ID or name")],
     analysis2: Annotated[str, typer.Argument(help="Second analysis ID or name")],
     output: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Export comparison to JSON file"),
     ] = None,
 ) -> None:
     """Compare two analyses side-by-side."""
-    from ggdes.comparison import AnalysisComparator, print_comparison, export_comparison
+    from ggdes.comparison import AnalysisComparator, export_comparison, print_comparison
 
     config, _ = load_config()
     comparator = AnalysisComparator(config)
@@ -1311,7 +1310,6 @@ def archive(
     ] = 30,
 ) -> None:
     """Archive an analysis (export and remove from active list)."""
-    import shutil
     from datetime import datetime, timedelta
 
     config, _ = load_config()
@@ -1353,7 +1351,7 @@ def archive(
             export_path = archive_dir / f"{found_id}-{timestamp}.zip"
 
             # Run export
-            console.print(f"[dim]Exporting to archive...[/dim]")
+            console.print("[dim]Exporting to archive...[/dim]")
 
             # Temporarily redirect to export function
             export_cmd = f"ggdes export {found_id} {export_path}"
@@ -1381,7 +1379,6 @@ def doctor(
 ) -> None:
     """Diagnose system health and configuration."""
     import shutil
-    import subprocess
 
     console.print("[bold]GGDes System Diagnostics[/bold]\n")
 
@@ -1473,7 +1470,7 @@ def doctor(
         console.print(f"  [yellow]⚠[/yellow] Knowledge base not found: {kb_path}")
         if fix:
             kb_path.mkdir(parents=True, exist_ok=True)
-            console.print(f"    [green]✓[/green] Created knowledge base directory")
+            console.print("    [green]✓[/green] Created knowledge base directory")
             issues_fixed += 1
 
     # Summary
@@ -1501,9 +1498,10 @@ def web(
     """Start the web interface."""
     try:
         import uvicorn
+
         from ggdes.web import app as web_app
 
-        console.print(f"[bold]Starting GGDes Web Interface[/bold]")
+        console.print("[bold]Starting GGDes Web Interface[/bold]")
         console.print(f"[dim]Host:[/dim] {host}")
         console.print(f"[dim]Port:[/dim] {port}")
         console.print(f"[dim]URL:[/dim] http://{host}:{port}")

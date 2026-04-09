@@ -3,7 +3,6 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
 
@@ -24,7 +23,7 @@ class PptxAgent(OutputAgent):
         # Load user context from document plan
         self._load_user_context()
 
-    def _load_plan(self) -> Optional[dict]:
+    def _load_plan(self) -> dict | None:
         """Load document plan from KB."""
         from ggdes.config import get_kb_path
 
@@ -73,7 +72,7 @@ class PptxAgent(OutputAgent):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-presentation.pptx"
 
-        console.print(f"\n[bold blue]Generating PowerPoint Presentation...[/bold blue]")
+        console.print("\n[bold blue]Generating PowerPoint Presentation...[/bold blue]")
 
         # Get content
         content = self._get_content_for_pptx()
@@ -94,9 +93,10 @@ class PptxAgent(OutputAgent):
 
             # Try to load technical facts from KB
             try:
+                import json
+
                 from ggdes.config import get_kb_path
                 from ggdes.schemas import TechnicalFact
-                import json
 
                 facts_dir = (
                     get_kb_path(self.config, self.analysis_id) / "technical_facts"
@@ -134,7 +134,7 @@ class PptxAgent(OutputAgent):
             )
             console.print(f"  [green]✓ Presentation saved:[/green] {output_file}")
 
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except FileNotFoundError:

@@ -8,7 +8,8 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -155,11 +156,11 @@ def _model_to_xml_schema(model_class: type[BaseModel], root_name: str = "root") 
             item_type = field_info.get("items", {}).get("type", "string")
             lines.append(f"  <{field_name}>")
             lines.append(f"    <item>{item_type}</item>")
-            lines.append(f"    <!-- more items... -->")
+            lines.append("    <!-- more items... -->")
             lines.append(f"  </{field_name}>")
         elif field_type == "object":
             lines.append(f"  <{field_name}>")
-            lines.append(f"    <!-- nested object fields -->")
+            lines.append("    <!-- nested object fields -->")
             lines.append(f"  </{field_name}>")
         else:
             lines.append(f"  <{field_name}>{field_type}</{field_name}>")
@@ -182,10 +183,10 @@ def _model_to_json_schema(model_class: type[BaseModel]) -> str:
 
 
 def _add_structured_instructions(
-    system_prompt: Optional[str],
+    system_prompt: str | None,
     response_model: type[T],
     output_format: str = "json",
-    examples: Optional[list[dict]] = None,
+    examples: list[dict] | None = None,
 ) -> str:
     """Add structured output instructions to system prompt.
 
@@ -218,7 +219,7 @@ Important XML formatting rules:
             instructions += "\n\nExamples:\n"
             for i, example in enumerate(examples, 1):
                 # Convert example dict to XML
-                xml_lines = [f"<root>"]
+                xml_lines = ["<root>"]
                 for key, value in example.items():
                     if isinstance(value, list):
                         xml_lines.append(f"  <{key}>")
@@ -227,7 +228,7 @@ Important XML formatting rules:
                         xml_lines.append(f"  </{key}>")
                     else:
                         xml_lines.append(f"  <{key}>{value}</{key}>")
-                xml_lines.append(f"</root>")
+                xml_lines.append("</root>")
                 instructions += f"\nExample {i}:\n" + "\n".join(xml_lines)
 
     else:  # json
@@ -415,7 +416,7 @@ class LLMProvider(ABC):
         self,
         api_key: str,
         model_name: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         structured_format: str = "auto",
         **kwargs,
     ):
@@ -499,7 +500,7 @@ class LLMProvider(ABC):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text from conversation context.
 
@@ -517,9 +518,9 @@ class LLMProvider(ABC):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text from prompt.
 
@@ -538,7 +539,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         response_model: type[T],
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
         max_retries: int = 3,
     ) -> T:
@@ -623,7 +624,7 @@ class AnthropicProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         structured_format: str = "auto",
         **kwargs,
     ):
@@ -638,7 +639,7 @@ class AnthropicProvider(LLMProvider):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using full conversation context."""
         import anthropic
@@ -681,9 +682,9 @@ class AnthropicProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using Anthropic Claude."""
         import anthropic
@@ -718,7 +719,7 @@ class OpenAIProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         structured_format: str = "auto",
         **kwargs,
     ):
@@ -743,7 +744,7 @@ class OpenAIProvider(LLMProvider):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -765,9 +766,9 @@ class OpenAIProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using OpenAI."""
         client = self._get_client()
@@ -822,7 +823,7 @@ class OllamaProvider(LLMProvider):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -844,9 +845,9 @@ class OllamaProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using Ollama."""
         client = self._get_client()
@@ -924,7 +925,7 @@ class CustomOpenAIProvider(LLMProvider):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -946,9 +947,9 @@ class CustomOpenAIProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using custom OpenAI-compatible API."""
         client = self._get_client()
@@ -986,7 +987,7 @@ class OpencodeZenProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         structured_format: str = "auto",
         **kwargs,
     ):
@@ -1021,7 +1022,7 @@ class OpencodeZenProvider(LLMProvider):
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using full conversation context."""
         client = self._get_client()
@@ -1043,9 +1044,9 @@ class OpencodeZenProvider(LLMProvider):
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using OpencodeZen."""
         client = self._get_client()

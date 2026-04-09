@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from ggdes.schemas import StoragePolicy
 
@@ -193,7 +192,7 @@ class ConversationContext:
 
     @classmethod
     def load(
-        cls, kb_path: Path, storage_policy: Optional[StoragePolicy] = None
+        cls, kb_path: Path, storage_policy: StoragePolicy | None = None
     ) -> "ConversationContext":
         """Load conversation from KB.
 

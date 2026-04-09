@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
-from ggdes.llm import LLMFactory, ConversationContext
+from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
     DiagramSpec,
@@ -28,7 +27,7 @@ class Coordinator:
         repo_path: Path,
         config,
         analysis_id: str,
-        user_context: Optional[dict] = None,
+        user_context: dict | None = None,
     ):
         """Initialize coordinator.
 
@@ -43,7 +42,7 @@ class Coordinator:
         self.analysis_id = analysis_id
         self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
-        self.conversation: Optional[ConversationContext] = None
+        self.conversation: ConversationContext | None = None
 
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
@@ -482,7 +481,7 @@ Provide a document plan as JSON:
         (plans_dir / "index.json").write_text(json.dumps(index, indent=2))
 
     @classmethod
-    def load_plan(cls, kb_path: Path, fmt: str) -> Optional[DocumentPlan]:
+    def load_plan(cls, kb_path: Path, fmt: str) -> DocumentPlan | None:
         """Load a specific document plan from KB."""
         plan_file = kb_path / "plans" / f"plan_{fmt}.json"
 

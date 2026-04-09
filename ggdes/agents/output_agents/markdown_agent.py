@@ -1,10 +1,9 @@
 """Markdown output agent for generating markdown documentation."""
 
 from pathlib import Path
-from typing import Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
-from ggdes.llm import LLMFactory, ConversationContext
+from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
     DiagramSpec,
@@ -33,7 +32,7 @@ class MarkdownAgent(OutputAgent):
         """
         super().__init__(repo_path, config, analysis_id)
         self.llm = LLMFactory.from_config(config)
-        self.conversation: Optional[ConversationContext] = None
+        self.conversation: ConversationContext | None = None
         self.format_name = "markdown"
 
         # Load user context from plan
@@ -91,8 +90,9 @@ class MarkdownAgent(OutputAgent):
 
     def _load_facts(self, fact_ids: list[str]) -> list[TechnicalFact]:
         """Load specific technical facts from KB."""
-        from ggdes.config import get_kb_path
         import json
+
+        from ggdes.config import get_kb_path
 
         facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
         facts = []
@@ -105,10 +105,11 @@ class MarkdownAgent(OutputAgent):
 
         return facts
 
-    def _load_plan(self) -> Optional[DocumentPlan]:
+    def _load_plan(self) -> DocumentPlan | None:
         """Load document plan from KB."""
-        from ggdes.config import get_kb_path
         import json
+
+        from ggdes.config import get_kb_path
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_markdown.json"

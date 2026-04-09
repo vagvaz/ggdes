@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 
-from ggdes.llm import LLMFactory, ConversationContext, estimate_tokens
-from ggdes.llm.conversation import estimate_tokens
+from ggdes.agents.skill_utils import load_skill
+from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
     ChangeSummary,
@@ -15,7 +14,6 @@ from ggdes.schemas import (
     StoragePolicy,
     TechnicalFact,
 )
-from ggdes.agents.skill_utils import load_skill
 
 console = Console()
 
@@ -28,8 +26,8 @@ class TechnicalAuthor:
         repo_path: Path,
         config,
         analysis_id: str,
-        user_context: Optional[dict] = None,
-        language_expert_skill: Optional[str] = None,
+        user_context: dict | None = None,
+        language_expert_skill: str | None = None,
     ):
         """Initialize technical author.
 
@@ -45,26 +43,26 @@ class TechnicalAuthor:
         self.analysis_id = analysis_id
         self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
-        self.conversation: Optional[ConversationContext] = None
+        self.conversation: ConversationContext | None = None
         self.chunk_size_tokens = 30000  # Process AST data in chunks if needed
-        self._coauthor_skill: Optional[str] = None
-        self._language_expert_skill: Optional[str] = None
+        self._coauthor_skill: str | None = None
+        self._language_expert_skill: str | None = None
 
         # Load skills with graceful fallback
         self._load_skills(language_expert_skill)
 
-    def _load_skills(self, language_expert_skill: Optional[str] = None) -> None:
+    def _load_skills(self, language_expert_skill: str | None = None) -> None:
         """Load coauthor and optional language expert skills."""
         # Load coauthor skill for writing/documentation expertise (now called doc-coauthoring)
         try:
             self._coauthor_skill = load_skill("doc-coauthoring", self.repo_path)
             if self._coauthor_skill:
                 console.print(
-                    f"  [dim]Loaded doc-coauthoring skill for enhanced documentation synthesis[/dim]"
+                    "  [dim]Loaded doc-coauthoring skill for enhanced documentation synthesis[/dim]"
                 )
         except Exception:
             console.print(
-                f"  [dim]Doc-coauthoring skill not available, continuing with default synthesis[/dim]"
+                "  [dim]Doc-coauthoring skill not available, continuing with default synthesis[/dim]"
             )
 
         # Load language expert skill if specified
@@ -164,7 +162,7 @@ class TechnicalAuthor:
 
         return "\n".join(guidance_parts) if guidance_parts else ""
 
-    def _load_git_analysis(self) -> Optional[ChangeSummary]:
+    def _load_git_analysis(self) -> ChangeSummary | None:
         """Load git analysis results from KB."""
         from ggdes.config import get_kb_path
 
@@ -394,7 +392,7 @@ Format as JSON array of TechnicalFact objects."""
                         fact_data["fact_id"] = f"api_{i + 1:03d}"
                         fact_data["category"] = "api"
                         facts.append(TechnicalFact(**fact_data))
-            except Exception as e:
+            except Exception:
                 # Fallback: create simple facts
                 for i, key in enumerate(list(new_apis)[:5]):
                     elem = head_apis[key]

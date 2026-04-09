@@ -1,11 +1,9 @@
 """Tests for GGDes."""
 
-import json
-import os
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

@@ -3,7 +3,6 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
 
@@ -24,7 +23,7 @@ class PdfAgent(OutputAgent):
         # Load user context from document plan
         self._load_user_context()
 
-    def _load_plan(self) -> Optional[dict]:
+    def _load_plan(self) -> dict | None:
         """Load document plan from KB."""
         from ggdes.config import get_kb_path
 
@@ -73,7 +72,7 @@ class PdfAgent(OutputAgent):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-document.pdf"
 
-        console.print(f"\n[bold blue]Generating PDF Document...[/bold blue]")
+        console.print("\n[bold blue]Generating PDF Document...[/bold blue]")
 
         # Get content
         content = self._get_content_for_pdf()
@@ -91,9 +90,10 @@ class PdfAgent(OutputAgent):
             if plan:
                 # Try to load technical facts from KB
                 try:
+                    import json
+
                     from ggdes.config import get_kb_path
                     from ggdes.schemas import TechnicalFact
-                    import json
 
                     facts_dir = (
                         get_kb_path(self.config, self.analysis_id) / "technical_facts"
@@ -133,17 +133,17 @@ class PdfAgent(OutputAgent):
         self, content: str, output_file: Path, diagrams_dir: Path
     ) -> None:
         """Generate PDF using reportlab following skill patterns with diagrams."""
+        from reportlab.lib.enums import TA_CENTER
         from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import (
-            SimpleDocTemplate,
-            Paragraph,
-            Spacer,
-            PageBreak,
             Image,
+            PageBreak,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
         )
-        from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
         # Create document
         doc = SimpleDocTemplate(

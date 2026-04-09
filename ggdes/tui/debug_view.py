@@ -2,16 +2,14 @@
 
 import json
 from pathlib import Path
-from datetime import datetime
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import (
     Button,
     Checkbox,
-    Footer,
-    Header,
     Label,
     ListItem,
     ListView,
@@ -22,8 +20,6 @@ from textual.widgets import (
     TabPane,
     Tree,
 )
-from textual.message import Message
-from textual.widget import Widget
 
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
@@ -788,11 +784,11 @@ class DebugView(Vertical):
             conv_browser = self.query_one("#conversation-browser", ConversationBrowser)
             conv_browser.analysis_id = analysis_id
             self.app.notify(
-                f"DebugView: Set conv_browser.analysis_id", title="Debug Flow"
+                "DebugView: Set conv_browser.analysis_id", title="Debug Flow"
             )
 
             outputs_browser = self.query_one("#outputs-browser", OutputsBrowser)
             outputs_browser.analysis_id = analysis_id
             self.app.notify(
-                f"DebugView: Set outputs_browser.analysis_id", title="Debug Flow"
+                "DebugView: Set outputs_browser.analysis_id", title="Debug Flow"
             )

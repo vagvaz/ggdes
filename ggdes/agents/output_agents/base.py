@@ -23,15 +23,15 @@ class OutputAgent(ABC):
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
-        self.user_context: Optional[dict] = None
+        self.user_context: dict | None = None
         self._diagram_generator: Optional = None
         self._diagram_cache = None
 
     def _get_diagram_cache(self):
         """Get or create diagram cache instance."""
         if self._diagram_cache is None:
-            from ggdes.diagrams.cache import DiagramCache
             from ggdes.config import get_kb_path
+            from ggdes.diagrams.cache import DiagramCache
 
             cache_dir = get_kb_path(self.config, self.analysis_id) / "diagram_cache"
             self._diagram_cache = DiagramCache(cache_dir)
@@ -100,7 +100,7 @@ class OutputAgent(ABC):
         self,
         facts: list,
         output_dir: Path,
-        diagram_types: Optional[list[str]] = None,
+        diagram_types: list[str] | None = None,
         use_cache: bool = True,
     ) -> list[tuple[str, Path, str]]:
         """Generate diagrams from technical facts with caching support.
@@ -115,10 +115,9 @@ class OutputAgent(ABC):
             List of (diagram_title, diagram_path, diagram_type) tuples
         """
         from ggdes.diagrams import (
-            PlantUMLGenerator,
             generate_architecture_diagram,
-            generate_flow_diagram,
             generate_class_diagram,
+            generate_flow_diagram,
         )
 
         generator = self._get_diagram_generator()
@@ -149,7 +148,7 @@ class OutputAgent(ABC):
                     )
                     if cached_path:
                         console.print(
-                            f"  [dim]↳ Using cached architecture diagram[/dim]"
+                            "  [dim]↳ Using cached architecture diagram[/dim]"
                         )
                         generated.append(
                             ("System Architecture", cached_path, "architecture")
@@ -215,7 +214,7 @@ class OutputAgent(ABC):
                     generated.append(
                         ("System Architecture", diagram_path, "architecture")
                     )
-                    console.print(f"  [green]✓ Generated architecture diagram[/green]")
+                    console.print("  [green]✓ Generated architecture diagram[/green]")
 
             except StopIteration:
                 pass  # Using cached diagram
@@ -233,7 +232,7 @@ class OutputAgent(ABC):
                         self.analysis_id, "flow", facts
                     )
                     if cached_path:
-                        console.print(f"  [dim]↳ Using cached flow diagram[/dim]")
+                        console.print("  [dim]↳ Using cached flow diagram[/dim]")
                         generated.append(("Process Flow", cached_path, "flow"))
                         raise StopIteration("Using cached diagram")
 
@@ -270,7 +269,7 @@ class OutputAgent(ABC):
                         )
 
                     generated.append(("Process Flow", diagram_path, "flow"))
-                    console.print(f"  [green]✓ Generated flow diagram[/green]")
+                    console.print("  [green]✓ Generated flow diagram[/green]")
 
             except StopIteration:
                 pass  # Using cached diagram
@@ -286,7 +285,7 @@ class OutputAgent(ABC):
                         self.analysis_id, "class", facts
                     )
                     if cached_path:
-                        console.print(f"  [dim]↳ Using cached class diagram[/dim]")
+                        console.print("  [dim]↳ Using cached class diagram[/dim]")
                         generated.append(("Class Structure", cached_path, "class"))
                         raise StopIteration("Using cached diagram")
 
@@ -324,7 +323,7 @@ class OutputAgent(ABC):
                             )
 
                         generated.append(("Class Structure", diagram_path, "class"))
-                        console.print(f"  [green]✓ Generated class diagram[/green]")
+                        console.print("  [green]✓ Generated class diagram[/green]")
 
             except StopIteration:
                 pass  # Using cached diagram

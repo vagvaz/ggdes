@@ -8,7 +8,6 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 
@@ -74,8 +73,8 @@ class SemanticChange:
     confidence: float  # 0.0 to 1.0
     impact_score: float  # 0.0 to 1.0 (how significant is this change)
     related_symbols: list[str] = field(default_factory=list)
-    before_snippet: Optional[str] = None
-    after_snippet: Optional[str] = None
+    before_snippet: str | None = None
+    after_snippet: str | None = None
 
 
 @dataclass

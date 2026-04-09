@@ -45,7 +45,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
 
     if not kb_path or not kb_path.exists():
         print(f"❌ Analysis not found: {analysis_id}")
-        print(f"   Searched in common locations")
+        print("   Searched in common locations")
         return
 
     print(f"🔍 Checking analysis: {analysis_id}")
@@ -55,7 +55,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
     # Check metadata
     metadata_file = kb_path / "metadata.yaml"
     if metadata_file.exists():
-        print(f"✅ metadata.yaml exists")
+        print("✅ metadata.yaml exists")
         import yaml
 
         metadata = yaml.safe_load(metadata_file.read_text())
@@ -78,19 +78,19 @@ def check_analysis(analysis_id: str, kb_base: str = None):
                 print(f"      Error: {stage_info.get('error_message')}")
         print()
     else:
-        print(f"❌ metadata.yaml not found")
+        print("❌ metadata.yaml not found")
         return
 
     # Check git analysis
     git_analysis = kb_path / "git_analysis" / "summary.json"
     if git_analysis.exists():
-        print(f"✅ git_analysis/summary.json exists")
+        print("✅ git_analysis/summary.json exists")
         data = json.loads(git_analysis.read_text())
         print(f"   Files changed: {len(data.get('files_changed', []))}")
         print(f"   Change type: {data.get('change_type', 'N/A')}")
         print()
     else:
-        print(f"❌ git_analysis/summary.json not found")
+        print("❌ git_analysis/summary.json not found")
 
     # Check AST data
     ast_base = kb_path / "ast_base"
@@ -99,19 +99,19 @@ def check_analysis(analysis_id: str, kb_base: str = None):
         files = list(ast_base.glob("*.json"))
         print(f"✅ ast_base/ exists with {len(files)} parsed files")
     else:
-        print(f"❌ ast_base/ not found")
+        print("❌ ast_base/ not found")
 
     if ast_head.exists():
         files = list(ast_head.glob("*.json"))
         print(f"✅ ast_head/ exists with {len(files)} parsed files")
     else:
-        print(f"❌ ast_head/ not found")
+        print("❌ ast_head/ not found")
     print()
 
     # Check technical facts
     facts_file = kb_path / "technical_facts" / "facts.json"
     if facts_file.exists():
-        print(f"✅ technical_facts/facts.json exists")
+        print("✅ technical_facts/facts.json exists")
         data = json.loads(facts_file.read_text())
         print(f"   Facts count: {len(data)}")
         if data:
@@ -119,7 +119,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
             print(f"   Categories: {', '.join(categories)}")
         print()
     else:
-        print(f"❌ technical_facts/facts.json not found")
+        print("❌ technical_facts/facts.json not found")
         print()
 
     # Check plans
@@ -138,7 +138,7 @@ def check_analysis(analysis_id: str, kb_base: str = None):
             )
         print()
     else:
-        print(f"❌ plans/ directory not found")
+        print("❌ plans/ directory not found")
         print()
 
     # Check worktrees
@@ -146,17 +146,17 @@ def check_analysis(analysis_id: str, kb_base: str = None):
     if wt_base.exists():
         base_wt = wt_base / "base"
         head_wt = wt_base / "head"
-        print(f"✅ Worktrees exist:")
+        print("✅ Worktrees exist:")
         if base_wt.exists():
             items = len(list(base_wt.iterdir())) if base_wt.is_dir() else 0
             print(f"   - base: {items} items")
         else:
-            print(f"   ❌ base worktree missing")
+            print("   ❌ base worktree missing")
         if head_wt.exists():
             items = len(list(head_wt.iterdir())) if head_wt.is_dir() else 0
             print(f"   - head: {items} items")
         else:
-            print(f"   ❌ head worktree missing")
+            print("   ❌ head worktree missing")
     else:
         print(f"❌ Worktrees not found at {wt_base}")
 

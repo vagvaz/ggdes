@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -45,8 +45,8 @@ class FileChange(BaseModel):
 class ChangeSummary(BaseModel):
     """Summary of a git change (commit or range)."""
 
-    commit_hash: Optional[str] = Field(None, description="Commit hash if single commit")
-    commit_range: Optional[str] = Field(
+    commit_hash: str | None = Field(None, description="Commit hash if single commit")
+    commit_range: str | None = Field(
         None, description="Commit range if multiple commits"
     )
     change_type: ChangeType = Field(description="Primary type of change")
@@ -86,12 +86,12 @@ class CodeElement(BaseModel):
         description="Name of the element (function name, class name, etc.)"
     )
     element_type: CodeElementType = Field(description="Type of code element")
-    signature: Optional[str] = Field(None, description="Function/method signature")
-    docstring: Optional[str] = Field(None, description="Docstring if available")
+    signature: str | None = Field(None, description="Function/method signature")
+    docstring: str | None = Field(None, description="Docstring if available")
     start_line: int = Field(description="Start line in source file")
     end_line: int = Field(description="End line in source file")
     file_path: str = Field(description="Path to source file")
-    parent: Optional[str] = Field(None, description="Parent class/module if applicable")
+    parent: str | None = Field(None, description="Parent class/module if applicable")
     children: list[str] = Field(
         default_factory=list, description="Child elements (methods in class)"
     )
@@ -108,7 +108,7 @@ class CodeChangeDetail(BaseModel):
 
     element: CodeElement = Field(description="The code element")
     change_category: str = Field(description="added, modified, deleted, unchanged")
-    before_state: Optional[CodeElement] = Field(
+    before_state: CodeElement | None = Field(
         None, description="State before change (if modified)"
     )
     behavioral_change: bool = Field(
@@ -167,9 +167,9 @@ class DocumentPlan(BaseModel):
     audience: str = Field(description="Target audience")
     sections: list[SectionPlan] = Field(description="Document sections")
     diagrams: list[DiagramSpec] = Field(description="Diagrams to generate")
-    template: Optional[str] = Field(None, description="Template to use if any")
+    template: str | None = Field(None, description="Template to use if any")
     created_at: datetime = Field(default_factory=datetime.now)
-    user_context: Optional[dict] = Field(
+    user_context: dict | None = Field(
         None, description="User-provided context for output generation"
     )
 

@@ -3,7 +3,7 @@
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -23,7 +23,7 @@ class ModelConfig(BaseModel):
     provider: str = "anthropic"
     model_name: str = "claude-3-5-sonnet-20241022"
     api_key: str = "${ANTHROPIC_API_KEY}"
-    base_url: Optional[str] = None  # For custom endpoints (Ollama, etc.)
+    base_url: str | None = None  # For custom endpoints (Ollama, etc.)
     structured_format: StructuredOutputFormat = Field(
         default=StructuredOutputFormat.AUTO,
         description="Output format for structured responses: 'auto', 'json', or 'xml'",
@@ -101,7 +101,7 @@ class OutputConfig(BaseModel):
 class RepoConfig(BaseModel):
     """Repository configuration."""
 
-    path: Optional[str] = None
+    path: str | None = None
 
 
 class GGDesConfig(BaseModel):
@@ -133,10 +133,10 @@ class GGDesConfig(BaseModel):
 
 
 def load_config(
-    cli_repo_path: Optional[str] = None,
-    cli_provider: Optional[str] = None,
-    cli_model_name: Optional[str] = None,
-    cli_api_key: Optional[str] = None,
+    cli_repo_path: str | None = None,
+    cli_provider: str | None = None,
+    cli_model_name: str | None = None,
+    cli_api_key: str | None = None,
 ) -> tuple[GGDesConfig, Path]:
     """Load configuration with CLI overrides.
 
