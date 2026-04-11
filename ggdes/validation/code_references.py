@@ -375,7 +375,7 @@ Original response:
 Please provide a corrected response with valid code references:"""
 
     def validate_and_correct(
-        self, llm_output: str, llm_provider, max_corrections: int = 2
+        self, llm_output: str, llm_provider: Any, max_corrections: int = 2
     ) -> str:
         """Validate LLM output and request corrections if needed.
 

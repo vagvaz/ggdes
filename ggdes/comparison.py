@@ -143,7 +143,7 @@ class AnalysisComparator:
     def _load_technical_facts(self, analysis_id: str) -> list[TechnicalFact]:
         """Load technical facts for an analysis."""
         facts_dir = self.kb_manager.get_analysis_path(analysis_id) / "technical_facts"
-        facts = []
+        facts: list[TechnicalFact] = []
 
         if not facts_dir.exists():
             return facts
@@ -169,7 +169,7 @@ class AnalysisComparator:
             return None
 
         try:
-            return json.loads(semantic_diff_path.read_text())
+            return json.loads(semantic_diff_path.read_text())  # type: ignore[no-any-return]
         except Exception:
             return None
 
@@ -183,7 +183,7 @@ class AnalysisComparator:
         This helps identify differences in code understanding between
         two analyses, especially when analyzing different commits.
         """
-        diffs = []
+        diffs: list[AnalysisDiff] = []
 
         # Handle cases where one or both don't have semantic diff
         if not semantic_diff1 and not semantic_diff2:
@@ -212,8 +212,8 @@ class AnalysisComparator:
             return diffs
 
         # Compare summaries
-        summary1 = semantic_diff1.get("summary", {})
-        summary2 = semantic_diff2.get("summary", {})
+        summary1 = semantic_diff1.get("summary", {}) if semantic_diff1 else {}
+        summary2 = semantic_diff2.get("summary", {}) if semantic_diff2 else {}
 
         # Compare breaking changes
         bc1 = summary1.get("breaking_changes", 0)
@@ -253,7 +253,7 @@ class AnalysisComparator:
 
         for change_type in change_types:
             count1 = summary1.get(change_type, 0)
-            count2 = summary2.get(change_types, 0)
+            count2 = summary2.get(change_type, 0)
             if count1 != count2:
                 diffs.append(
                     AnalysisDiff(
@@ -266,9 +266,9 @@ class AnalysisComparator:
 
         return diffs
 
-    def _compare_commits(self, metadata1, metadata2) -> list[AnalysisDiff]:
+    def _compare_commits(self, metadata1: Any, metadata2: Any) -> list[AnalysisDiff]:
         """Compare commit ranges."""
-        diffs = []
+        diffs: list[AnalysisDiff] = []
 
         range1 = metadata1.commit_range or "unknown"
         range2 = metadata2.commit_range or "unknown"

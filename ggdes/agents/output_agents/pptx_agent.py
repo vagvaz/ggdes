@@ -3,9 +3,10 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, MutableSequence, Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
+from ggdes.config import GGDesConfig
 
 
 class PptxAgent(OutputAgent):
@@ -15,7 +16,7 @@ class PptxAgent(OutputAgent):
     the patterns documented in the pptx skill.
     """
 
-    def __init__(self, repo_path: Path, config, analysis_id: str):
+    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
         """Initialize pptx agent."""
         super().__init__(repo_path, config, analysis_id)
         self.format_name = "pptx"
@@ -35,7 +36,8 @@ class PptxAgent(OutputAgent):
         if not plan_file.exists():
             return None
 
-        return json.loads(plan_file.read_text())
+        result: dict[str, Any] = json.loads(plan_file.read_text())
+        return result
 
     def _get_content_for_pptx(self) -> str:
         """Extract content from markdown or plan for PPTX generation."""
@@ -46,16 +48,27 @@ class PptxAgent(OutputAgent):
         md_files = glob.glob(str(md_path))
 
         if md_files:
-            return Path(md_files[0]).read_text()
+            content: str = Path(md_files[0]).read_text()
+            return content
 
         # Fallback: use plan content
         plan = self._load_plan()
         if plan:
-            return plan.get("content", "")
+            plan_content: str = plan.get("content", "")
+            return plan_content
 
         return ""
 
-    def generate(self, auto_generate_diagrams: bool = True) -> Path:
+    def generate(self, **kwargs: Any) -> Path:
+        """Generate PowerPoint presentation.
+
+        Args:
+            **kwargs: Additional arguments including auto_generate_diagrams
+
+        Returns:
+            Path to generated pptx file
+        """
+        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
         """Generate PowerPoint presentation using pptx skill patterns with integrated diagrams.
 
         Args:
@@ -151,8 +164,8 @@ class PptxAgent(OutputAgent):
     def _parse_content_to_slides(self, content: str) -> List[Dict[str, Any]]:
         """Parse markdown content into slide structure."""
         lines = content.split("\n")
-        slides = []
-        current_slide = None
+        slides: list[dict[str, Any]] = []
+        current_slide: dict[str, Any] | None = None
 
         for line in lines:
             stripped = line.strip()
@@ -381,8 +394,8 @@ pres.writeFile({{ fileName: "{output_file}" }})
 
     def _group_into_slides(self, items: list[str]) -> list[list[str]]:
         """Group content items into slides."""
-        slides = []
-        current_slide = []
+        slides: list[list[str]] = []
+        current_slide: list[str] = []
 
         for item in items:
             if item.startswith("# "):

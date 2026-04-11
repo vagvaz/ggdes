@@ -45,7 +45,7 @@ class DiagramCache:
         if self._cache_file.exists():
             try:
                 with open(self._cache_file) as f:
-                    return json.load(f)
+                    return json.load(f)  # type: ignore[no-any-return]
             except (OSError, json.JSONDecodeError):
                 return {}
         return {}
@@ -103,9 +103,11 @@ class DiagramCache:
             entry = self._index[cache_key]
             # Check if facts hash matches (diagram is still valid)
             if entry.get("facts_hash") == current_hash:
-                diagram_path = Path(entry.get("diagram_path"))
-                if diagram_path.exists():
-                    return diagram_path
+                diagram_path_str = entry.get("diagram_path")
+                if diagram_path_str is not None:
+                    diagram_path = Path(diagram_path_str)
+                    if diagram_path.exists():
+                        return diagram_path
                 else:
                     # Cached file doesn't exist, remove from index
                     del self._index[cache_key]

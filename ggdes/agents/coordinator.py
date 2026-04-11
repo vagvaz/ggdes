@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
+from ggdes.config import GGDesConfig
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -26,7 +27,7 @@ class Coordinator:
     def __init__(
         self,
         repo_path: Path,
-        config,
+        config: GGDesConfig,
         analysis_id: str,
         user_context: Optional[Dict[str, Any]] = None,
     ):
@@ -86,30 +87,9 @@ class Coordinator:
 
     def _build_user_context_guidance(self) -> str:
         """Build guidance text from user context."""
-        guidance_parts = []
+        from ggdes.agents.skill_utils import build_user_context_guidance
 
-        if "focus_areas" in self.user_context:
-            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
-
-        if "audience" in self.user_context:
-            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
-
-        if "purpose" in self.user_context:
-            purposes = self.user_context["purpose"]
-            if isinstance(purposes, list):
-                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
-            else:
-                guidance_parts.append(f"Document Purpose: {purposes}")
-
-        if "detail_level" in self.user_context:
-            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
-
-        if "additional_context" in self.user_context:
-            guidance_parts.append(
-                f"Additional Context: {self.user_context['additional_context']}"
-            )
-
-        return "\n".join(guidance_parts) if guidance_parts else ""
+        return build_user_context_guidance(self.user_context)
 
     def _load_facts(self) -> list[TechnicalFact]:
         """Load technical facts from KB."""
@@ -176,7 +156,8 @@ class Coordinator:
         kb_path = (
             get_kb_path(self.config, self.analysis_id) / "conversations" / "coordinator"
         )
-        self.conversation.save(kb_path)
+        if self.conversation:
+            self.conversation.save(kb_path)
 
         # Save plans
         self._save_plans(plans)
@@ -187,7 +168,7 @@ class Coordinator:
         self, facts: List[TechnicalFact]
     ) -> Dict[str, List[TechnicalFact]]:
         """Group facts by category for planning."""
-        categories = {}
+        categories: dict[str, list[TechnicalFact]] = {}
         for fact in facts:
             cat = fact.category
             if cat not in categories:
@@ -286,6 +267,9 @@ class Coordinator:
         """Create a document plan for a specific format."""
         console.print(f"[dim]Creating {fmt} plan...[/dim]")
 
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
+
         # Build prompt for LLM
         prompt = self._build_planning_prompt(
             fmt, facts, facts_by_category, user_context
@@ -329,6 +313,7 @@ class Coordinator:
             audience=user_context.get("audience", "developers"),
             sections=sections,
             diagrams=diagrams,
+            template=None,
             user_context=user_context,
         )
 
@@ -438,8 +423,6 @@ Provide a document plan as JSON:
 
         # Parse JSON response
         try:
-            import json
-
             # Extract JSON from response
             if "```json" in response:
                 json_start = response.find("```json") + 7
@@ -450,7 +433,8 @@ Provide a document plan as JSON:
                 json_end = response.find("```", json_start)
                 response = response[json_start:json_end].strip()
 
-            return json.loads(response)
+            result: dict[str, Any] = json.loads(response)
+            return result
         except json.JSONDecodeError:
             # Fallback: return default plan
             return {
@@ -506,5 +490,6 @@ Provide a document plan as JSON:
         if not index_file.exists():
             return []
 
-        data = json.loads(index_file.read_text())
-        return data.get("available_formats", [])
+        data: dict[str, Any] = json.loads(index_file.read_text())
+        formats: list[str] = data.get("available_formats", [])
+        return formats

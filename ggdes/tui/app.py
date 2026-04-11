@@ -3,6 +3,7 @@
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -30,7 +31,7 @@ from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.worktree import WorktreeManager
 
 
-class StageStatusWidget(Static):
+class StageStatusWidget(Static):  # type: ignore[misc]
     """Widget showing stage status with visual indicators."""
 
     STATUS_COLORS = {
@@ -49,7 +50,7 @@ class StageStatusWidget(Static):
         StageStatus.SKIPPED: "⊘",
     }
 
-    def __init__(self, stage_name: str, stage_info, **kwargs):
+    def __init__(self, stage_name: str, stage_info: Any, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.stage_name = stage_name
         self.stage_info = stage_info
@@ -62,10 +63,10 @@ class StageStatusWidget(Static):
         yield Label(f"[{color}]{icon}[/{color}] {self.stage_name}")
 
 
-class AnalysisListItem(ListItem):
+class AnalysisListItem(ListItem):  # type: ignore[misc]
     """List item showing analysis summary."""
 
-    def __init__(self, analysis_id: str, name: str, status: str, **kwargs):
+    def __init__(self, analysis_id: str, name: str, status: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.analysis_id = analysis_id
         self.analysis_name = name
@@ -77,12 +78,12 @@ class AnalysisListItem(ListItem):
             yield Label(f"[{self.status}] {self.analysis_id[:20]}...")
 
 
-class AnalysisDetailView(VerticalScroll):
+class AnalysisDetailView(VerticalScroll):  # type: ignore[misc]
     """Detail view for a selected analysis."""
 
     analysis_id: reactive[str | None] = reactive(None)
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
@@ -92,7 +93,7 @@ class AnalysisDetailView(VerticalScroll):
         if analysis_id:
             self.update_view(analysis_id)
 
-    def update_view(self, analysis_id: str) -> None:
+    def update_view(self, analysis_id: str) -> None:  # type: ignore[misc]
         """Update the view with analysis data."""
         metadata = self.kb_manager.load_metadata(analysis_id)
         if not metadata:
@@ -166,10 +167,10 @@ class AnalysisDetailView(VerticalScroll):
                 yield Label(f"  Head: {metadata.worktrees.head}")
 
 
-class WorktreeView(VerticalScroll):
+class WorktreeView(VerticalScroll):  # type: ignore[misc]
     """View for managing worktrees."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
@@ -196,7 +197,7 @@ class WorktreeView(VerticalScroll):
                 yield Label("")
 
 
-class GitLogView(VerticalScroll):
+class GitLogView(VerticalScroll):  # type: ignore[misc]
     """View for browsing git commits and selecting commit ranges."""
 
     commits: reactive[list[dict]] = reactive([])
@@ -204,7 +205,7 @@ class GitLogView(VerticalScroll):
     end_commit: reactive[str | None] = reactive(None)
     focus_commits: reactive[set[str]] = reactive(set())
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, self.repo_path = load_config()
 
@@ -525,7 +526,7 @@ class GitLogView(VerticalScroll):
         return list(self.focus_commits)
 
 
-class CommandHelp(Static):
+class CommandHelp(Static):  # type: ignore[misc]
     """Help widget showing useful git/worktree commands."""
 
     COMMANDS = """
@@ -582,7 +583,7 @@ class CommandHelp(Static):
         yield Label(self.COMMANDS)
 
 
-class ConfirmDialog(Screen):
+class ConfirmDialog(Screen):  # type: ignore[misc]
     """Simple confirmation dialog."""
 
     def __init__(
@@ -591,8 +592,8 @@ class ConfirmDialog(Screen):
         message: str,
         on_confirm: Callable[[], None],
         on_cancel: Callable[[], None],
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.title = title
         self.message = message
@@ -638,7 +639,7 @@ class ConfirmDialog(Screen):
     """
 
 
-class NewAnalysisDialog(Screen):
+class NewAnalysisDialog(Screen):  # type: ignore[misc]
     """Dialog for creating a new analysis."""
 
     def __init__(
@@ -646,8 +647,8 @@ class NewAnalysisDialog(Screen):
         on_create: Callable[[str, str, list[str] | None, list[str]], None],
         commit_range: str = "",
         focus_commits: list[str] | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.on_create = on_create
         self.commit_range = commit_range
@@ -754,7 +755,7 @@ class NewAnalysisDialog(Screen):
     """
 
 
-class GGDesTUI(App):
+class GGDesTUI(App):  # type: ignore[misc]
     """Main TUI application for GGDes."""
 
     CSS = """
@@ -829,7 +830,7 @@ class GGDesTUI(App):
         Binding("c", "gitlog_clear", "Clear Selection", show=True),
     ]
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
@@ -964,7 +965,7 @@ class GGDesTUI(App):
     def _get_gitlog_view(self) -> GitLogView | None:
         """Get the git log view if it exists."""
         try:
-            return self.query_one("#git-log-view", GitLogView)
+            return self.query_one("#git-log-view", GitLogView)  # type: ignore[no-any-return]
         except Exception:
             return None
 
@@ -1185,7 +1186,9 @@ class GGDesTUI(App):
             self.kb_manager.create_analysis(
                 analysis_id=analysis_id,
                 name=name,
-                repo_path=self.config.repo_path or Path.cwd(),
+                repo_path=Path(self.config.repo.path)
+                if self.config.repo.path
+                else Path.cwd(),
                 commit_range=commit_range,
                 focus_commits=focus_commits,
                 target_formats=target_formats,

@@ -24,18 +24,18 @@ app = FastAPI(title="GGDes Web", description="Web interface for GGDes analysis")
 class ConnectionManager:
     """Manage WebSocket connections for real-time updates."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: list[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket: WebSocket) -> None:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: Dict[str, Any]):
+    async def broadcast(self, message: Dict[str, Any]) -> None:
         """Broadcast message to all connected clients."""
         disconnected = []
         for connection in self.active_connections:
@@ -65,16 +65,16 @@ def get_config() -> GGDesConfig:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
+async def root() -> HTMLResponse:
     """Serve the main web interface."""
     return HTMLResponse(content=INDEX_HTML, status_code=200)
 
 
 @app.get("/api/analyses")
-async def list_analyses():
+async def list_analyses() -> list[dict[str, Any]]:
     """List all analyses."""
     kb = get_kb()
-    analyses = []
+    analyses: list[dict[str, Any]] = []
 
     for analysis_id, metadata in kb.list_analyses():
         # Calculate progress
@@ -128,7 +128,7 @@ async def list_analyses():
 
 
 @app.get("/api/analyses/{analysis_id}")
-async def get_analysis(analysis_id: str):
+async def get_analysis(analysis_id: str) -> dict[str, Any]:
     """Get detailed information about an analysis."""
     kb = get_kb()
     metadata = kb.load_metadata(analysis_id)
@@ -210,7 +210,7 @@ async def get_analysis(analysis_id: str):
 
 
 @app.post("/api/analyses/{analysis_id}/resume")
-async def resume_analysis(analysis_id: str):
+async def resume_analysis(analysis_id: str) -> dict[str, Any]:
     """Resume an analysis."""
     config = get_config()
     kb = get_kb()
@@ -239,7 +239,7 @@ async def resume_analysis(analysis_id: str):
 
 
 @app.post("/api/analyses/{analysis_id}/delete")
-async def delete_analysis(analysis_id: str, remove_kb: bool = True):
+async def delete_analysis(analysis_id: str, remove_kb: bool = True) -> dict[str, Any]:
     """Delete an analysis."""
     config = get_config()
     kb = get_kb()
@@ -277,7 +277,7 @@ async def create_analysis(
     commit_range: str,
     focus_commits: list[str] | None = None,
     formats: list[str] | None = None,
-):
+) -> dict[str, Any]:
     """Create a new analysis."""
     import uuid
 
@@ -291,7 +291,7 @@ async def create_analysis(
         kb.create_analysis(
             analysis_id=analysis_id,
             name=name,
-            repo_path=config.repo_path or Path.cwd(),
+            repo_path=Path(config.repo.path) if config.repo.path else Path.cwd(),
             commit_range=commit_range,
             focus_commits=focus_commits,
             target_formats=target_formats,
@@ -318,7 +318,7 @@ async def create_analysis(
 
 
 @app.get("/api/analyses/{analysis_id}/documents")
-async def get_documents(analysis_id: str):
+async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of generated documents for an analysis."""
     kb = get_kb()
     metadata = kb.load_metadata(analysis_id)
@@ -352,7 +352,7 @@ async def get_documents(analysis_id: str):
 
 
 @app.get("/api/analyses/{analysis_id}/documents/{format}/download")
-async def download_document(analysis_id: str, format: str):
+async def download_document(analysis_id: str, format: str) -> FileResponse:
     """Download a generated document."""
     kb = get_kb()
     metadata = kb.load_metadata(analysis_id)
@@ -377,7 +377,7 @@ async def download_document(analysis_id: str, format: str):
 
 
 @app.get("/api/analyses/{analysis_id}/diagrams")
-async def get_diagrams(analysis_id: str):
+async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of diagrams for an analysis."""
     kb = get_kb()
     metadata = kb.load_metadata(analysis_id)
@@ -404,7 +404,7 @@ async def get_diagrams(analysis_id: str):
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await manager.connect(websocket)
     try:
@@ -428,7 +428,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats() -> dict[str, Any]:
     """Get overall system statistics."""
     kb = get_kb()
     config = get_config()
@@ -450,7 +450,9 @@ async def get_stats():
             in_progress += 1
 
     # Get worktree info
-    wt_manager = WorktreeManager(config, config.repo_path or Path.cwd())
+    wt_manager = WorktreeManager(
+        config, Path(config.repo.path) if config.repo.path else Path.cwd()
+    )
     all_worktrees = wt_manager.list_all()
 
     # Calculate total size of worktrees
@@ -478,7 +480,7 @@ async def get_stats():
             "total_size_mb": round(total_size / (1024 * 1024), 2),
         },
         "config": {
-            "repo_path": str(config.repo_path) if config.repo_path else None,
+            "repo_path": str(config.repo.path) if config.repo.path else None,
             "kb_path": str(config.paths.knowledge_base),
             "worktree_path": str(config.paths.worktrees),
         },
@@ -486,10 +488,14 @@ async def get_stats():
 
 
 @app.get("/api/worktrees/cleanup-preview")
-async def preview_worktree_cleanup(days: int = Query(default=7, ge=1)):
+async def preview_worktree_cleanup(
+    days: int = Query(default=7, ge=1),
+) -> dict[str, Any]:
     """Preview worktrees that would be cleaned up."""
     config = get_config()
-    wt_manager = WorktreeManager(config, config.repo_path or Path.cwd())
+    wt_manager = WorktreeManager(
+        config, Path(config.repo.path) if config.repo.path else Path.cwd()
+    )
 
     old_worktrees = wt_manager.cleanup_old_worktrees(max_age_days=days, dry_run=True)
 
@@ -508,10 +514,12 @@ async def preview_worktree_cleanup(days: int = Query(default=7, ge=1)):
 
 
 @app.post("/api/worktrees/cleanup")
-async def cleanup_worktrees(days: int = Query(default=7, ge=1)):
+async def cleanup_worktrees(days: int = Query(default=7, ge=1)) -> dict[str, Any]:
     """Clean up old worktrees."""
     config = get_config()
-    wt_manager = WorktreeManager(config, config.repo_path or Path.cwd())
+    wt_manager = WorktreeManager(
+        config, Path(config.repo.path) if config.repo.path else Path.cwd()
+    )
 
     cleaned = wt_manager.cleanup_old_worktrees(max_age_days=days, dry_run=False)
 

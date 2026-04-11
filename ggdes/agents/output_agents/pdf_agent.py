@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ggdes.agents.output_agents.base import OutputAgent
+from ggdes.config import GGDesConfig
 
 
 class PdfAgent(OutputAgent):
@@ -15,7 +16,7 @@ class PdfAgent(OutputAgent):
     the patterns documented in the pdf skill.
     """
 
-    def __init__(self, repo_path: Path, config, analysis_id: str):
+    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
         """Initialize pdf agent."""
         super().__init__(repo_path, config, analysis_id)
         self.format_name = "pdf"
@@ -35,7 +36,8 @@ class PdfAgent(OutputAgent):
         if not plan_file.exists():
             return None
 
-        return json.loads(plan_file.read_text())
+        result: dict[str, Any] = json.loads(plan_file.read_text())
+        return result
 
     def _get_content_for_pdf(self) -> str:
         """Extract content from markdown or plan for PDF generation."""
@@ -46,16 +48,27 @@ class PdfAgent(OutputAgent):
         md_files = glob.glob(str(md_path))
 
         if md_files:
-            return Path(md_files[0]).read_text()
+            content: str = Path(md_files[0]).read_text()
+            return content
 
         # Fallback: use plan content
         plan = self._load_plan()
         if plan:
-            return plan.get("content", "")
+            plan_content: str = plan.get("content", "")
+            return plan_content
 
         return ""
 
-    def generate(self, auto_generate_diagrams: bool = True) -> Path:
+    def generate(self, **kwargs: Any) -> Path:
+        """Generate PDF document.
+
+        Args:
+            **kwargs: Additional arguments including auto_generate_diagrams
+
+        Returns:
+            Path to generated pdf file
+        """
+        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
         """Generate PDF document using pdf skill patterns with integrated diagrams.
 
         Args:

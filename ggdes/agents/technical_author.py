@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from rich.console import Console
 
 from ggdes.agents.skill_utils import load_skill
+from ggdes.config import GGDesConfig
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -15,20 +16,26 @@ from ggdes.schemas import (
     StoragePolicy,
     TechnicalFact,
 )
+from ggdes.tools import ToolCall, ToolExecutor, TOOL_DEFINITIONS, chat_with_tools
 
 console = Console()
 
 
 class TechnicalAuthor:
-    """Synthesize git analysis and AST data into structured technical facts."""
+    """Synthesize git analysis and AST data into structured technical facts.
+
+    Uses tool-augmented LLM calls to verify code references against the actual
+    codebase, preventing hallucinations in technical facts.
+    """
 
     def __init__(
         self,
         repo_path: Path,
-        config,
+        config: GGDesConfig,
         analysis_id: str,
         user_context: Optional[Dict[str, Any]] = None,
         language_expert_skill: Optional[str] = None,
+        tool_executor: Optional[ToolExecutor] = None,
     ):
         """Initialize technical author.
 
@@ -38,6 +45,8 @@ class TechnicalAuthor:
             analysis_id: Analysis ID for reading/writing to KB
             user_context: Optional user-provided context (focus areas, audience, purpose)
             language_expert_skill: Optional name of language expert skill to load (e.g., 'python-expert', 'cpp-expert')
+            tool_executor: Optional ToolExecutor for grounded LLM calls. If None,
+                tools will not be available during fact generation.
         """
         self.repo_path = repo_path
         self.config = config
@@ -48,6 +57,7 @@ class TechnicalAuthor:
         self.chunk_size_tokens = 30000  # Process AST data in chunks if needed
         self._coauthor_skill: str | None = None
         self._language_expert_skill: str | None = None
+        self.tool_executor = tool_executor
 
         # Load skills with graceful fallback
         self._load_skills(language_expert_skill)
@@ -138,30 +148,9 @@ class TechnicalAuthor:
 
     def _build_user_context_guidance(self) -> str:
         """Build guidance text from user context."""
-        guidance_parts = []
+        from ggdes.agents.skill_utils import build_user_context_guidance
 
-        if "focus_areas" in self.user_context:
-            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
-
-        if "audience" in self.user_context:
-            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
-
-        if "purpose" in self.user_context:
-            purposes = self.user_context["purpose"]
-            if isinstance(purposes, list):
-                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
-            else:
-                guidance_parts.append(f"Document Purpose: {purposes}")
-
-        if "detail_level" in self.user_context:
-            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
-
-        if "additional_context" in self.user_context:
-            guidance_parts.append(
-                f"Additional Context: {self.user_context['additional_context']}"
-            )
-
-        return "\n".join(guidance_parts) if guidance_parts else ""
+        return build_user_context_guidance(self.user_context)
 
     def _load_git_analysis(self) -> ChangeSummary | None:
         """Load git analysis results from KB."""
@@ -233,6 +222,8 @@ class TechnicalAuthor:
         Returns:
             List of technical facts
         """
+        console.print("[bold]Synthesizing technical facts...[/bold]")
+
         # Initialize conversation
         self._init_conversation(storage_policy)
 
@@ -241,30 +232,61 @@ class TechnicalAuthor:
         if not change_summary:
             raise ValueError(f"No git analysis found for {self.analysis_id}")
 
+        console.print(
+            f"  [dim]Git analysis found {len(change_summary.files_changed)} changed files[/dim]"
+        )
+
         base_elements = self._load_ast_data("base")
         head_elements = self._load_ast_data("head")
+
+        console.print(
+            f"  [dim]Loaded {len(base_elements)} AST elements from base[/dim]"
+        )
+        console.print(
+            f"  [dim]Loaded {len(head_elements)} AST elements from head[/dim]"
+        )
 
         # Find elements in changed files
         changed_base = self._find_changed_elements(change_summary, base_elements)
         changed_head = self._find_changed_elements(change_summary, head_elements)
 
+        console.print(
+            f"  [dim]Found {len(changed_base)} changed elements in base[/dim]"
+        )
+        console.print(
+            f"  [dim]Found {len(changed_head)} changed elements in head[/dim]"
+        )
+
+        # Drop non-changed elements and log
+        non_changed_base = len(base_elements) - len(changed_base)
+        non_changed_head = len(head_elements) - len(changed_head)
+
+        if non_changed_base > 0:
+            console.print(
+                f"  [dim]Dropping {non_changed_base} base AST elements not in changed files[/dim]"
+            )
+        if non_changed_head > 0:
+            console.print(
+                f"  [dim]Dropping {non_changed_head} head AST elements not in changed files[/dim]"
+            )
+
         all_facts = []
 
-        # Turn 1: API Changes Analysis
+        # Turn 1: API Changes Analysis (only changed elements)
         api_facts = await self._analyze_api_changes(
             change_summary, changed_base, changed_head
         )
         all_facts.extend(api_facts)
 
-        # Turn 2: Behavioral Changes Analysis
+        # Turn 2: Behavioral Changes Analysis (only changed elements)
         behavior_facts = await self._analyze_behavioral_changes(
             change_summary, changed_base, changed_head
         )
         all_facts.extend(behavior_facts)
 
-        # Turn 3: Architecture/Dependency Analysis
+        # Turn 3: Architecture/Dependency Analysis (only changed elements)
         arch_facts = await self._analyze_architecture_changes(
-            change_summary, base_elements, head_elements
+            change_summary, changed_base, changed_head
         )
         all_facts.extend(arch_facts)
 
@@ -276,7 +298,16 @@ class TechnicalAuthor:
             / "conversations"
             / "technical_author"
         )
-        self.conversation.save(kb_path)
+        if self.conversation:
+            self.conversation.save(kb_path)
+
+        # Validate facts against codebase using tools
+        if self.tool_executor:
+            console.print("  [dim]Validating technical facts against codebase...[/dim]")
+            all_facts = self._validate_facts_with_tools(all_facts)
+            console.print(
+                f"  [green]✓ Validated {len(all_facts)} facts against codebase[/green]"
+            )
 
         # Save facts to KB
         self._save_facts(all_facts)
@@ -376,6 +407,9 @@ For each API change, provide:
 
 Format as JSON array of TechnicalFact objects."""
 
+            if not self.conversation:
+                raise RuntimeError("Conversation not initialized")
+
             self.conversation.add_user_message(prompt)
             context = self.conversation.get_context_for_llm()
 
@@ -383,8 +417,6 @@ Format as JSON array of TechnicalFact objects."""
             response = await self._generate_facts_response(context)
 
             try:
-                import json
-
                 facts_data = (
                     json.loads(response) if isinstance(response, str) else response
                 )
@@ -411,7 +443,10 @@ Format as JSON array of TechnicalFact objects."""
         return facts
 
     async def _analyze_api_batch(
-        self, new_apis: List[str], deleted_apis: List[str], modified_apis: List[str]
+        self,
+        new_apis: List[str],
+        deleted_apis: List[str],
+        modified_apis: List[dict[str, str]],
     ) -> List[TechnicalFact]:
         """Process API changes in a batch."""
         # Simplified batch processing
@@ -452,6 +487,9 @@ Format as JSON array of TechnicalFact objects."""
         """Analyze behavioral changes (what code does differently)."""
         facts = []
 
+        # Find changed files
+        changed_files = {f.path for f in change_summary.files_changed}
+
         # Use git analysis to guide behavioral analysis
         prompt = f"""Based on the git change analysis, identify behavioral changes:
 
@@ -459,12 +497,16 @@ Description: {change_summary.description}
 Intent: {change_summary.impact}
 Breaking Changes: {change_summary.breaking_changes}
 
+IMPORTANT: You should ONLY generate facts about behavioral changes in files that were actually changed. Do not generate facts about files that were not in the git diff.
+
 Files Changed ({len(change_summary.files_changed)}):
 """
         for f in change_summary.files_changed[:10]:
             prompt += f"- {f.path}: {f.summary}\n"
 
-        prompt += """
+        prompt += f"""
+IMPORTANT: Only analyze behavioral changes in the {len(changed_files)} files that were changed. Do not reference files that were not in the git diff.
+
 For each behavioral change, provide:
 1. Fact ID (e.g., behavior_001)
 2. Category: behavior
@@ -475,14 +517,15 @@ For each behavioral change, provide:
 
 Format as JSON array."""
 
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
+
         self.conversation.add_user_message(prompt)
         context = self.conversation.get_context_for_llm()
 
         response = await self._generate_facts_response(context)
 
         try:
-            import json
-
             facts_data = json.loads(response) if isinstance(response, str) else response
             if isinstance(facts_data, list):
                 for i, fact_data in enumerate(facts_data):
@@ -553,12 +596,109 @@ Format as JSON array."""
         return facts
 
     async def _generate_facts_response(self, context: List[Dict[str, Any]]) -> str:
-        """Generate response from conversation context."""
+        """Generate response from conversation context.
+
+        Uses tool-augmented chat when a ToolExecutor is available, allowing
+        the LLM to verify code references against the actual codebase.
+        Falls back to plain chat when no tools are configured.
+        """
+        if self.tool_executor:
+            return chat_with_tools(
+                llm=self.llm,
+                messages=context,
+                tools=TOOL_DEFINITIONS,
+                executor=self.tool_executor,
+                temperature=0.3,
+                max_tokens=4096,
+            )
         return self.llm.chat(
             messages=context,
             temperature=0.3,
             max_tokens=4096,
         )
+
+    def _validate_facts_with_tools(
+        self, facts: list[TechnicalFact]
+    ) -> list[TechnicalFact]:
+        """Validate technical facts using tool executor.
+
+        Checks that source_elements and source_file references in facts
+        actually exist in the codebase. Removes or corrects invalid references.
+
+        Args:
+            facts: List of technical facts to validate
+
+        Returns:
+            Validated facts with invalid references removed or corrected
+        """
+        if not self.tool_executor:
+            return facts
+
+        validated = []
+        for fact in facts:
+            # Validate source_file
+            if fact.source_file and fact.source_file != "unknown":
+                result = self.tool_executor.execute(
+                    ToolCall(
+                        tool_name="validate_reference",
+                        arguments={
+                            "reference_type": "file",
+                            "name": fact.source_file,
+                        },
+                    )
+                )
+                if result.success and not result.result.get("found", False):
+                    # File doesn't exist — try suggestions
+                    suggestions = result.result.get("suggestions", [])
+                    if suggestions:
+                        console.print(
+                            f"  [yellow]⚠ Fact {fact.fact_id}: source_file '{fact.source_file}' "
+                            f"not found, using '{suggestions[0]}'[/yellow]"
+                        )
+                        fact.source_file = suggestions[0]
+                    else:
+                        console.print(
+                            f"  [yellow]⚠ Fact {fact.fact_id}: source_file '{fact.source_file}' "
+                            f"not found and no suggestions available[/yellow]"
+                        )
+
+            # Validate source_elements
+            validated_elements = []
+            for elem in fact.source_elements:
+                result = self.tool_executor.execute(
+                    ToolCall(
+                        tool_name="validate_reference",
+                        arguments={
+                            "reference_type": "function",
+                            "name": elem,
+                            "file_path": fact.source_file
+                            if fact.source_file != "unknown"
+                            else None,
+                        },
+                    )
+                )
+                if result.success and result.result.get("found", False):
+                    validated_elements.append(elem)
+                else:
+                    suggestions = (
+                        result.result.get("suggestions", []) if result.success else []
+                    )
+                    if suggestions:
+                        console.print(
+                            f"  [yellow]⚠ Fact {fact.fact_id}: element '{elem}' "
+                            f"not found, did you mean '{suggestions[0]}'?[/yellow]"
+                        )
+                        validated_elements.append(suggestions[0])
+                    else:
+                        console.print(
+                            f"  [yellow]⚠ Fact {fact.fact_id}: element '{elem}' "
+                            f"not found in codebase, removing[/yellow]"
+                        )
+
+            fact.source_elements = validated_elements
+            validated.append(fact)
+
+        return validated
 
     def _save_facts(self, facts: list[TechnicalFact]) -> None:
         """Save facts to knowledge base."""

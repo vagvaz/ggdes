@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from tree_sitter import Language, Parser, Tree
 
@@ -33,7 +34,7 @@ class ASTParser:
         ".h": "cpp",  # Could be C or C++, we'll try C++ parser
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize parser with language support."""
         self._parsers: dict[str, Parser] = {}
         self._languages: dict[str, Language] = {}
@@ -179,7 +180,7 @@ class ASTParser:
             except ValueError:
                 pass
 
-        def extract_from_node(node, parent_name: str | None = None):
+        def extract_from_node(node: Any, parent_name: str | None = None) -> None:
             """Recursively extract elements from AST nodes."""
             if node.type == "function_definition":
                 # Extract function
@@ -269,12 +270,14 @@ class ASTParser:
                     element = CodeElement(
                         name=name,
                         element_type=CodeElementType.CLASS,
+                        signature="",
                         docstring=docstring,
                         start_line=node.start_point[0] + 1,
                         end_line=node.end_point[0] + 1,
                         file_path=display_path,
                         children=children,
                         decorators=decorators,
+                        parent=parent_name,
                     )
                     elements.append(element)
 
@@ -306,7 +309,7 @@ class ASTParser:
             except ValueError:
                 pass
 
-        def extract_from_node(node, parent_name: str | None = None):
+        def extract_from_node(node: Any, parent_name: str | None = None) -> None:
             """Recursively extract elements from AST nodes."""
             # C++ function definition
             if node.type == "function_definition":
@@ -329,6 +332,7 @@ class ASTParser:
                             name=name,
                             element_type=CodeElementType.FUNCTION,
                             signature=signature,
+                            docstring=None,
                             start_line=node.start_point[0] + 1,
                             end_line=node.end_point[0] + 1,
                             file_path=display_path,
@@ -343,7 +347,7 @@ class ASTParser:
 
                 if name_node:
                     name = name_node.text.decode()
-                    children = []
+                    children: list[str] = []
 
                     if body_node:
                         for child in body_node.children:
@@ -357,10 +361,13 @@ class ASTParser:
                     element = CodeElement(
                         name=name,
                         element_type=CodeElementType.CLASS,
+                        signature="",
+                        docstring=None,
                         start_line=node.start_point[0] + 1,
                         end_line=node.end_point[0] + 1,
                         file_path=display_path,
                         children=children,
+                        parent=parent_name,
                     )
                     elements.append(element)
 

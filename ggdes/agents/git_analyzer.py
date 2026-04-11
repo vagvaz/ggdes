@@ -14,6 +14,7 @@ from ggdes.agents.skill_utils import (
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
+from ggdes.config import GGDesConfig
 from ggdes.schemas import ChangeSummary, StoragePolicy
 
 console = Console()
@@ -25,7 +26,7 @@ class GitAnalyzer:
     def __init__(
         self,
         repo_path: Path,
-        config,
+        config: GGDesConfig,
         analysis_id: Optional[str] = None,
         user_context: Optional[Dict[str, Any]] = None,
     ):
@@ -122,30 +123,9 @@ class GitAnalyzer:
 
     def _build_user_context_guidance(self) -> str:
         """Build guidance text from user context."""
-        guidance_parts = []
+        from ggdes.agents.skill_utils import build_user_context_guidance
 
-        if "focus_areas" in self.user_context:
-            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
-
-        if "audience" in self.user_context:
-            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
-
-        if "purpose" in self.user_context:
-            purposes = self.user_context["purpose"]
-            if isinstance(purposes, list):
-                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
-            else:
-                guidance_parts.append(f"Document Purpose: {purposes}")
-
-        if "detail_level" in self.user_context:
-            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
-
-        if "additional_context" in self.user_context:
-            guidance_parts.append(
-                f"Additional Context: {self.user_context['additional_context']}"
-            )
-
-        return "\n".join(guidance_parts) if guidance_parts else ""
+        return build_user_context_guidance(self.user_context)
 
     def get_diff(
         self, commit_range: str, focus_commits: list[str] | None = None
@@ -486,7 +466,7 @@ class GitAnalyzer:
             change_summary = await self._analyze_single(diff, files, commits)
 
         # Save conversation to KB
-        if self.analysis_id:
+        if self.analysis_id and self.conversation:
             from ggdes.config import get_kb_path
 
             kb_path = (
@@ -502,6 +482,10 @@ class GitAnalyzer:
         self, diff: str, files: List[Dict[str, Any]], commits: List[Dict[str, Any]]
     ) -> ChangeSummary:
         """Single-pass analysis for diffs that fit in context."""
+        console.print(
+            f"  [dim]Analyzing {len(files)} changed files in {len(commits)} commit(s)...[/dim]"
+        )
+
         # Prepare context about what files changed
         files_context = "\n".join(
             [
@@ -518,6 +502,13 @@ class GitAnalyzer:
             ]
         )
 
+        console.print(
+            f"  [dim]Only analyzing {len(files)} files that changed in the commit range[/dim]"
+        )
+
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
+
         # Turn 1: Initial analysis with full context
         self.conversation.add_user_message(
             f"""You are analyzing a git commit range with the following context:
@@ -532,6 +523,8 @@ GIT DIFF (code changes):
 ```diff
 {diff[:40000]}
 ```
+
+IMPORTANT: You should only analyze code changes in the files listed above. Do not reference code that was not changed.
 
 Analyze the git diff above and identify the key changes. Focus on:
 1. What functionality changed
@@ -608,6 +601,9 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
         self, diff: str, files: List[Dict[str, Any]], commits: List[Dict[str, Any]]
     ) -> ChangeSummary:
         """Multi-chunk analysis for large diffs."""
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
+
         # Split diff into chunks by file or size
         chunks = self._chunk_diff(diff, max_tokens=self.chunk_token_threshold)
 
@@ -682,9 +678,9 @@ Then provide a structured ChangeSummary.
 
     def _chunk_diff(self, diff: str, max_tokens: int = 25000) -> List[Dict[str, Any]]:
         """Split diff into chunks by file or token size."""
-        chunks = []
-        current_chunk_content = []
-        current_chunk_files = []
+        chunks: list[dict[str, Any]] = []
+        current_chunk_content: list[str] = []
+        current_chunk_files: list[str] = []
         current_chunk_tokens = 0
 
         lines = diff.split("\n")
@@ -774,13 +770,14 @@ Then provide a structured ChangeSummary.
                 conversation_messages.append(msg)
 
         # Add schema instruction to system
-        system += (
-            "\n\nYou must respond with a JSON object matching the ChangeSummary schema. "
-            "Include fields: change_type, description, intent, impact, impact_level, "
-            "breaking_changes (array), dependencies_changed (array). "
-            "\n\nCRITICAL: All code references (file paths, function names, class names) "
-            "must exist in the git diff or parsed code. Do not reference code that wasn't changed."
-        )
+        if system is not None:
+            system += (
+                "\n\nYou must respond with a JSON object matching the ChangeSummary schema. "
+                "Include fields: change_type, description, intent, impact, impact_level, "
+                "breaking_changes (array), dependencies_changed (array). "
+                "\n\nCRITICAL: All code references (file paths, function names, class names) "
+                "must exist in the git diff or parsed code. Do not reference code that wasn't changed."
+            )
 
         # Build a comprehensive prompt from the full conversation context
         # This ensures the LLM has all the analysis context when generating structured output

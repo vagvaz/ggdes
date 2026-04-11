@@ -1,6 +1,10 @@
 """Pipeline orchestrator for running analysis stages."""
 
+import asyncio
+import json
+import traceback
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 
@@ -8,7 +12,8 @@ from ggdes.agents import GitAnalyzer
 from ggdes.config import GGDesConfig, ParsingMode
 from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
-from ggdes.schemas import StoragePolicy
+from ggdes.schemas import CodeElement, StoragePolicy
+from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
 
@@ -28,11 +33,12 @@ class AnalysisPipeline:
         self.config = config
         self.analysis_id = analysis_id
         self.kb_manager = KnowledgeBaseManager(config)
-        self.metadata = self.kb_manager.load_metadata(analysis_id)
+        metadata = self.kb_manager.load_metadata(analysis_id)
 
-        if not self.metadata:
+        if not metadata:
             raise ValueError(f"Analysis not found: {analysis_id}")
 
+        self.metadata = metadata
         self.repo_path = Path(self.metadata.repo_path)
         self.wt_manager = WorktreeManager(config, self.repo_path)
 
@@ -61,9 +67,9 @@ class AnalysisPipeline:
             elif stage_name == self.kb_manager.STAGE_GIT_ANALYSIS:
                 success = self._run_git_analysis()
             elif stage_name == self.kb_manager.STAGE_AST_PARSING_BASE:
-                success = self._run_ast_parsing_base()
+                success = self._run_ast_parsing("base")
             elif stage_name == self.kb_manager.STAGE_AST_PARSING_HEAD:
-                success = self._run_ast_parsing_head()
+                success = self._run_ast_parsing("head")
             elif stage_name == self.kb_manager.STAGE_TECHNICAL_AUTHOR:
                 success = self._run_technical_author()
             elif stage_name == self.kb_manager.STAGE_COORDINATOR_PLAN:
@@ -197,7 +203,19 @@ class AnalysisPipeline:
 
     def _run_git_analysis(self) -> bool:
         """Run git analysis agent."""
-        import asyncio
+        from ggdes.validation.validators import InputValidator
+
+        # Validate commit range
+        input_validator = InputValidator(self.repo_path)
+        range_validation = input_validator.validate_commit_range(
+            self.metadata.commit_range
+        )
+        if not range_validation.passed:
+            for error in range_validation.errors:
+                console.print(f"  [red]✗ {error}[/red]")
+            return False
+        for warning in range_validation.warnings:
+            console.print(f"  [yellow]⚠ {warning}[/yellow]")
 
         console.print(
             f"  [dim]Initializing GitAnalyzer for repository: {self.repo_path}[/dim]"
@@ -222,8 +240,7 @@ class AnalysisPipeline:
 
         # Get storage policy from metadata
 
-        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
-        storage_policy = StoragePolicy(storage_policy_str)
+        storage_policy = self.metadata.storage_policy
 
         change_summary = asyncio.run(
             analyzer.analyze(
@@ -234,8 +251,6 @@ class AnalysisPipeline:
         )
 
         # Save to KB
-        import json
-
         output_path = (
             self.kb_manager.get_analysis_path(self.analysis_id)
             / "git_analysis"
@@ -250,34 +265,70 @@ class AnalysisPipeline:
         console.print(f"  [dim]Impact: {change_summary.impact}[/dim]")
         console.print(f"  [dim]Results saved to: {output_path}[/dim]")
 
+        # Validate code references in the summary
+        from ggdes.validation.code_references import CodeReferenceValidator
+
+        changed_file_paths = [f.path for f in change_summary.files_changed]
+        code_elements_set = set()
+        # Collect element names from AST if available
+        ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
+        if ast_head_dir.exists():
+            for json_file in ast_head_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    for elem_data in data.get("elements", []):
+                        code_elements_set.add(elem_data.get("name", ""))
+                except Exception:
+                    continue
+
+        # Convert set to dict format expected by CodeReferenceValidator
+        code_elements_dict: dict[str, dict[str, Any]] = {
+            name: {} for name in code_elements_set if name
+        }
+        validator = CodeReferenceValidator(
+            repo_path=self.repo_path,
+            changed_files=changed_file_paths,
+            code_elements=code_elements_dict,
+            diff_content="",  # We don't have the raw diff here
+        )
+
         return True
 
-    def _run_ast_parsing_base(self) -> bool:
-        """Parse AST for base worktree."""
+    def _run_ast_parsing(self, variant: str) -> bool:
+        """Parse AST for a worktree (base or head).
+
+        Args:
+            variant: Either "base" or "head" to specify which worktree to parse
+
+        Returns:
+            True if successful, False otherwise
+        """
         if not self.metadata.worktrees:
             console.print("[red]Worktrees not set up[/red]")
             return False
 
         parser = ASTParser()
-        base_path = Path(self.metadata.worktrees.base)
+        worktree_path = Path(getattr(self.metadata.worktrees, variant))
 
-        console.print(f"  [dim]Scanning base worktree: {base_path}[/dim]")
+        console.print(f"  [dim]Scanning {variant} worktree: {worktree_path}[/dim]")
         console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
 
         # Check if directory exists
-        if not base_path.exists():
+        if not worktree_path.exists():
             console.print(
-                f"  [red]Error: Base worktree does not exist: {base_path}[/red]"
+                f"  [red]Error: {variant.capitalize()} worktree does not exist: {worktree_path}[/red]"
             )
             return False
 
-        if not any(base_path.iterdir()):
+        if not any(worktree_path.iterdir()):
             console.print(
-                f"  [yellow]Warning: Base worktree is empty: {base_path}[/yellow]"
+                f"  [yellow]Warning: {variant.capitalize()} worktree is empty: {worktree_path}[/yellow]"
             )
 
         # Get list of changed files from git analysis if available
         changed_files = self._get_changed_files_from_analysis()
+
+        console.print(f"  [dim]Filtering AST parsing to changed files only[/dim]")
 
         # Determine parsing mode
         parsing_config = self.config.parsing
@@ -286,12 +337,15 @@ class AnalysisPipeline:
                 f"  [dim]Incremental parsing mode: {len(changed_files)} changed files[/dim]"
             )
             results = parser.parse_incremental(
-                directory=base_path,
+                directory=worktree_path,
                 changed_files=changed_files,
-                relative_to=base_path,
+                relative_to=worktree_path,
                 include_referenced=parsing_config.include_referenced,
                 max_referenced_depth=parsing_config.max_referenced_depth,
                 verbose=True,
+            )
+            console.print(
+                f"  [dim]AST parsing only analyzed {len(changed_files)} changed files[/dim]"
             )
         else:
             if parsing_config.mode == ParsingMode.INCREMENTAL and not changed_files:
@@ -299,14 +353,17 @@ class AnalysisPipeline:
                     "  [yellow]Incremental mode requested but no changed files found, falling back to full scan[/yellow]"
                 )
             # Full scan - parse all supported files
+            console.print(
+                "  [yellow]Note: Full directory scan (not limited to changed files)[/yellow]"
+            )
             results = parser.parse_directory(
-                base_path, relative_to=base_path, verbose=True
+                worktree_path, relative_to=worktree_path, verbose=True
             )
 
         # Save results
-        import json
-
-        output_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_base"
+        output_dir = (
+            self.kb_manager.get_analysis_path(self.analysis_id) / f"ast_{variant}"
+        )
         total_elements = 0
         successful_parses = 0
 
@@ -335,14 +392,16 @@ class AnalysisPipeline:
 
         return True
 
+    def _run_ast_parsing_base(self) -> bool:
+        """Parse AST for base worktree."""
+        return self._run_ast_parsing("base")
+
     def _get_changed_files_from_analysis(self) -> list[str]:
         """Get list of changed files from git analysis results.
 
         Returns:
             List of file paths that changed (relative to repo root)
         """
-        import json
-
         analysis_path = (
             self.kb_manager.get_analysis_path(self.analysis_id)
             / "git_analysis"
@@ -362,86 +421,94 @@ class AnalysisPipeline:
 
     def _run_ast_parsing_head(self) -> bool:
         """Parse AST for head worktree."""
-        if not self.metadata.worktrees:
-            console.print("[red]Worktrees not set up[/red]")
-            return False
+        return self._run_ast_parsing("head")
 
-        parser = ASTParser()
-        head_path = Path(self.metadata.worktrees.head)
+    def _build_tool_executor(self) -> "ToolExecutor":
+        """Build a ToolExecutor for grounded LLM calls.
 
-        console.print(f"  [dim]Scanning head worktree: {head_path}[/dim]")
-        console.print("  [dim]Parsing source files (this may take a moment)...[/dim]")
+        Assembles changed files, AST elements, and commit range data
+        from the knowledge base to provide tools with real codebase context.
 
-        # Check if directory exists
-        if not head_path.exists():
-            console.print(
-                f"  [red]Error: Head worktree does not exist: {head_path}[/red]"
-            )
-            return False
+        Returns:
+            ToolExecutor instance, or None if required data is unavailable
+        """
+        from ggdes.tools import ToolExecutor
 
-        if not any(head_path.iterdir()):
-            console.print(
-                f"  [yellow]Warning: Head worktree is empty: {head_path}[/yellow]"
-            )
+        # Load changed files from git analysis
+        changed_files = self._get_changed_files_detailed()
 
-        # Get list of changed files from git analysis if available
-        changed_files = self._get_changed_files_from_analysis()
+        # Load AST elements from head worktree
+        ast_elements = self._load_ast_elements_for_tools()
 
-        # Determine parsing mode
-        parsing_config = self.config.parsing
-        if parsing_config.mode == ParsingMode.INCREMENTAL and changed_files:
-            console.print(
-                f"  [dim]Incremental parsing mode: {len(changed_files)} changed files[/dim]"
-            )
-            results = parser.parse_incremental(
-                directory=head_path,
-                changed_files=changed_files,
-                relative_to=head_path,
-                include_referenced=parsing_config.include_referenced,
-                max_referenced_depth=parsing_config.max_referenced_depth,
-                verbose=True,
-            )
-        else:
-            if parsing_config.mode == ParsingMode.INCREMENTAL and not changed_files:
-                console.print(
-                    "  [yellow]Incremental mode requested but no changed files found, falling back to full scan[/yellow]"
-                )
-            # Full scan - parse all supported files
-            results = parser.parse_directory(
-                head_path, relative_to=head_path, verbose=True
-            )
+        # Get commit range and focus commits from metadata
+        commit_range = self.metadata.commit_range
+        focus_commits = self.metadata.focus_commits
 
-        # Save results
-        import json
+        return ToolExecutor(
+            repo_path=self.repo_path,
+            changed_files=changed_files,
+            ast_elements=ast_elements,
+            commit_range=commit_range,
+            focus_commits=focus_commits,
+        )
 
-        output_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
-        total_elements = 0
-        successful_parses = 0
+    def _get_changed_files_detailed(self) -> list[dict[str, Any]]:
+        """Get detailed changed file info from git analysis results.
 
-        for result in results:
-            if result.success:
-                output_file = output_dir / f"{result.file_path.replace('/', '_')}.json"
-                output_file.write_text(
-                    json.dumps(
+        Returns:
+            List of dicts with path, change_type, lines_added, lines_deleted, summary
+        """
+        analysis_path = (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "git_analysis"
+            / "summary.json"
+        )
+
+        if not analysis_path.exists():
+            return []
+
+        try:
+            data = json.loads(analysis_path.read_text())
+            files_changed = data.get("files_changed", [])
+            result = []
+            for f in files_changed:
+                if isinstance(f, dict):
+                    result.append(
                         {
-                            "file_path": result.file_path,
-                            "language": result.language,
-                            "elements": [e.model_dump() for e in result.elements],
-                        },
-                        indent=2,
+                            "path": f.get("path", ""),
+                            "change_type": f.get("change_type", "modified"),
+                            "lines_added": f.get("lines_added", 0),
+                            "lines_deleted": f.get("lines_deleted", 0),
+                            "summary": f.get("summary", ""),
+                        }
                     )
-                )
-                total_elements += len(result.elements)
-                successful_parses += 1
+            return result
+        except Exception:
+            return []
 
-        console.print(
-            f"  [dim]Parsed {successful_parses}/{len(results)} files successfully[/dim]"
-        )
-        console.print(
-            f"  [dim]Extracted {total_elements} code elements (functions, classes, etc.)[/dim]"
-        )
+    def _load_ast_elements_for_tools(self) -> dict[str, list[Any]]:
+        """Load AST elements from KB for tool executor.
 
-        return True
+        Returns:
+            Dict mapping file paths to lists of code elements
+        """
+        ast_elements: dict[str, list[Any]] = {}
+
+        # Load head AST elements
+        ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
+        if ast_head_dir.exists():
+            for json_file in ast_head_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    elements = data.get("elements", [])
+                    if elements:
+                        # Use the file_path from the data, or derive from filename
+                        file_path = data.get("file_path", json_file.stem)
+                        ast_elements[file_path] = elements
+                except Exception:
+                    continue
+
+        return ast_elements
 
     def _run_technical_author(self) -> bool:
         """Run technical author agent."""
@@ -450,7 +517,7 @@ class AnalysisPipeline:
             detect_primary_language,
             get_expert_skill_for_language,
         )
-        from ggdes.schemas import StoragePolicy
+        from ggdes.tools import ToolExecutor
 
         console.print("  [dim]Initializing Technical Author...[/dim]")
 
@@ -466,31 +533,61 @@ class AnalysisPipeline:
         except Exception:
             pass  # Graceful fallback: continue without expert skill
 
+        # Build tool executor for grounded fact generation
+        tool_executor = self._build_tool_executor()
+
         author = TechnicalAuthor(
             self.repo_path,
             self.config,
             self.analysis_id,
             user_context=user_context,
             language_expert_skill=language_expert_skill,
+            tool_executor=tool_executor,
         )
 
         console.print("  [dim]Synthesizing technical facts from analysis...[/dim]")
-        import asyncio
-
         # Get storage policy from metadata
-        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
-        storage_policy = StoragePolicy(storage_policy_str)
+        storage_policy = self.metadata.storage_policy
 
         try:
             facts = asyncio.run(author.synthesize(storage_policy=storage_policy))
         except Exception as e:
-            import traceback
-
             console.print(f"  [red]Technical author failed:[/red] {e}")
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             return False
 
         console.print(f"  [dim]Synthesized {len(facts)} technical facts[/dim]")
+
+        # After facts are generated, validate them against AST data
+        from ggdes.validation.validators import ASTValidator
+
+        # Load AST elements for validation
+        head_elements = []
+        ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
+        if ast_head_dir.exists():
+            for json_file in ast_head_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    for elem_data in data.get("elements", []):
+                        head_elements.append(CodeElement(**elem_data))
+                except Exception:
+                    continue
+
+        if head_elements:
+            validator = ASTValidator(head_elements)
+            validation_result = validator.validate_facts(facts)
+            if validation_result.errors:
+                console.print(
+                    f"  [yellow]⚠ Validation found {len(validation_result.errors)} errors in technical facts[/yellow]"
+                )
+                for error in validation_result.errors[:5]:  # Show first 5
+                    console.print(f"    [dim]- {error}[/dim]")
+            if validation_result.warnings:
+                console.print(
+                    f"  [yellow]⚠ Validation found {len(validation_result.warnings)} warnings[/yellow]"
+                )
+                for warning in validation_result.warnings[:5]:
+                    console.print(f"    [dim]- {warning}[/dim]")
 
         # Show sample of facts
         for fact in facts[:3]:
@@ -506,7 +603,6 @@ class AnalysisPipeline:
     def _run_coordinator_plan(self) -> bool:
         """Run coordinator planning stage."""
         from ggdes.agents import Coordinator
-        from ggdes.schemas import StoragePolicy
 
         console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
 
@@ -521,8 +617,6 @@ class AnalysisPipeline:
         target_formats = self.metadata.target_formats or ["markdown"]
         console.print(f"  [dim]Target formats: {', '.join(target_formats)}[/dim]")
 
-        import asyncio
-
         # Check if we should run interactively
         # In auto mode, use defaults. Otherwise, ask user (handled in Coordinator)
         auto_mode = self.config.features.auto_cleanup  # Use as proxy for auto mode
@@ -531,8 +625,7 @@ class AnalysisPipeline:
             console.print("  [dim]Running in auto mode (no user prompts)[/dim]")
 
         # Get storage policy from metadata
-        storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
-        storage_policy = StoragePolicy(storage_policy_str)
+        storage_policy = self.metadata.storage_policy
 
         try:
             plans = asyncio.run(
@@ -543,8 +636,6 @@ class AnalysisPipeline:
                 )
             )
         except Exception as e:
-            import traceback
-
             console.print(f"  [red]Coordinator planning failed:[/red] {e}")
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             return False
@@ -586,6 +677,13 @@ class AnalysisPipeline:
             head_commit = commit_range
 
         try:
+            console.print(
+                f"  [dim]Performing semantic diff on {len(changed_files)} changed files...[/dim]"
+            )
+            console.print(
+                f"  [dim]Only analyzing files that changed in the commit range[/dim]"
+            )
+
             result = analyzer.analyze(
                 base_path=Path(self.metadata.worktrees.base),
                 head_path=Path(self.metadata.worktrees.head),
@@ -604,6 +702,9 @@ class AnalysisPipeline:
             save_semantic_diff(result, output_path)
 
             # Print summary
+            console.print(
+                f"  [dim]Semantic diff analyzed {len(changed_files)} changed files:[/dim]"
+            )
             console.print(
                 f"  [dim]Detected {len(result.semantic_changes)} semantic change(s):[/dim]"
             )
@@ -625,16 +726,12 @@ class AnalysisPipeline:
             return True
 
         except Exception as e:
-            import traceback
-
             console.print(f"  [red]Semantic diff analysis failed:[/red] {e}")
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             return False
 
     def _run_output_generation(self) -> bool:
         """Run document output generation stage."""
-        import asyncio
-
         from ggdes.agents.output_agents import (
             DocxAgent,
             MarkdownAgent,
@@ -654,17 +751,13 @@ class AnalysisPipeline:
         if "markdown" in formats:
             console.print("  [dim]Generating markdown source document...[/dim]")
             try:
-                # Get storage policy from metadata
-                storage_policy_str = getattr(self.metadata, "storage_policy", "summary")
-                storage_policy = StoragePolicy(storage_policy_str)
+                storage_policy = self.metadata.storage_policy
 
                 agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
                 path = asyncio.run(agent.generate(storage_policy=storage_policy))
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:
-                import traceback
-
                 console.print(f"    [red]✗[/red] Markdown generation failed: {e}")
                 console.print(f"    [dim]{traceback.format_exc()}[/dim]")
 
@@ -675,19 +768,27 @@ class AnalysisPipeline:
 
             console.print(f"  [dim]Generating {fmt.upper()} format...[/dim]")
             try:
+                fmt_path: Path | None = None
                 if fmt == "docx":
-                    agent = DocxAgent(self.repo_path, self.config, self.analysis_id)
+                    docx_agent = DocxAgent(
+                        self.repo_path, self.config, self.analysis_id
+                    )
+                    fmt_path = docx_agent.generate()
                 elif fmt == "pptx":
-                    agent = PptxAgent(self.repo_path, self.config, self.analysis_id)
+                    pptx_agent = PptxAgent(
+                        self.repo_path, self.config, self.analysis_id
+                    )
+                    fmt_path = pptx_agent.generate()
                 elif fmt == "pdf":
-                    agent = PdfAgent(self.repo_path, self.config, self.analysis_id)
+                    pdf_agent = PdfAgent(self.repo_path, self.config, self.analysis_id)
+                    fmt_path = pdf_agent.generate()
                 else:
                     console.print(f"    [yellow]⚠[/yellow] Unknown format: {fmt}")
                     continue
 
-                path = agent.generate()
-                generated_files.append((fmt, path))
-                console.print(f"    [green]✓[/green] {fmt}: {path}")
+                if fmt_path:
+                    generated_files.append((fmt, fmt_path))
+                    console.print(f"    [green]✓[/green] {fmt}: {fmt_path}")
             except Exception as e:
                 console.print(f"    [red]✗[/red] {fmt} generation failed: {e}")
 

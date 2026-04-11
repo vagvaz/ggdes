@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def detect_primary_language(repo_path: Path) -> str | None:
         return None
 
     # Count files by extension
-    extension_counts = {}
+    extension_counts: dict[str, int] = {}
 
     for file_path in repo_path.rglob("*"):
         if file_path.is_file():
@@ -88,7 +89,7 @@ def detect_primary_language(repo_path: Path) -> str | None:
         return None
 
     # Return the language with highest count
-    primary_lang = max(language_scores, key=language_scores.get)
+    primary_lang = max(language_scores.items(), key=lambda x: x[1])[0]
     logger.debug(
         f"Detected primary language: {primary_lang} (counts: {language_scores})"
     )
@@ -111,3 +112,46 @@ def get_expert_skill_for_language(language: str) -> str | None:
     }
 
     return skill_map.get(language)
+
+
+def build_user_context_guidance(user_context: dict[str, Any] | None) -> str:
+    """Build guidance text from user context for LLM prompts.
+
+    This is a shared utility used by GitAnalyzer, TechnicalAuthor,
+    Coordinator, and output agents to format user context into
+    a consistent guidance string.
+
+    Args:
+        user_context: Dictionary with keys like 'focus_areas', 'audience',
+                      'purpose', 'detail_level', 'additional_context'
+
+    Returns:
+        Formatted guidance string, or empty string if no context
+    """
+    if not user_context:
+        return ""
+
+    guidance_parts = []
+
+    if "focus_areas" in user_context:
+        guidance_parts.append(f"Focus Areas: {user_context['focus_areas']}")
+
+    if "audience" in user_context:
+        guidance_parts.append(f"Target Audience: {user_context['audience']}")
+
+    if "purpose" in user_context:
+        purposes = user_context["purpose"]
+        if isinstance(purposes, list):
+            guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
+        else:
+            guidance_parts.append(f"Document Purpose: {purposes}")
+
+    if "detail_level" in user_context:
+        guidance_parts.append(f"Detail Level: {user_context['detail_level']}")
+
+    if "additional_context" in user_context:
+        guidance_parts.append(
+            f"Additional Context: {user_context['additional_context']}"
+        )
+
+    return "\n".join(guidance_parts)

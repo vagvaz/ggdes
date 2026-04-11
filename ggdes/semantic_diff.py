@@ -93,7 +93,7 @@ class SemanticDiffResult:
     performance_changes: list[SemanticChange]
     dependency_changes: list[SemanticChange]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize derived lists from semantic_changes if not provided."""
         if not self.breaking_changes:
             self.breaking_changes = [
@@ -198,7 +198,7 @@ class SemanticDiffResult:
 class SemanticDiffAnalyzer:
     """Analyze semantic differences between code versions."""
 
-    def __init__(self, config):
+    def __init__(self, config: Any) -> None:
         """Initialize analyzer.
 
         Args:
@@ -235,6 +235,11 @@ class SemanticDiffAnalyzer:
             f"[dim]Performing semantic diff: {base_commit[:8]}..{head_commit[:8]}[/dim]"
         )
         console.print(f"[dim]Analyzing {len(changed_files)} changed files...[/dim]")
+
+        # Log that we're only analyzing changed files
+        console.print(
+            f"[dim]  Only analyzing files that changed in the commit range[/dim]"
+        )
 
         for file_path in changed_files:
             base_file = base_path / file_path
@@ -277,12 +282,14 @@ class SemanticDiffAnalyzer:
         Returns:
             List of semantic changes detected
         """
-        changes = []
+        console.print(f"  [dim]Analyzing changed file: {file_path}[/dim]")
+        changes: list[SemanticChange] = []
 
         try:
             base_content = base_file.read_text()
             head_content = head_file.read_text()
-        except Exception:
+        except Exception as e:
+            console.print(f"    [yellow]Warning: Could not read file: {e}[/yellow]")
             return changes
 
         # Detect function/method signature changes
@@ -290,24 +297,40 @@ class SemanticDiffAnalyzer:
             base_content, head_content, file_path
         )
         changes.extend(signature_changes)
+        if signature_changes:
+            console.print(
+                f"    [dim]  - {len(signature_changes)} signature change(s) detected[/dim]"
+            )
 
         # Detect documentation changes
         doc_changes = self._detect_documentation_changes(
             base_content, head_content, file_path
         )
         changes.extend(doc_changes)
+        if doc_changes:
+            console.print(
+                f"    [dim]  - {len(doc_changes)} documentation change(s) detected[/dim]"
+            )
 
         # Detect control flow changes
         control_flow_changes = self._detect_control_flow_changes(
             base_content, head_content, file_path
         )
         changes.extend(control_flow_changes)
+        if control_flow_changes:
+            console.print(
+                f"    [dim]  - {len(control_flow_changes)} control flow change(s) detected[/dim]"
+            )
 
         # Detect error handling changes
         error_changes = self._detect_error_handling_changes(
             base_content, head_content, file_path
         )
         changes.extend(error_changes)
+        if error_changes:
+            console.print(
+                f"    [dim]  - {len(error_changes)} error handling change(s) detected[/dim]"
+            )
 
         return changes
 

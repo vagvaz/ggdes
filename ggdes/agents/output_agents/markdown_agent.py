@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+from typing import Any
+
 from ggdes.agents.output_agents.base import OutputAgent
+from ggdes.config import GGDesConfig
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -20,7 +23,7 @@ class MarkdownAgent(OutputAgent):
     def __init__(
         self,
         repo_path: Path,
-        config,
+        config: GGDesConfig,
         analysis_id: str,
     ):
         """Initialize markdown agent.
@@ -60,33 +63,9 @@ class MarkdownAgent(OutputAgent):
 
     def _build_user_context_guidance(self) -> str:
         """Build guidance text from user context."""
-        if not self.user_context:
-            return ""
+        from ggdes.agents.skill_utils import build_user_context_guidance
 
-        guidance_parts = []
-
-        if "audience" in self.user_context:
-            guidance_parts.append(f"Target Audience: {self.user_context['audience']}")
-
-        if "purpose" in self.user_context:
-            purposes = self.user_context["purpose"]
-            if isinstance(purposes, list):
-                guidance_parts.append(f"Document Purpose: {', '.join(purposes)}")
-            else:
-                guidance_parts.append(f"Document Purpose: {purposes}")
-
-        if "detail_level" in self.user_context:
-            guidance_parts.append(f"Detail Level: {self.user_context['detail_level']}")
-
-        if "focus_areas" in self.user_context:
-            guidance_parts.append(f"Focus Areas: {self.user_context['focus_areas']}")
-
-        if "additional_context" in self.user_context:
-            guidance_parts.append(
-                f"Additional Context: {self.user_context['additional_context']}"
-            )
-
-        return "\n".join(guidance_parts)
+        return build_user_context_guidance(self.user_context)
 
     def _load_facts(self, fact_ids: list[str]) -> list[TechnicalFact]:
         """Load specific technical facts from KB."""
@@ -125,17 +104,17 @@ class MarkdownAgent(OutputAgent):
         """Generate PlantUML source for a diagram."""
         # Simple PlantUML generation based on diagram type
         if diagram.diagram_type == "architecture":
-            return self._generate_architecture_diagram(diagram)
+            return self._generate_architecture_plantuml(diagram)
         elif diagram.diagram_type == "flow":
-            return self._generate_flow_diagram(diagram)
+            return self._generate_flow_plantuml(diagram)
         elif diagram.diagram_type == "sequence":
-            return self._generate_sequence_diagram(diagram)
+            return self._generate_sequence_plantuml(diagram)
         elif diagram.diagram_type == "class":
-            return self._generate_class_diagram(diagram)
+            return self._generate_class_plantuml(diagram)
         else:
             return f"@startuml\ntitle {diagram.title}\n{diagram.description}\n@enduml"
 
-    def _generate_architecture_diagram(self, diagram: DiagramSpec) -> str:
+    def _generate_architecture_plantuml(self, diagram: DiagramSpec) -> str:
         """Generate architecture diagram PlantUML."""
         uml = f"""@startuml
 !theme plain
@@ -157,7 +136,7 @@ end note
 
         return uml
 
-    def _generate_flow_diagram(self, diagram: DiagramSpec) -> str:
+    def _generate_flow_plantuml(self, diagram: DiagramSpec) -> str:
         """Generate flow diagram PlantUML."""
         uml = f"""@startuml
 !theme plain
@@ -173,7 +152,7 @@ start
 
         return uml
 
-    def _generate_sequence_diagram(self, diagram: DiagramSpec) -> str:
+    def _generate_sequence_plantuml(self, diagram: DiagramSpec) -> str:
         """Generate sequence diagram PlantUML."""
         uml = f"""@startuml
 !theme plain
@@ -189,7 +168,7 @@ title {diagram.title}
 
         return uml
 
-    def _generate_class_diagram(self, diagram: DiagramSpec) -> str:
+    def _generate_class_plantuml(self, diagram: DiagramSpec) -> str:
         """Generate class diagram PlantUML."""
         uml = f"""@startuml
 !theme plain
@@ -203,20 +182,20 @@ title {diagram.title}
 
         return uml
 
-    async def generate(
-        self,
-        storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
-        auto_generate_diagrams: bool = True,
-    ) -> Path:
+    def generate(self, **kwargs: Any) -> Path:
         """Generate markdown document with integrated diagrams.
 
         Args:
-            storage_policy: How to persist conversation
-            auto_generate_diagrams: Whether to auto-generate diagrams from facts
+            **kwargs: Additional arguments including storage_policy and auto_generate_diagrams
 
         Returns:
             Path to generated markdown file
         """
+        import asyncio
+
+        storage_policy = kwargs.get("storage_policy", StoragePolicy.SUMMARY)
+        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
+
         from rich.console import Console
 
         console = Console()
@@ -237,7 +216,7 @@ title {diagram.title}
         sections_content = []
 
         for section in plan.sections:
-            content = await self._generate_section(section)
+            content = asyncio.run(self._generate_section(section))
             sections_content.append((section.title, content))
 
         # Generate diagrams directory
@@ -281,7 +260,8 @@ title {diagram.title}
             / "conversations"
             / "markdown_agent"
         )
-        self.conversation.save(kb_path)
+        if self.conversation:
+            self.conversation.save(kb_path)
 
         return output_path
 
@@ -312,6 +292,9 @@ Requirements:
 - Keep it concise but comprehensive
 
 Write the section content now:"""
+
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
 
         self.conversation.add_user_message(prompt)
         context = self.conversation.get_context_for_llm()

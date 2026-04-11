@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -37,7 +38,7 @@ def setup_file_logging(log_path: Path) -> None:
     logger.info(f"File logging enabled: {log_path}")
 
 
-def get_logger(name: str):
+def get_logger(name: str) -> Any:
     """Get a logger instance with the specified name.
 
     Args:

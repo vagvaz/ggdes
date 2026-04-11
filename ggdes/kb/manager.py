@@ -5,10 +5,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, field_validator
 
 from ggdes.config import GGDesConfig, get_kb_path
+from ggdes.schemas import StoragePolicy
 
 
 class StageStatus(str, Enum):
@@ -67,7 +68,7 @@ class AnalysisMetadata(BaseModel):
     target_formats: list[str] = Field(default_factory=list)
 
     # Conversation storage policy
-    storage_policy: str = "summary"
+    storage_policy: StoragePolicy = StoragePolicy.SUMMARY
 
     # User-provided context for all agents
     user_context: Optional[Dict[str, Any]] = None
@@ -200,7 +201,7 @@ class KnowledgeBaseManager:
         focus_commits: list[str] | None = None,
         prompt_version: str = "current",
         target_formats: list[str] | None = None,
-        storage_policy: str = "summary",
+        storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
     ) -> AnalysisMetadata:
         """Create a new analysis in the knowledge base.
 
@@ -212,7 +213,7 @@ class KnowledgeBaseManager:
             focus_commits: Optional list of focus commits for non-contiguous
             prompt_version: Version of prompts to use
             target_formats: List of output formats to generate (e.g., ["markdown", "docx"])
-            storage_policy: Conversation storage level (raw, summary, none)
+            storage_policy: Conversation storage level
 
         Returns:
             AnalysisMetadata for the new analysis
@@ -312,7 +313,7 @@ class KnowledgeBaseManager:
         Returns:
             List of (analysis_id, metadata) tuples
         """
-        analyses = []
+        analyses: list[tuple[str, AnalysisMetadata]] = []
         kb_path = self.kb_base / "analyses"
 
         if not kb_path.exists():
@@ -380,12 +381,8 @@ class KnowledgeBaseManager:
                         f"Stage '{stage_name}' failed (use --retry-failed to retry)",
                     )
 
-        # Check if all stages completed
-        if all(
-            stage.status == StageStatus.COMPLETED for stage in metadata.stages.values()
-        ):
-            return False, "All stages already completed"
-
+        # Completed analyses can be resumed (e.g., to add new formats or re-run stages)
+        # The caller decides whether to proceed based on what needs to be done
         return True, None
 
     def reset_failed_stages(self, analysis_id: str) -> list[str]:

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -20,12 +21,13 @@ from textual.widgets import (
     TabPane,
     Tree,
 )
+from textual.widgets._tree import TreeNode
 
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 
 
-class AnalysisSelected(Message):
+class AnalysisSelected(Message):  # type: ignore[misc]
     """Message sent when an analysis is selected."""
 
     def __init__(self, analysis_id: str) -> None:
@@ -33,7 +35,7 @@ class AnalysisSelected(Message):
         self.analysis_id = analysis_id
 
 
-class LiveIndicator(Static):
+class LiveIndicator(Static):  # type: ignore[misc]
     """Indicator showing if analysis is running."""
 
     is_live: reactive[bool] = reactive(False)
@@ -58,10 +60,10 @@ class LiveIndicator(Static):
             status.update(f"[blink bold green]● LIVE - {stage}[/blink bold green]")
 
 
-class ConversationMessage(Static):
+class ConversationMessage(Static):  # type: ignore[misc]
     """Widget displaying a single conversation message."""
 
-    def __init__(self, role: str, content: str, index: int, **kwargs):
+    def __init__(self, role: str, content: str, index: int, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.role = role
         self.content = content
@@ -88,7 +90,7 @@ class ConversationMessage(Static):
             yield Label(preview, classes="message-content")
 
 
-class ConversationBrowser(Vertical):
+class ConversationBrowser(Vertical):  # type: ignore[misc]
     """Browser for agent conversations with live monitoring."""
 
     analysis_id: reactive[str | None] = reactive(None)
@@ -96,15 +98,15 @@ class ConversationBrowser(Vertical):
     selected_message: reactive[int | None] = reactive(None)
     follow_mode: reactive[bool] = reactive(False)
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
-        self.conversation_data = None
-        self.agents = []
-        self.file_mtimes = {}  # Track file modification times
-        self.current_agent_file = None
-        self.poll_timer = None
+        self.conversation_data: dict[str, Any] | None = None
+        self.agents: list[tuple[str, Path, str]] = []
+        self.file_mtimes: dict[str, float] = {}  # Track file modification times
+        self.current_agent_file: Path | None = None
+        self.poll_timer: Any = None
         self.last_message_count = 0
 
     def compose(self) -> ComposeResult:
@@ -225,6 +227,9 @@ class ConversationBrowser(Vertical):
         """Update the message list with new messages."""
         message_list = self.query_one("#message-list", ListView)
         current_count = len(message_list.children)
+
+        if self.conversation_data is None:
+            return
 
         messages = self.conversation_data.get("messages", [])
 
@@ -435,17 +440,17 @@ class ConversationBrowser(Vertical):
         detail.mount(content_widget)
 
 
-class OutputsBrowser(Vertical):
+class OutputsBrowser(Vertical):  # type: ignore[misc]
     """Browser for analysis outputs (AST, git analysis, etc.) with live updates."""
 
     analysis_id: reactive[str | None] = reactive(None)
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
-        self.file_mtimes = {}
-        self.poll_timer = None
+        self.file_mtimes: dict[str, float] = {}
+        self.poll_timer: Any = None
         self.tree_built = False
 
     def compose(self) -> ComposeResult:
@@ -542,7 +547,9 @@ class OutputsBrowser(Vertical):
         if not force_refresh:
             file_tree.root.expand()
 
-    def _build_tree(self, file_tree, analysis_path: Path, force_refresh: bool) -> None:
+    def _build_tree(
+        self, file_tree: Tree[Any], analysis_path: Path, force_refresh: bool
+    ) -> None:
         """Build the file tree."""
         # Define output directories with their display names
         output_dirs = {
@@ -572,7 +579,9 @@ class OutputsBrowser(Vertical):
                     self._add_files_to_tree(node, dir_path, dir_path)
             file_tree.root.expand_all()
 
-    def _add_files_to_tree(self, node, dir_path: Path, base_path: Path) -> None:
+    def _add_files_to_tree(
+        self, node: TreeNode[Any], dir_path: Path, base_path: Path
+    ) -> None:
         """Recursively add files to tree."""
         try:
             items = sorted(dir_path.iterdir(), key=lambda x: (x.is_file(), x.name))
@@ -600,7 +609,7 @@ class OutputsBrowser(Vertical):
         if hasattr(node, "data") and node.data:
             self.show_file_content(node.data["path"], node.data["type"])
 
-    def show_file_content(self, file_path: str, file_type: str) -> None:
+    def show_file_content(self, file_path: str, file_type: str) -> None:  # type: ignore[misc]
         """Show file content in viewer."""
         viewer = self.query_one("#content-viewer", VerticalScroll)
         viewer.remove_children()
@@ -630,17 +639,17 @@ class OutputsBrowser(Vertical):
                 yield Label(f"[red]Error reading file: {e}[/red]")
 
 
-class AnalysisSelector(Vertical):
+class AnalysisSelector(Vertical):  # type: ignore[misc]
     """Widget to select an analysis for debugging with live status."""
 
     selected_analysis: reactive[str | None] = reactive(None)
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.config, _ = load_config()
         self.kb_manager = KnowledgeBaseManager(self.config)
-        self.poll_timer = None
-        self.live_indicator = None
+        self.poll_timer: Any = None
+        self.live_indicator: LiveIndicator | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="analysis-selector-header"):
@@ -665,7 +674,7 @@ class AnalysisSelector(Vertical):
 
         yield Select(items, id="analysis-select", prompt="Select analysis...")
 
-    def _get_analysis_status(self, metadata) -> str:
+    def _get_analysis_status(self, metadata: Any) -> str:
         """Get status emoji for analysis."""
         # Check if any stage is in progress
         has_in_progress = any(
@@ -700,7 +709,8 @@ class AnalysisSelector(Vertical):
     def update_live_status(self) -> None:
         """Update the live indicator based on current analysis status."""
         if not self.selected_analysis or not self.live_indicator:
-            self.live_indicator.is_live = False
+            if self.live_indicator:
+                self.live_indicator.is_live = False
             return
 
         metadata = self.kb_manager.load_metadata(self.selected_analysis)
@@ -732,12 +742,12 @@ class AnalysisSelector(Vertical):
             self.post_message(AnalysisSelected(event.value))
 
 
-class DebugView(Vertical):
+class DebugView(Vertical):  # type: ignore[misc]
     """Main debug view with tabs for conversations and outputs."""
 
     analysis_id: reactive[str | None] = reactive(None)
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
 
     def compose(self) -> ComposeResult:

@@ -126,7 +126,9 @@ def retry_on_failure(
                         print(f"LLM call failed after {max_retries + 1} attempts: {e}")
 
             # All retries exhausted, raise the last exception
-            raise last_exception
+            if last_exception is not None:
+                raise last_exception
+            raise RuntimeError("All retries exhausted but no exception captured")
 
         return wrapper
 
@@ -418,7 +420,7 @@ class LLMProvider(ABC):
         model_name: str,
         base_url: str | None = None,
         structured_format: str = "auto",
-        **kwargs,
+        **kwargs: Any,
     ):
         """Initialize provider.
 
@@ -464,11 +466,13 @@ class LLMProvider(ABC):
             List of example dicts
         """
         # Try to get examples from model's Config or docstring
-        examples = (
-            getattr(response_model, "model_config", {})
-            .get("json_schema_extra", {})
-            .get("examples", [])
+        model_config = getattr(response_model, "model_config", {})
+        json_schema_extra: Dict[str, Any] = (
+            model_config.get("json_schema_extra", {})
+            if isinstance(model_config, dict)
+            else {}
         )
+        examples: List[Dict[str, Any]] = json_schema_extra.get("examples", [])
         if examples:
             return examples
 
@@ -632,7 +636,7 @@ class AnthropicProvider(LLMProvider):
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -674,9 +678,9 @@ class AnthropicProvider(LLMProvider):
             messages=chat_messages,
         )
 
-        return response.content[0].text
+        return response.content[0].text  # type: ignore[no-any-return]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -707,7 +711,7 @@ class AnthropicProvider(LLMProvider):
             messages=messages,
         )
 
-        return response.content[0].text
+        return response.content[0].text  # type: ignore[no-any-return]
 
 
 class OpenAIProvider(LLMProvider):
@@ -735,9 +739,9 @@ class OpenAIProvider(LLMProvider):
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
 
-        return openai.OpenAI(**client_kwargs)
+        return openai.OpenAI(**client_kwargs)  # type: ignore[arg-type]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -758,9 +762,9 @@ class OpenAIProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -787,7 +791,7 @@ class OpenAIProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class OllamaProvider(LLMProvider):
@@ -816,7 +820,7 @@ class OllamaProvider(LLMProvider):
             base_url=self.base_url,
         )
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -837,9 +841,9 @@ class OllamaProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -866,7 +870,7 @@ class OllamaProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class CustomOpenAIProvider(LLMProvider):
@@ -918,7 +922,7 @@ class CustomOpenAIProvider(LLMProvider):
             base_url=self.base_url,
         )
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -939,9 +943,9 @@ class CustomOpenAIProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -968,7 +972,7 @@ class CustomOpenAIProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class OpencodeZenProvider(LLMProvider):
@@ -1015,7 +1019,7 @@ class OpencodeZenProvider(LLMProvider):
             base_url=self.base_url,
         )
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -1036,9 +1040,9 @@ class OpencodeZenProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
-    @retry_on_failure(
+    @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
         initial_delay=1.0,
         retryable_exceptions=(Exception,),
@@ -1065,7 +1069,7 @@ class OpencodeZenProvider(LLMProvider):
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class LLMFactory:
@@ -1119,7 +1123,7 @@ class LLMFactory:
                 f"Unsupported provider: {provider}. Supported: {supported}"
             )
 
-        return provider_class(
+        return provider_class(  # type: ignore[no-any-return]
             resolved_key, model_name, structured_format=structured_format, **kwargs
         )
 

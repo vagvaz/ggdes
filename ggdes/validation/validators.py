@@ -55,8 +55,8 @@ class InputValidator:
         Returns:
             ValidationResult
         """
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         # Check format
         if ".." not in commit_range:
@@ -79,8 +79,8 @@ class InputValidator:
         """Check if a commit exists in the repo."""
         import subprocess
 
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         try:
             subprocess.run(
@@ -130,8 +130,8 @@ class InputValidator:
         Returns:
             ValidationResult
         """
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         # Skip binary files
         if self._is_binary(file_path):
@@ -178,8 +178,8 @@ class SchemaValidator:
         Returns:
             ValidationResult
         """
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         try:
             model_class(**data)
@@ -257,8 +257,8 @@ class ASTValidator:
         Returns:
             ValidationResult with warnings for unknown function/class references
         """
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         # Pattern to match function-like names in text
         # This is heuristic - looks for word(s) followed by parentheses

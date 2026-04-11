@@ -25,7 +25,7 @@ def _gather_user_context() -> Dict[str, Any]:
     Returns:
         Dictionary with user-provided context for all agents
     """
-    context = {}
+    context: Dict[str, Any] = {}
 
     console.print("\n[bold cyan]Analysis Configuration[/bold cyan]")
     console.print("Help me create the best documentation for your changes.\n")
@@ -271,7 +271,9 @@ def analyze(
         focus_commits = [c.strip() for c in focus.split(",") if c.strip()]
 
     # Validate storage policy
-    valid_storage_policies = {"raw", "summary", "none"}
+    from ggdes.schemas import StoragePolicy
+
+    valid_storage_policies = {s.value for s in StoragePolicy}
     storage_policy = storage.lower().strip()
     if storage_policy not in valid_storage_policies:
         console.print(f"[red]Error:[/red] Invalid storage policy: '{storage}'")
@@ -322,7 +324,7 @@ def analyze(
                 focus_commits=focus_commits,
                 prompt_version="v1.0.0",  # Use current version
                 target_formats=target_formats,
-                storage_policy=storage_policy,
+                storage_policy=StoragePolicy(storage_policy),
             )
 
             # Setup logging
@@ -578,6 +580,9 @@ def resume(
         raise typer.Exit(1)
 
     # Setup logging for this analysis
+    if found_id is None:
+        console.print("[red]Error:[/red] Could not determine analysis ID")
+        raise typer.Exit(1)
     log_path = kb_manager.get_analysis_path(found_id) / "analysis.log"
     setup_file_logging(log_path)
 
@@ -599,6 +604,9 @@ def resume(
             raise typer.Exit(1)
         logger.info(f"Updated target formats: {target_formats}")
         found_metadata.target_formats = target_formats
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
         kb_manager.save_metadata(found_id, found_metadata)
         console.print(
             f"[green]✓ Target formats updated:[/green] {', '.join(target_formats)}"
@@ -621,6 +629,9 @@ def resume(
             stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
+            if found_id is None:
+                console.print("[red]Error:[/red] Could not determine analysis ID")
+                raise typer.Exit(1)
             kb_manager.save_metadata(found_id, found_metadata)
             logger.info(f"Reset stages for new formats: {', '.join(stages_to_reset)}")
             console.print(
@@ -635,6 +646,9 @@ def resume(
                 overwrite_context = True
 
     # Check if can resume
+    if found_id is None:
+        console.print("[red]Error:[/red] Could not determine analysis ID")
+        raise typer.Exit(1)
     can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
     if not can_resume:
         logger.error(f"Cannot resume: {reason}")
@@ -643,6 +657,9 @@ def resume(
 
     # If retry_failed is set, reset all failed stages
     if retry_failed:
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
         reset_stages = kb_manager.reset_failed_stages(found_id)
         if reset_stages:
             logger.info(f"Reset failed stages for retry: {', '.join(reset_stages)}")
@@ -650,11 +667,20 @@ def resume(
                 f"[yellow]Reset {len(reset_stages)} failed stage(s) for retry:[/yellow] {', '.join(reset_stages)}"
             )
             # Reload metadata after reset
+            if found_id is None:
+                console.print("[red]Error:[/red] Could not determine analysis ID")
+                raise typer.Exit(1)
             found_metadata = kb_manager.load_metadata(found_id)
+            if found_metadata is None:
+                console.print("[red]Error:[/red] Could not load metadata after reset")
+                raise typer.Exit(1)
         else:
             logger.info("No failed stages to reset")
 
     # Handle user context
+    if found_metadata is None:
+        console.print("[red]Error:[/red] Could not load analysis metadata")
+        raise typer.Exit(1)
     user_context = found_metadata.user_context or {}
 
     # Reask user questions if requested
@@ -665,6 +691,9 @@ def resume(
         user_context = _gather_user_context()
 
         # Update metadata with new context
+        if found_metadata is None or found_id is None:
+            console.print("[red]Error:[/red] Could not update metadata")
+            raise typer.Exit(1)
         found_metadata.user_context = user_context
         kb_manager.save_metadata(found_id, found_metadata)
         logger.info(f"Updated user context: {user_context}")
@@ -687,6 +716,9 @@ def resume(
             stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
+            if found_id is None or found_metadata is None:
+                console.print("[red]Error:[/red] Could not update metadata")
+                raise typer.Exit(1)
             kb_manager.save_metadata(found_id, found_metadata)
             logger.info(f"Reset stages for new context: {', '.join(stages_to_reset)}")
             console.print(
@@ -700,6 +732,9 @@ def resume(
         console.print("No user context found. Please configure the analysis.\n")
 
         user_context = _gather_user_context()
+        if found_metadata is None or found_id is None:
+            console.print("[red]Error:[/red] Could not update metadata")
+            raise typer.Exit(1)
         found_metadata.user_context = user_context
         kb_manager.save_metadata(found_id, found_metadata)
         logger.info(f"User context saved: {user_context}")
@@ -711,6 +746,9 @@ def resume(
     from ggdes.pipeline import AnalysisPipeline
 
     try:
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
         pipeline = AnalysisPipeline(config, found_id)
 
         if stage:
@@ -721,6 +759,9 @@ def resume(
             success = pipeline.run_stage(stage)
         else:
             # Run all pending stages
+            if found_metadata is None:
+                console.print("[red]Error:[/red] Could not load analysis metadata")
+                raise typer.Exit(1)
             pending = found_metadata.get_pending_stages()
             if not pending:
                 logger.warning("No pending stages to run")
@@ -741,9 +782,12 @@ def resume(
             # Show helpful message based on retry_failed
             if retry_failed:
                 console.print("Some stages are still failing. Check the logs:")
-                console.print(
-                    f"  {kb_manager.get_analysis_path(found_id) / 'analysis.log'}"
-                )
+                if found_id is None:
+                    console.print("  [red]Error:[/red] Could not determine analysis ID")
+                else:
+                    console.print(
+                        f"  {kb_manager.get_analysis_path(found_id) / 'analysis.log'}"
+                    )
             else:
                 console.print(
                     f"Run 'ggdes resume {found_id} --retry-failed' to retry failed stages"
@@ -782,6 +826,9 @@ def cleanup(
         raise typer.Exit(1)
 
     # Clean worktrees
+    if found_id is None:
+        console.print("[red]Error:[/red] Could not determine analysis ID")
+        raise typer.Exit(1)
     wt_manager = WorktreeManager(config, Path(found_metadata.repo_path))
     wt_manager.cleanup(found_id)
     console.print(f"[green]Cleaned up worktrees for:[/green] {found_id}")
@@ -791,6 +838,9 @@ def cleanup(
         if typer.confirm(
             f"Remove analysis '{found_metadata.name}' from knowledge base?"
         ):
+            if found_id is None:
+                console.print("[red]Error:[/red] Could not determine analysis ID")
+                raise typer.Exit(1)
             kb_manager.delete_analysis(found_id)
             console.print(f"[green]Removed from knowledge base:[/green] {found_id}")
 
@@ -829,6 +879,9 @@ def conversations(
         console.print(f"[red]Analysis not found:[/red] {analysis}")
         raise typer.Exit(1)
 
+    if found_id is None:
+        console.print("[red]Error:[/red] Could not determine analysis ID")
+        raise typer.Exit(1)
     analysis_path = kb_manager.get_analysis_path(found_id)
     conversations_path = analysis_path / "conversations"
 
@@ -961,7 +1014,7 @@ def debug(
     from ggdes.kb import KnowledgeBaseManager
     from ggdes.tui.debug_view import DebugView
 
-    class DebugTUI(App):
+    class DebugTUI(App):  # type: ignore[misc]
         """Standalone debug TUI application."""
 
         CSS = """
@@ -1087,13 +1140,13 @@ def debug(
         }
         """
 
-        def __init__(self, analysis_id: str | None = None, **kwargs):
+        def __init__(self, analysis_id: str | None = None, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self.analysis_id = analysis_id
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
-            yield DebugView(id="debug-view")
+            yield DebugView(id="debug-view")  # type: ignore[no-untyped-call]
             yield Footer()
 
         def on_mount(self) -> None:
@@ -1221,10 +1274,13 @@ def export(
     output_path = Path(output)
 
     try:
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
         analysis_path = kb_manager.get_analysis_path(found_id)
 
         # Collect all analysis data
-        export_data = {
+        export_data: Dict[str, Any] = {
             "metadata": found_metadata.model_dump(),
             "analysis_id": found_id,
             "exported_at": datetime.now().isoformat(),
@@ -1241,7 +1297,7 @@ def export(
         # Load technical facts
         facts_dir = analysis_path / "technical_facts"
         if facts_dir.exists():
-            facts = []
+            facts: List[Any] = []
             for fact_file in facts_dir.glob("*.json"):
                 facts.append(json.loads(fact_file.read_text()))
             export_data["data"]["technical_facts"] = facts
@@ -1249,7 +1305,7 @@ def export(
         # Load document plans
         plans_dir = analysis_path / "plans"
         if plans_dir.exists():
-            plans = {}
+            plans: Dict[str, Any] = {}
             for plan_file in plans_dir.glob("*.json"):
                 plans[plan_file.stem] = json.loads(plan_file.read_text())
             export_data["data"]["document_plans"] = plans
@@ -1271,7 +1327,7 @@ def export(
                         zf.write(file_path, arcname)
 
                 # Add diagram files if requested
-                if include_diagrams:
+                if include_diagrams and found_id is not None:
                     diagrams_dir = Path(found_metadata.repo_path) / "docs" / "diagrams"
                     if diagrams_dir.exists():
                         for diag_file in diagrams_dir.glob("*.png"):
@@ -1326,7 +1382,11 @@ def archive(
         raise typer.Exit(1)
 
     # Check if analysis is too recent
-    analysis_date = datetime.fromisoformat(found_metadata.created_at)
+    created_at = found_metadata.created_at
+    if isinstance(created_at, str):
+        analysis_date = datetime.fromisoformat(created_at)
+    else:
+        analysis_date = created_at
     cutoff_date = datetime.now() - timedelta(days=keep_days)
 
     if analysis_date > cutoff_date:
@@ -1354,6 +1414,9 @@ def archive(
             console.print(f"[dim]Export command: {export_cmd}[/dim]")
 
         # Remove analysis from KB
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
         kb_manager.delete_analysis(found_id)
         console.print(f"[green]✓ Analysis archived:[/green] {found_id}")
 
@@ -1459,7 +1522,7 @@ def doctor(
     kb_path = Path(config.paths.knowledge_base).expanduser()
 
     if kb_path.exists():
-        analyses = list(kb_path.glob("*/metadata.yaml"))
+        analyses: List[Path] = [p for p in kb_path.glob("*/metadata.yaml")]
         console.print(f"  [green]✓[/green] Knowledge base: {kb_path}")
         console.print(f"    [dim]Found {len(analyses)} analysis(es)[/dim]")
     else:
@@ -1490,7 +1553,7 @@ def web(
     host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on")] = 8000,
     reload: Annotated[bool, typer.Option(help="Enable auto-reload (dev mode)")] = False,
-):
+) -> None:
     """Start the web interface."""
     try:
         import uvicorn

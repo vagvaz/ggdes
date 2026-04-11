@@ -236,7 +236,7 @@ class WorktreeManager:
             max_age_days = self.config.worktree_retention_days
 
         cutoff_date = datetime.now() - timedelta(days=max_age_days)
-        cleaned = []
+        cleaned: list[tuple[str, Path, float]] = []
 
         if not self.worktrees_base.exists():
             return cleaned
@@ -303,7 +303,7 @@ class WorktreeManager:
         Returns:
             List of (analysis_id, base_path, head_path) tuples
         """
-        result = []
+        result: list[tuple[str, Path, Path]] = []
 
         if not self.worktrees_base.exists():
             return result

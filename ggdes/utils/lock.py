@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 LOCK_FILE_NAME = ".lock-ggdes-analysis"
 LOCK_TIMEOUT_HOURS = 1  # Consider lock stale after 1 hour
@@ -124,9 +125,7 @@ class AnalysisLock:
 
         return lock_info
 
-    def force_acquire(
-        self, analysis_id: str | None = None
-    ) -> tuple[bool, str | None]:
+    def force_acquire(self, analysis_id: str | None = None) -> tuple[bool, str | None]:
         """Force acquire the lock, killing any existing lock holder.
 
         Args:
@@ -227,7 +226,12 @@ class LockContext:
         self.acquired = True
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
         """Release lock on exit."""
         if self.acquired:
             self.lock.release()
