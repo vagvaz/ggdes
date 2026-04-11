@@ -1,5 +1,6 @@
 """Coordinator Agent for planning document generation."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -112,6 +113,7 @@ class Coordinator:
         target_formats: list[str],
         interactive: bool = True,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
+        parallel: bool = True,
     ) -> list[DocumentPlan]:
         """Create document plans for specified formats.
 
@@ -119,6 +121,7 @@ class Coordinator:
             target_formats: List of output formats (markdown, docx, pptx, pdf)
             interactive: Whether to ask user for input
             storage_policy: How to persist conversation
+            parallel: Whether to create plans in parallel (default: True)
 
         Returns:
             List of document plans (one per format)
@@ -143,12 +146,31 @@ class Coordinator:
             user_context = await self._gather_user_input(facts_by_category)
 
         # Create plans for each format
-        plans = []
-        for fmt in target_formats:
-            plan = await self._create_format_plan(
-                fmt, facts, facts_by_category, user_context
-            )
-            plans.append(plan)
+        if parallel and len(target_formats) > 1:
+            # Run format plans in parallel
+            tasks = [
+                self._create_format_plan(fmt, facts, facts_by_category, user_context)
+                for fmt in target_formats
+            ]
+            plans = await asyncio.gather(*tasks, return_exceptions=True)
+            # Filter out exceptions, log errors
+            successful_plans = []
+            for i, result in enumerate(plans):
+                if isinstance(result, Exception):
+                    console.print(
+                        f"[red]Plan creation failed for {target_formats[i]}: {result}[/red]"
+                    )
+                else:
+                    successful_plans.append(result)
+            plans = successful_plans
+        else:
+            # Sequential (original behavior)
+            plans = []
+            for fmt in target_formats:
+                plan = await self._create_format_plan(
+                    fmt, facts, facts_by_category, user_context
+                )
+                plans.append(plan)
 
         # Save conversation
         from ggdes.config import get_kb_path
@@ -264,19 +286,26 @@ class Coordinator:
         facts_by_category: Dict[str, List[TechnicalFact]],
         user_context: Dict[str, Any],
     ) -> DocumentPlan:
-        """Create a document plan for a specific format."""
-        console.print(f"[dim]Creating {fmt} plan...[/dim]")
+        """Create a document plan for a specific format with its own conversation context."""
+        from ggdes.llm import ConversationContext, StoragePolicy
 
-        if not self.conversation:
-            raise RuntimeError("Conversation not initialized")
+        # Create a fresh conversation context for this format
+        conv = ConversationContext(
+            system_prompt=self.conversation.system_prompt if self.conversation else "",
+            storage_policy=self.conversation.storage_policy
+            if self.conversation
+            else StoragePolicy.SUMMARY,
+        )
+
+        console.print(f"[dim]Creating {fmt} plan...[/dim]")
 
         # Build prompt for LLM
         prompt = self._build_planning_prompt(
             fmt, facts, facts_by_category, user_context
         )
 
-        self.conversation.add_user_message(prompt)
-        context = self.conversation.get_context_for_llm()
+        conv.add_user_message(prompt)
+        context = conv.get_context_for_llm()
 
         # Generate plan via LLM
         plan_data = await self._generate_plan_response(context, fmt)

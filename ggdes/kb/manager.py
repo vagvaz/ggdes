@@ -296,6 +296,10 @@ class KnowledgeBaseManager:
                 if "status" in stage_data and hasattr(stage_data["status"], "value"):
                     stage_data["status"] = stage_data["status"].value
 
+        # Convert StoragePolicy enum to string
+        if "storage_policy" in data and hasattr(data["storage_policy"], "value"):
+            data["storage_policy"] = data["storage_policy"].value
+
         with open(metadata_path, "w") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 

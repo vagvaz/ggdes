@@ -1,7 +1,9 @@
 """Pipeline orchestrator for running analysis stages."""
 
 import asyncio
+import concurrent.futures
 import json
+import threading
 import traceback
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,7 @@ class AnalysisPipeline:
         self.metadata = metadata
         self.repo_path = Path(self.metadata.repo_path)
         self.wt_manager = WorktreeManager(config, self.repo_path)
+        self._metadata_lock = threading.Lock()
 
     def run_stage(self, stage_name: str) -> bool:
         """Run a specific stage.
@@ -51,15 +54,18 @@ class AnalysisPipeline:
         Returns:
             True if successful, False otherwise
         """
-        if self.metadata.is_stage_completed(stage_name):
-            console.print(
-                f"[dim]Stage '{stage_name}' already completed, skipping[/dim]"
-            )
-            return True
+        with self._metadata_lock:
+            if self.metadata.is_stage_completed(stage_name):
+                console.print(
+                    f"[dim]Stage '{stage_name}' already completed, skipping[/dim]"
+                )
+                return True
 
         console.print(f"\n[bold]Running stage:[/bold] {stage_name}")
-        self.metadata.start_stage(stage_name)
-        self.kb_manager.save_metadata(self.analysis_id, self.metadata)
+
+        with self._metadata_lock:
+            self.metadata.start_stage(stage_name)
+            self.kb_manager.save_metadata(self.analysis_id, self.metadata)
 
         try:
             if stage_name == self.kb_manager.STAGE_WORKTREE_SETUP:
@@ -82,29 +88,65 @@ class AnalysisPipeline:
                 console.print(
                     f"[yellow]Stage '{stage_name}' not yet implemented[/yellow]"
                 )
-                self.metadata.skip_stage(stage_name)
-                self.kb_manager.save_metadata(self.analysis_id, self.metadata)
+                with self._metadata_lock:
+                    self.metadata.skip_stage(stage_name)
+                    self.kb_manager.save_metadata(self.analysis_id, self.metadata)
                 return True
 
-            if success:
-                self.metadata.complete_stage(stage_name)
-                self.kb_manager.save_metadata(self.analysis_id, self.metadata)
-                console.print(f"[green]✓ Stage completed:[/green] {stage_name}")
-                return True
-            else:
-                self.metadata.fail_stage(stage_name, "Stage returned False")
-                self.kb_manager.save_metadata(self.analysis_id, self.metadata)
-                console.print(f"[red]✗ Stage failed:[/red] {stage_name}")
-                return False
+            with self._metadata_lock:
+                if success:
+                    self.metadata.complete_stage(stage_name)
+                    self.kb_manager.save_metadata(self.analysis_id, self.metadata)
+                    console.print(f"[green]✓ Stage completed:[/green] {stage_name}")
+                    return True
+                else:
+                    self.metadata.fail_stage(stage_name, "Stage returned False")
+                    self.kb_manager.save_metadata(self.analysis_id, self.metadata)
+                    console.print(f"[red]✗ Stage failed:[/red] {stage_name}")
+                    return False
 
         except Exception as e:
-            self.metadata.fail_stage(stage_name, str(e))
-            self.kb_manager.save_metadata(self.analysis_id, self.metadata)
+            with self._metadata_lock:
+                self.metadata.fail_stage(stage_name, str(e))
+                self.kb_manager.save_metadata(self.analysis_id, self.metadata)
             console.print(f"[red]✗ Stage failed:[/red] {stage_name} - {e}")
             return False
 
+    def run_parallel_group(self, stage_names: list[str]) -> dict[str, bool]:
+        """Run multiple stages in parallel using ThreadPoolExecutor.
+
+        Args:
+            stage_names: List of stage names to run in parallel
+
+        Returns:
+            Dict mapping stage_name -> success (bool)
+        """
+        results: dict[str, bool] = {}
+
+        def run_single_stage(stage: str) -> tuple[str, bool]:
+            """Wrapper to run a single stage and return (name, success)."""
+            success = self.run_stage(stage)
+            return stage, success
+
+        console.print(
+            f"\n[bold]Running parallel group:[/bold] {', '.join(stage_names)}"
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(stage_names)
+        ) as executor:
+            futures = {
+                executor.submit(run_single_stage, stage): stage for stage in stage_names
+            }
+
+            for future in concurrent.futures.as_completed(futures):
+                stage, success = future.result()
+                results[stage] = success
+
+        return results
+
     def run_all_pending(self) -> bool:
-        """Run all pending stages sequentially.
+        """Run all pending stages, with parallel execution for specific groups.
 
         Returns:
             True if all stages completed successfully
@@ -117,14 +159,63 @@ class AnalysisPipeline:
 
         console.print(f"[bold]Running {len(pending)} pending stages...[/bold]")
 
+        # Define parallel groups - stages that can run concurrently
+        PARALLEL_GROUP = {
+            self.kb_manager.STAGE_AST_PARSING_BASE,
+            self.kb_manager.STAGE_AST_PARSING_HEAD,
+            self.kb_manager.STAGE_SEMANTIC_DIFF,
+        }
+
         # Acquire lock for entire pipeline run
         with LockContext(self.repo_path, self.analysis_id):
-            for stage in pending:
-                success = self.run_stage(stage)
-                if not success:
-                    console.print(f"\n[red]Pipeline halted at stage:[/red] {stage}")
-                    console.print(f"Run 'ggdes resume {self.analysis_id}' to retry")
-                    return False
+            i = 0
+            while i < len(pending):
+                stage = pending[i]
+
+                # Check if this stage is part of a parallel group
+                if stage in PARALLEL_GROUP:
+                    # Find all pending stages from this parallel group
+                    pending_parallel = [s for s in pending[i:] if s in PARALLEL_GROUP]
+                    # Find all completed stages from this group
+                    completed_in_group = PARALLEL_GROUP - set(pending_parallel)
+
+                    if len(pending_parallel) == len(PARALLEL_GROUP):
+                        # All stages in the group are pending - run them in parallel
+                        results = self.run_parallel_group(list(pending_parallel))
+                        if not all(results.values()):
+                            failed = [s for s, ok in results.items() if not ok]
+                            console.print(
+                                f"\n[red]Pipeline halted - parallel group failed:[/red] {', '.join(failed)}"
+                            )
+                            console.print(
+                                f"Run 'ggdes resume {self.analysis_id}' to retry"
+                            )
+                            return False
+                        i += len(pending_parallel)
+                    else:
+                        # Some stages already completed - run remaining sequentially
+                        console.print(
+                            f"[dim]Parallel group partially completed ({len(completed_in_group)}/{len(PARALLEL_GROUP)}), running remaining sequentially[/dim]"
+                        )
+                        for parallel_stage in pending_parallel:
+                            success = self.run_stage(parallel_stage)
+                            if not success:
+                                console.print(
+                                    f"\n[red]Pipeline halted at stage:[/red] {parallel_stage}"
+                                )
+                                console.print(
+                                    f"Run 'ggdes resume {self.analysis_id}' to retry"
+                                )
+                                return False
+                        i += len(pending_parallel)
+                else:
+                    # Run non-parallel stage sequentially
+                    success = self.run_stage(stage)
+                    if not success:
+                        console.print(f"\n[red]Pipeline halted at stage:[/red] {stage}")
+                        console.print(f"Run 'ggdes resume {self.analysis_id}' to retry")
+                        return False
+                    i += 1
 
         console.print("\n[green]✓ All stages completed successfully![/green]")
         return True
@@ -761,36 +852,62 @@ class AnalysisPipeline:
                 console.print(f"    [red]✗[/red] Markdown generation failed: {e}")
                 console.print(f"    [dim]{traceback.format_exc()}[/dim]")
 
-        # Generate other formats
-        for fmt in formats:
-            if fmt == "markdown":
-                continue  # Already done
+        # Collect other formats to generate in parallel
+        other_formats = [fmt for fmt in formats if fmt != "markdown"]
 
-            console.print(f"  [dim]Generating {fmt.upper()} format...[/dim]")
-            try:
-                fmt_path: Path | None = None
-                if fmt == "docx":
-                    docx_agent = DocxAgent(
-                        self.repo_path, self.config, self.analysis_id
-                    )
-                    fmt_path = docx_agent.generate()
-                elif fmt == "pptx":
-                    pptx_agent = PptxAgent(
-                        self.repo_path, self.config, self.analysis_id
-                    )
-                    fmt_path = pptx_agent.generate()
-                elif fmt == "pdf":
-                    pdf_agent = PdfAgent(self.repo_path, self.config, self.analysis_id)
-                    fmt_path = pdf_agent.generate()
-                else:
-                    console.print(f"    [yellow]⚠[/yellow] Unknown format: {fmt}")
-                    continue
+        if other_formats:
+            console.print(
+                f"  [dim]Generating {len(other_formats)} format(s) in parallel...[/dim]"
+            )
 
-                if fmt_path:
-                    generated_files.append((fmt, fmt_path))
-                    console.print(f"    [green]✓[/green] {fmt}: {fmt_path}")
-            except Exception as e:
-                console.print(f"    [red]✗[/red] {fmt} generation failed: {e}")
+            def generate_format(fmt: str) -> tuple[str, Path | None, str | None]:
+                """Generate a single format. Returns (format, path_or_None, error_or_None)."""
+                try:
+                    fmt_path: Path | None = None
+                    if fmt == "docx":
+                        docx_agent = DocxAgent(
+                            self.repo_path, self.config, self.analysis_id
+                        )
+                        fmt_path = docx_agent.generate()
+                    elif fmt == "pptx":
+                        pptx_agent = PptxAgent(
+                            self.repo_path, self.config, self.analysis_id
+                        )
+                        fmt_path = pptx_agent.generate()
+                    elif fmt == "pdf":
+                        pdf_agent = PdfAgent(
+                            self.repo_path, self.config, self.analysis_id
+                        )
+                        fmt_path = pdf_agent.generate()
+                    else:
+                        return fmt, None, f"Unknown format: {fmt}"
+
+                    return fmt, fmt_path, None
+                except Exception as e:
+                    return fmt, None, str(e)
+
+            # Run format generation in parallel
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(other_formats)
+            ) as executor:
+                futures = {
+                    executor.submit(generate_format, fmt): fmt for fmt in other_formats
+                }
+
+                for future in concurrent.futures.as_completed(futures):
+                    fmt, fmt_path, error = future.result()
+
+                    if error:
+                        console.print(
+                            f"    [red]✗[/red] {fmt} generation failed: {error}"
+                        )
+                    elif fmt_path:
+                        generated_files.append((fmt, fmt_path))
+                        console.print(f"    [green]✓[/green] {fmt}: {fmt_path}")
+                    else:
+                        console.print(
+                            f"    [yellow]⚠[/yellow] {fmt}: No output generated"
+                        )
 
         if generated_files:
             console.print(

@@ -1,5 +1,6 @@
 """Technical Author Agent for synthesizing code analysis into technical facts."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -213,11 +214,13 @@ class TechnicalAuthor:
     async def synthesize(
         self,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
+        parallel: bool = True,
     ) -> list[TechnicalFact]:
         """Synthesize technical facts from analysis data.
 
         Args:
             storage_policy: How to persist conversation
+            parallel: Whether to run analysis turns in parallel (default: True)
 
         Returns:
             List of technical facts
@@ -270,25 +273,32 @@ class TechnicalAuthor:
                 f"  [dim]Dropping {non_changed_head} head AST elements not in changed files[/dim]"
             )
 
-        all_facts = []
+        if parallel:
+            # Run all three analysis turns in parallel
+            all_facts = await self._analyze_parallel(
+                change_summary, changed_base, changed_head
+            )
+        else:
+            # Sequential execution
+            all_facts = []
 
-        # Turn 1: API Changes Analysis (only changed elements)
-        api_facts = await self._analyze_api_changes(
-            change_summary, changed_base, changed_head
-        )
-        all_facts.extend(api_facts)
+            # Turn 1: API Changes Analysis (only changed elements)
+            api_facts = await self._analyze_api_changes(
+                change_summary, changed_base, changed_head
+            )
+            all_facts.extend(api_facts)
 
-        # Turn 2: Behavioral Changes Analysis (only changed elements)
-        behavior_facts = await self._analyze_behavioral_changes(
-            change_summary, changed_base, changed_head
-        )
-        all_facts.extend(behavior_facts)
+            # Turn 2: Behavioral Changes Analysis (only changed elements)
+            behavior_facts = await self._analyze_behavioral_changes(
+                change_summary, changed_base, changed_head
+            )
+            all_facts.extend(behavior_facts)
 
-        # Turn 3: Architecture/Dependency Analysis (only changed elements)
-        arch_facts = await self._analyze_architecture_changes(
-            change_summary, changed_base, changed_head
-        )
-        all_facts.extend(arch_facts)
+            # Turn 3: Architecture/Dependency Analysis (only changed elements)
+            arch_facts = await self._analyze_architecture_changes(
+                change_summary, changed_base, changed_head
+            )
+            all_facts.extend(arch_facts)
 
         # Save conversation to KB
         from ggdes.config import get_kb_path
@@ -319,8 +329,10 @@ class TechnicalAuthor:
         change_summary: ChangeSummary,
         base_elements: list[CodeElement],
         head_elements: list[CodeElement],
+        conversation: ConversationContext | None = None,
     ) -> list[TechnicalFact]:
         """Analyze API changes (signatures, new/deleted functions)."""
+        conv = conversation or self.conversation
         facts = []
 
         # Build context about API changes
@@ -407,11 +419,11 @@ For each API change, provide:
 
 Format as JSON array of TechnicalFact objects."""
 
-            if not self.conversation:
+            if not conv:
                 raise RuntimeError("Conversation not initialized")
 
-            self.conversation.add_user_message(prompt)
-            context = self.conversation.get_context_for_llm()
+            conv.add_user_message(prompt)
+            context = conv.get_context_for_llm()
 
             # Generate structured facts
             response = await self._generate_facts_response(context)
@@ -483,8 +495,10 @@ Format as JSON array of TechnicalFact objects."""
         change_summary: ChangeSummary,
         base_elements: list[CodeElement],
         head_elements: list[CodeElement],
+        conversation: ConversationContext | None = None,
     ) -> list[TechnicalFact]:
         """Analyze behavioral changes (what code does differently)."""
+        conv = conversation or self.conversation
         facts = []
 
         # Find changed files
@@ -517,11 +531,11 @@ For each behavioral change, provide:
 
 Format as JSON array."""
 
-        if not self.conversation:
+        if not conv:
             raise RuntimeError("Conversation not initialized")
 
-        self.conversation.add_user_message(prompt)
-        context = self.conversation.get_context_for_llm()
+        conv.add_user_message(prompt)
+        context = conv.get_context_for_llm()
 
         response = await self._generate_facts_response(context)
 
@@ -594,6 +608,47 @@ Format as JSON array."""
             )
 
         return facts
+
+    async def _analyze_parallel(
+        self,
+        change_summary: ChangeSummary,
+        changed_base: list[CodeElement],
+        changed_head: list[CodeElement],
+    ) -> list[TechnicalFact]:
+        """Run all three analysis turns in parallel using separate conversation contexts."""
+        from ggdes.llm import ConversationContext, StoragePolicy
+
+        # Create separate conversation contexts for LLM-based analyses
+        api_conv = ConversationContext(
+            system_prompt=self.conversation.system_prompt if self.conversation else "",
+            storage_policy=self.conversation.storage_policy
+            if self.conversation
+            else StoragePolicy.SUMMARY,
+        )
+        behavior_conv = ConversationContext(
+            system_prompt=self.conversation.system_prompt if self.conversation else "",
+            storage_policy=self.conversation.storage_policy
+            if self.conversation
+            else StoragePolicy.SUMMARY,
+        )
+
+        api_facts, behavior_facts, arch_facts = await asyncio.gather(
+            self._analyze_api_changes(
+                change_summary, changed_base, changed_head, conversation=api_conv
+            ),
+            self._analyze_behavioral_changes(
+                change_summary, changed_base, changed_head, conversation=behavior_conv
+            ),
+            self._analyze_architecture_changes(
+                change_summary, changed_base, changed_head
+            ),
+        )
+
+        all_facts = []
+        all_facts.extend(api_facts or [])
+        all_facts.extend(behavior_facts or [])
+        all_facts.extend(arch_facts or [])
+        return all_facts
 
     async def _generate_facts_response(self, context: List[Dict[str, Any]]) -> str:
         """Generate response from conversation context.
