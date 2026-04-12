@@ -4,6 +4,8 @@ from pathlib import Path
 
 from typing import Any
 
+from loguru import logger
+
 from ggdes.agents.output_agents.base import OutputAgent
 from ggdes.config import GGDesConfig
 from ggdes.llm import ConversationContext, LLMFactory
@@ -287,6 +289,12 @@ title {diagram.title}
 
     async def _generate_section(self, section: SectionPlan) -> str:
         """Generate content for a document section."""
+        logger.info(
+            "MarkdownAgent: generating section '%s' | facts=%d model=%s",
+            section.title,
+            len(section.technical_facts),
+            self.llm.model_name,
+        )
         # Load relevant facts
         facts = self._load_facts(section.technical_facts)
 

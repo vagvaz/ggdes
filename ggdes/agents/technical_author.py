@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from rich.console import Console
 
 from ggdes.agents.skill_utils import load_skill
@@ -334,6 +335,9 @@ class TechnicalAuthor:
             List of technical facts
         """
         console.print("[bold]Synthesizing technical facts...[/bold]")
+        logger.info(
+            "Technical Author: starting synthesis | analysis=%s", self.analysis_id
+        )
 
         # Initialize conversation
         self._init_conversation(storage_policy)
@@ -443,6 +447,10 @@ class TechnicalAuthor:
         conversation: ConversationContext | None = None,
     ) -> list[TechnicalFact]:
         """Analyze API changes (signatures, new/deleted functions)."""
+        logger.info(
+            "Technical Author: analyzing API changes | files=%d",
+            len(change_summary.files_changed),
+        )
         conv = conversation or self.conversation
         facts = []
 
@@ -613,6 +621,10 @@ Format as JSON array of TechnicalFact objects."""
         conversation: ConversationContext | None = None,
     ) -> list[TechnicalFact]:
         """Analyze behavioral changes (what code does differently)."""
+        logger.info(
+            "Technical Author: analyzing behavioral changes | files=%d",
+            len(change_summary.files_changed),
+        )
         conv = conversation or self.conversation
         facts = []
 
@@ -690,6 +702,10 @@ Format as JSON array."""
         head_elements: list[CodeElement],
     ) -> list[TechnicalFact]:
         """Analyze architecture/dependency changes."""
+        logger.info(
+            "Technical Author: analyzing architecture changes | deps_changed=%d",
+            len(change_summary.dependencies_changed),
+        )
         facts = []
 
         if change_summary.dependencies_changed:
@@ -788,6 +804,10 @@ Format as JSON array."""
         the LLM to verify code references against the actual codebase.
         Falls back to plain chat when no tools are configured.
         """
+        logger.info(
+            "Technical Author: generating facts response | tools=%s",
+            "enabled" if self.tool_executor else "disabled",
+        )
         if self.tool_executor:
             return chat_with_tools(
                 llm=self.llm,

@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from rich.console import Console
 
 from ggdes.agents.skill_utils import (
@@ -431,6 +432,12 @@ class GitAnalyzer:
         # Store original commit range for output
         self.original_commit_range = commit_range
 
+        logger.info(
+            "Git Analyzer: starting analysis | range=%s focus=%s",
+            commit_range,
+            focus_commits,
+        )
+
         # Initialize conversation
         self._init_conversation(storage_policy)
 
@@ -746,6 +753,11 @@ Then provide a structured ChangeSummary.
 
     async def _chat_with_context(self, context: List[Dict[str, Any]]) -> str:
         """Send chat request with full conversation context."""
+        logger.info(
+            "Git Analyzer: LLM chat call | messages=%d model=%s",
+            len(context),
+            self.llm.model_name,
+        )
         return self.llm.chat(
             messages=context,
             temperature=0.3,
@@ -756,6 +768,11 @@ Then provide a structured ChangeSummary.
         self, context: List[Dict[str, Any]]
     ) -> ChangeSummary:
         """Generate structured output from conversation context with code reference validation."""
+        logger.info(
+            "Git Analyzer: generating structured ChangeSummary | messages=%d model=%s",
+            len(context),
+            self.llm.model_name,
+        )
         # Extract system and conversation messages
         system = None
         conversation_messages = []

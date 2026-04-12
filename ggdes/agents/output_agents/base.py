@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set
 
+from loguru import logger
 from rich.console import Console
 
 console = Console()

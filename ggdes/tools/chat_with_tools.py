@@ -13,6 +13,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from rich.console import Console
 
 from ggdes.llm import LLMProvider
@@ -218,6 +219,12 @@ def chat_with_tools(
     # Tool calling loop
     for round_num in range(max_rounds):
         # Get LLM response
+        logger.info(
+            "Tool-augmented chat | round=%d/%d model=%s",
+            round_num + 1,
+            max_rounds,
+            llm.model_name,
+        )
         response = llm.chat(
             messages=working_messages,
             temperature=temperature,
@@ -229,11 +236,22 @@ def chat_with_tools(
 
         if not tool_calls:
             # No tool calls - we're done
+            logger.info(
+                "Tool-augmented chat completed | rounds=%d model=%s",
+                round_num + 1,
+                llm.model_name,
+            )
             return response
 
         # Execute tool calls
         console.print(
             f"  [dim]Tool round {round_num + 1}: {len(tool_calls)} call(s)[/dim]"
+        )
+        logger.info(
+            "Tool calls | round=%d calls=%d tools=%s",
+            round_num + 1,
+            len(tool_calls),
+            [c.tool_name for c in tool_calls],
         )
         for call in tool_calls:
             console.print(

@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
+from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 T = TypeVar("T", bound=BaseModel)
@@ -98,13 +99,41 @@ def retry_on_failure(
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
+            # Extract provider info for logging
+            provider_name = ""
+            model_name = ""
+            if args and isinstance(args[0], LLMProvider):
+                provider_name = args[0].__class__.__name__
+                model_name = args[0].model_name
+
+            method_name = func.__name__
+            logger.info(
+                "LLM call starting | provider={} model={} method={}",
+                provider_name,
+                model_name,
+                method_name,
+            )
+            call_start = time.time()
+
             last_exception: Optional[BaseException] = None
 
             for attempt in range(max_retries + 1):
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    call_duration = time.time() - call_start
+                    logger.info(
+                        "LLM call completed | provider={} model={} method={} "
+                        "duration={:.1f}s attempts={}",
+                        provider_name,
+                        model_name,
+                        method_name,
+                        call_duration,
+                        attempt + 1,
+                    )
+                    return result
                 except retryable_exceptions as e:
                     last_exception = e
+                    call_duration = time.time() - call_start
 
                     if attempt < max_retries:
                         # Calculate delay with exponential backoff
@@ -117,13 +146,30 @@ def retry_on_failure(
                         jitter = random.uniform(0, delay * 0.1)
                         actual_delay = delay + jitter
 
-                        print(
-                            f"LLM call failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
-                            f"Retrying in {actual_delay:.1f}s..."
+                        logger.warning(
+                            "LLM call failed (attempt {}/{}) | provider={} model={} "
+                            "method={} duration={:.1f}s error={} | retrying in {:.1f}s...",
+                            attempt + 1,
+                            max_retries + 1,
+                            provider_name,
+                            model_name,
+                            method_name,
+                            call_duration,
+                            e,
+                            actual_delay,
                         )
                         time.sleep(actual_delay)
                     else:
-                        print(f"LLM call failed after {max_retries + 1} attempts: {e}")
+                        logger.error(
+                            "LLM call failed after {} attempts | provider={} model={} "
+                            "method={} duration={:.1f}s error={}",
+                            max_retries + 1,
+                            provider_name,
+                            model_name,
+                            method_name,
+                            call_duration,
+                            e,
+                        )
 
             # All retries exhausted, raise the last exception
             if last_exception is not None:
@@ -561,6 +607,18 @@ class LLMProvider(ABC):
         """
         output_format = self._get_output_format()
         examples = self._get_examples(response_model)
+        model_name = response_model.__name__
+
+        logger.info(
+            "Structured LLM call starting | provider={} model={} response_model={} "
+            "format={} max_retries={}",
+            self.__class__.__name__,
+            self.model_name,
+            model_name,
+            output_format,
+            max_retries,
+        )
+        call_start = time.time()
 
         # Add format instructions to system prompt
         full_system_prompt = _add_structured_instructions(
@@ -583,8 +641,14 @@ class LLMProvider(ABC):
                         previous_response, str(last_error), output_format
                     )
                     current_prompt = correction_prompt
-                    print(
-                        f"Structured output parsing failed, asking LLM to correct (attempt {attempt + 1}/{max_retries + 1})..."
+                    logger.warning(
+                        "Structured output parsing failed, asking LLM to correct "
+                        "(attempt {}/{}) | provider={} model={} response_model={}",
+                        attempt + 1,
+                        max_retries + 1,
+                        self.__class__.__name__,
+                        self.model_name,
+                        model_name,
                     )
 
                 response_text = self.generate(
@@ -597,9 +661,21 @@ class LLMProvider(ABC):
 
                 # Parse response
                 if output_format == "xml":
-                    return _parse_xml_response(response_text, response_model)
+                    result = _parse_xml_response(response_text, response_model)
                 else:
-                    return _parse_json_response(response_text, response_model)
+                    result = _parse_json_response(response_text, response_model)
+
+                call_duration = time.time() - call_start
+                logger.info(
+                    "Structured LLM call completed | provider={} model={} "
+                    "response_model={} duration={:.1f}s attempts={}",
+                    self.__class__.__name__,
+                    self.model_name,
+                    model_name,
+                    call_duration,
+                    attempt + 1,
+                )
+                return result
 
             except (
                 ValueError,
@@ -612,8 +688,16 @@ class LLMProvider(ABC):
                     # Increase temperature for variety on retry
                     temperature = min(temperature + 0.1, 1.0)
                 else:
-                    print(
-                        f"Structured output failed after {max_retries + 1} attempts: {e}"
+                    call_duration = time.time() - call_start
+                    logger.error(
+                        "Structured output failed after {} attempts | provider={} "
+                        "model={} response_model={} duration={:.1f}s error={}",
+                        max_retries + 1,
+                        self.__class__.__name__,
+                        self.model_name,
+                        model_name,
+                        call_duration,
+                        e,
                     )
 
         raise ValueError(f"Failed to generate valid structured output: {last_error}")

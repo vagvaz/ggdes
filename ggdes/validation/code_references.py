@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
 
 @dataclass
 class CodeReference:
@@ -595,6 +597,9 @@ Please provide a corrected response with valid code references:"""
         Returns:
             Validated (and potentially corrected) text
         """
+        logger.info(
+            "Code reference validation starting | max_corrections=%d", max_corrections
+        )
         current_output = llm_output
 
         for attempt in range(max_corrections + 1):
@@ -616,9 +621,13 @@ Please provide a corrected response with valid code references:"""
                     invalid_refs, invalid_blocks, current_output
                 )
 
-                print(
-                    f"Code reference validation failed, requesting correction "
-                    f"(attempt {attempt + 1}/{max_corrections + 1})..."
+                logger.warning(
+                    "Code reference validation failed, requesting correction "
+                    "(attempt %d/%d) | invalid_refs=%d invalid_blocks=%d",
+                    attempt + 1,
+                    max_corrections + 1,
+                    len(invalid_refs),
+                    len(invalid_blocks),
                 )
 
                 # Generate corrected output

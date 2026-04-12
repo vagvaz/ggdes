@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
@@ -133,6 +134,13 @@ class Coordinator:
         facts = self._load_facts()
         if not facts:
             raise ValueError(f"No technical facts found for {self.analysis_id}")
+
+        logger.info(
+            "Coordinator: creating plan | facts=%d formats=%s analysis=%s",
+            len(facts),
+            target_formats,
+            self.analysis_id,
+        )
 
         console.print(f"\n[bold]Loaded {len(facts)} technical facts[/bold]")
 
@@ -298,6 +306,12 @@ class Coordinator:
         )
 
         console.print(f"[dim]Creating {fmt} plan...[/dim]")
+        logger.info(
+            "Coordinator: creating %s plan | facts=%d analysis=%s",
+            fmt,
+            len(facts),
+            self.analysis_id,
+        )
 
         # Build prompt for LLM
         prompt = self._build_planning_prompt(
@@ -471,6 +485,12 @@ Provide a document plan as JSON:
         self, context: List[Dict[str, Any]], fmt: str
     ) -> Dict[str, Any]:
         """Generate document plan from conversation context."""
+        logger.info(
+            "Coordinator: LLM call for %s plan | messages=%d model=%s",
+            fmt,
+            len(context),
+            self.llm.model_name,
+        )
         response = self.llm.chat(
             messages=context,
             temperature=0.4,
