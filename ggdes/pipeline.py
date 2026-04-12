@@ -845,7 +845,7 @@ class AnalysisPipeline:
                 storage_policy = self.metadata.storage_policy
 
                 agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
-                path = asyncio.run(agent.generate(storage_policy=storage_policy))
+                path: Any = asyncio.run(agent.generate(storage_policy=storage_policy))  # type: ignore[arg-type]
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:

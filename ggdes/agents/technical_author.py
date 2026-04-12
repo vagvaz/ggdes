@@ -616,7 +616,8 @@ Format as JSON array."""
         changed_head: list[CodeElement],
     ) -> list[TechnicalFact]:
         """Run all three analysis turns in parallel using separate conversation contexts."""
-        from ggdes.llm import ConversationContext, StoragePolicy
+        from ggdes.llm import ConversationContext
+        from ggdes.schemas import StoragePolicy
 
         # Create separate conversation contexts for LLM-based analyses
         api_conv = ConversationContext(

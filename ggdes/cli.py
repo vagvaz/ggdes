@@ -1146,7 +1146,7 @@ def debug(
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
-            yield DebugView(id="debug-view")  # type: ignore[no-untyped-call]
+            yield DebugView(id="debug-view")
             yield Footer()
 
         def on_mount(self) -> None:

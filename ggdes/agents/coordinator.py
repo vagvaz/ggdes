@@ -152,17 +152,16 @@ class Coordinator:
                 self._create_format_plan(fmt, facts, facts_by_category, user_context)
                 for fmt in target_formats
             ]
-            plans = await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             # Filter out exceptions, log errors
-            successful_plans = []
-            for i, result in enumerate(plans):
+            plans: list[DocumentPlan] = []
+            for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     console.print(
                         f"[red]Plan creation failed for {target_formats[i]}: {result}[/red]"
                     )
                 else:
-                    successful_plans.append(result)
-            plans = successful_plans
+                    plans.append(result)  # type: ignore[arg-type]
         else:
             # Sequential (original behavior)
             plans = []
@@ -287,7 +286,8 @@ class Coordinator:
         user_context: Dict[str, Any],
     ) -> DocumentPlan:
         """Create a document plan for a specific format with its own conversation context."""
-        from ggdes.llm import ConversationContext, StoragePolicy
+        from ggdes.llm import ConversationContext
+        from ggdes.schemas import StoragePolicy
 
         # Create a fresh conversation context for this format
         conv = ConversationContext(

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 
 class PromptLoader:
@@ -50,9 +50,9 @@ class PromptLoader:
             prompts = yaml.safe_load(f)
 
         self._cache[agent_name] = prompts
-        return prompts
+        return prompts  # type: ignore[no-any-return]
 
-    def get_prompt(self, agent_name: str, prompt_key: str, **format_kwargs) -> str:
+    def get_prompt(self, agent_name: str, prompt_key: str, **format_kwargs: Any) -> str:
         """Get a specific prompt with optional formatting.
 
         Args:
@@ -81,7 +81,7 @@ class PromptLoader:
                 # Return unformatted if keys are missing
                 pass
 
-        return prompt_text
+        return prompt_text  # type: ignore[no-any-return]
 
     def get_system_prompt(self, agent_name: str) -> str:
         """Get the system prompt for an agent.
@@ -130,7 +130,7 @@ def get_default_loader() -> PromptLoader:
 
 
 def get_prompt(
-    agent_name: str, prompt_key: str, version: str | None = None, **format_kwargs
+    agent_name: str, prompt_key: str, version: str | None = None, **format_kwargs: Any
 ) -> str:
     """Convenience function to get a single prompt.
 
