@@ -168,6 +168,10 @@ def analyze(
             help="Enable semantic diff analysis (slower but more detailed). Disable for faster analysis."
         ),
     ] = True,
+    render_png: Annotated[
+        bool,
+        typer.Option(help="Render markdown output to PNG images (requires playwright)"),
+    ] = False,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -326,6 +330,10 @@ def analyze(
                 target_formats=target_formats,
                 storage_policy=StoragePolicy(storage_policy),
             )
+
+            # Store render_png flag in metadata for pipeline use
+            metadata.render_png = render_png
+            kb_manager.save_metadata(analysis_id, metadata)
 
             # Setup logging
             from ggdes.logging_config import get_logger, setup_file_logging

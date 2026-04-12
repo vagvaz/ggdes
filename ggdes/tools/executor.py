@@ -93,6 +93,7 @@ class ToolExecutor:
             "search_code": self._search_code,
             "validate_reference": self._validate_reference,
             "get_ast_elements": self._get_ast_elements,
+            "get_element_source": self._get_element_source,
         }.get(call.tool_name)
 
         if not handler:
@@ -639,4 +640,130 @@ class ToolExecutor:
             "file_path": getattr(elem, "file_path", ""),
             "parent": getattr(elem, "parent", None),
             "children": getattr(elem, "children", []),
+            "source_code": getattr(elem, "source_code", None),
         }
+
+    def _get_element_source(
+        self,
+        element_name: str,
+        file_path: Optional[str] = None,
+        max_lines: int = 50,
+    ) -> Dict[str, Any]:
+        """Get the actual source code for a named code element.
+
+        This is the primary anti-hallucination tool: it retrieves real source
+        code so the LLM can reference actual implementations instead of
+        fabricating code details.
+
+        Args:
+            element_name: Name of the code element (function, class, method)
+            file_path: Optional file path to narrow search scope
+            max_lines: Maximum number of source lines to return
+
+        Returns:
+            Dict with element source code, file path, line numbers, etc.
+        """
+        # Search through AST elements for matching name
+        candidates = []
+
+        for fp, elements in self._file_elements.items():
+            # Filter by file_path if specified
+            if file_path and file_path not in fp:
+                continue
+
+            for elem in elements:
+                elem_name = getattr(elem, "name", None) or (
+                    elem.get("name") if isinstance(elem, dict) else None
+                )
+                if elem_name == element_name:
+                    candidates.append((fp, elem))
+
+        if not candidates:
+            # Try partial match
+            for fp, elements in self._file_elements.items():
+                if file_path and file_path not in fp:
+                    continue
+                for elem in elements:
+                    elem_name = getattr(elem, "name", None) or (
+                        elem.get("name") if isinstance(elem, dict) else None
+                    )
+                    if elem_name and element_name.lower() in elem_name.lower():
+                        candidates.append((fp, elem))
+
+        if not candidates:
+            return {
+                "error": f"Element '{element_name}' not found in AST data",
+                "element_name": element_name,
+                "found": False,
+                "suggestions": list(self._element_names.keys())[:10],
+            }
+
+        # Use first match (or exact match if available)
+        best_fp, best_elem = candidates[0]
+
+        # Extract source code from element
+        source_code = getattr(best_elem, "source_code", None) or (
+            best_elem.get("source_code") if isinstance(best_elem, dict) else None
+        )
+        start_line = getattr(best_elem, "start_line", 0) or (
+            best_elem.get("start_line") if isinstance(best_elem, dict) else 0
+        )
+        end_line = getattr(best_elem, "end_line", 0) or (
+            best_elem.get("end_line") if isinstance(best_elem, dict) else 0
+        )
+        signature = getattr(best_elem, "signature", None) or (
+            best_elem.get("signature") if isinstance(best_elem, dict) else None
+        )
+        docstring = getattr(best_elem, "docstring", None) or (
+            best_elem.get("docstring") if isinstance(best_elem, dict) else None
+        )
+        elem_type = getattr(best_elem, "element_type", "") or (
+            best_elem.get("element_type") if isinstance(best_elem, dict) else ""
+        )
+        parent = getattr(best_elem, "parent", None) or (
+            best_elem.get("parent") if isinstance(best_elem, dict) else None
+        )
+
+        # If no source_code in AST data, try reading from file
+        if not source_code:
+            file_full_path = self.repo_path / best_fp
+            if file_full_path.exists() and file_full_path.is_file():
+                try:
+                    content = file_full_path.read_text(errors="ignore")
+                    lines = content.splitlines()
+                    if start_line and end_line:
+                        start_idx = max(0, start_line - 1)
+                        end_idx = min(len(lines), end_line)
+                        source_code = "\n".join(lines[start_idx:end_idx])
+                    else:
+                        source_code = content[: max_lines * 80]  # Rough estimate
+                except Exception:
+                    source_code = None
+
+        # Truncate if too long
+        if source_code:
+            lines = source_code.splitlines()
+            if len(lines) > max_lines:
+                source_code = (
+                    "\n".join(lines[:max_lines])
+                    + f"\n... ({len(lines) - max_lines} more lines)"
+                )
+
+        result = {
+            "element_name": element_name,
+            "found": True,
+            "file_path": best_fp,
+            "element_type": str(elem_type),
+            "start_line": start_line,
+            "end_line": end_line,
+            "signature": signature,
+            "docstring": docstring[:200] if docstring else None,
+            "parent": parent,
+            "source_code": source_code,
+        }
+
+        # If multiple matches, list alternatives
+        if len(candidates) > 1:
+            result["alternative_files"] = [fp for fp, _ in candidates[1:6]]
+
+        return result

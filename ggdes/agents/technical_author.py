@@ -211,6 +211,114 @@ class TechnicalAuthor:
 
         return changed_elements
 
+    def _build_source_code_context(
+        self,
+        elements: list[CodeElement],
+        max_elements: int = 15,
+        max_lines_per_element: int = 50,
+    ) -> str:
+        """Build a context string with actual source code for changed elements.
+
+        This is the key anti-hallucination measure: providing the LLM with
+        real source code so it can reference actual code instead of fabricating.
+
+        Args:
+            elements: List of code elements with source_code populated
+            max_elements: Maximum number of elements to include
+            max_lines_per_element: Maximum lines of source code per element
+
+        Returns:
+            Formatted string with source code context
+        """
+        if not elements:
+            return ""
+
+        context_parts = []
+        included = 0
+
+        for elem in elements:
+            if included >= max_elements:
+                context_parts.append(
+                    f"\n... and {len(elements) - included} more elements (truncated)"
+                )
+                break
+
+            # Use source_code from CodeElement if available
+            if elem.source_code:
+                # Truncate long source code
+                lines = elem.source_code.splitlines()
+                if len(lines) > max_lines_per_element:
+                    truncated = "\n".join(lines[:max_lines_per_element])
+                    truncated += (
+                        f"\n... ({len(lines) - max_lines_per_element} more lines)"
+                    )
+                    source = truncated
+                else:
+                    source = elem.source_code
+
+                context_parts.append(
+                    f"### {elem.name} ({elem.element_type.value}) in {elem.file_path}\n"
+                    f"Lines {elem.start_line}-{elem.end_line}\n"
+                    f"```{self._get_language_hint(elem.file_path)}\n{source}\n```"
+                )
+                included += 1
+            elif elem.signature:
+                # Fall back to signature-only if no source code
+                context_parts.append(
+                    f"### {elem.name} ({elem.element_type.value}) in {elem.file_path}\n"
+                    f"Signature: {elem.signature}"
+                )
+                included += 1
+
+        return "\n\n".join(context_parts) if context_parts else ""
+
+    def _get_language_hint(self, file_path: str) -> str:
+        """Get language hint for code block from file extension."""
+        ext_map = {
+            ".py": "python",
+            ".cpp": "cpp",
+            ".cc": "cpp",
+            ".cxx": "cpp",
+            ".hpp": "cpp",
+            ".h": "c",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".java": "java",
+            ".go": "go",
+            ".rs": "rust",
+        }
+        for ext, lang in ext_map.items():
+            if file_path.endswith(ext):
+                return lang
+        return ""
+
+    def _build_code_snippets_dict(
+        self, elements: list[CodeElement], max_lines: int = 50
+    ) -> dict[str, str]:
+        """Build a mapping of element names to their source code.
+
+        Used to populate TechnicalFact.code_snippets for downstream use.
+
+        Args:
+            elements: List of code elements with source_code populated
+            max_lines: Maximum lines of source code per element
+
+        Returns:
+            Dict mapping element names to their source code
+        """
+        snippets = {}
+        for elem in elements:
+            if elem.source_code:
+                lines = elem.source_code.splitlines()
+                if len(lines) > max_lines:
+                    snippets[elem.name] = (
+                        "\n".join(lines[:max_lines])
+                        + f"\n... ({len(lines) - max_lines} more lines)"
+                    )
+                else:
+                    snippets[elem.name] = elem.source_code
+        return snippets
+
     async def synthesize(
         self,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
@@ -319,6 +427,9 @@ class TechnicalAuthor:
                 f"  [green]✓ Validated {len(all_facts)} facts against codebase[/green]"
             )
 
+        # Enrich facts with source code snippets from AST elements
+        all_facts = self._enrich_facts_with_source_code(all_facts, changed_head)
+
         # Save facts to KB
         self._save_facts(all_facts)
 
@@ -378,7 +489,9 @@ class TechnicalAuthor:
             facts.extend(batch_facts)
         else:
             # All at once
-            prompt = f"""Analyze the following API changes and describe each factually:
+            prompt = f"""Analyze the following API changes and describe each factually.
+
+IMPORTANT: You MUST base your descriptions on ACTUAL CODE. Use the get_element_source tool to retrieve the real source code for any function or class you reference. Do NOT fabricate or hallucinate code, function signatures, or implementation details. Only describe what you can verify from the actual source code.
 
 Change Summary: {change_summary.description}
 Intent: {change_summary.intent}
@@ -409,10 +522,12 @@ Modified APIs ({len(modified_apis)}):
                 prompt += f"  New: {api['new_sig']}\n"
 
             prompt += """
+Before writing your analysis, use the get_element_source tool to retrieve the actual source code for key functions and classes. This ensures your descriptions are grounded in real code.
+
 For each API change, provide:
 1. Fact ID (e.g., api_001, api_002)
 2. Category: api
-3. Description: What changed and why
+3. Description: What changed and why (based on the actual source code you retrieved)
 4. Source elements: Affected functions/classes
 5. Source file: Primary file location
 6. Confidence: 0.0-1.0
@@ -513,6 +628,8 @@ Breaking Changes: {change_summary.breaking_changes}
 
 IMPORTANT: You should ONLY generate facts about behavioral changes in files that were actually changed. Do not generate facts about files that were not in the git diff.
 
+IMPORTANT: Use the get_element_source tool to retrieve the actual source code for any functions or classes you reference. Do NOT fabricate code, function signatures, or implementation details. Only describe what you can verify from the actual source code.
+
 Files Changed ({len(change_summary.files_changed)}):
 """
         for f in change_summary.files_changed[:10]:
@@ -521,10 +638,12 @@ Files Changed ({len(change_summary.files_changed)}):
         prompt += f"""
 IMPORTANT: Only analyze behavioral changes in the {len(changed_files)} files that were changed. Do not reference files that were not in the git diff.
 
+Before writing your analysis, use the get_element_source tool to retrieve the actual source code for key functions and classes in the changed files. This ensures your descriptions are grounded in real code.
+
 For each behavioral change, provide:
 1. Fact ID (e.g., behavior_001)
 2. Category: behavior
-3. Description: How behavior changed
+3. Description: How behavior changed (based on actual source code)
 4. What was the old behavior
 5. What is the new behavior
 6. Impact on users/system
@@ -649,6 +768,17 @@ Format as JSON array."""
         all_facts.extend(api_facts or [])
         all_facts.extend(behavior_facts or [])
         all_facts.extend(arch_facts or [])
+
+        # Save parallel conversation contexts for debugging
+        if self.analysis_id:
+            from ggdes.config import get_kb_path
+
+            kb_base = get_kb_path(self.config, self.analysis_id) / "conversations"
+            if api_conv and api_conv.messages:
+                api_conv.save(kb_base / "technical_author_api")
+            if behavior_conv and behavior_conv.messages:
+                behavior_conv.save(kb_base / "technical_author_behavior")
+
         return all_facts
 
     async def _generate_facts_response(self, context: List[Dict[str, Any]]) -> str:
@@ -755,6 +885,63 @@ Format as JSON array."""
             validated.append(fact)
 
         return validated
+
+    def _enrich_facts_with_source_code(
+        self, facts: list[TechnicalFact], ast_elements: list[CodeElement]
+    ) -> list[TechnicalFact]:
+        """Enrich technical facts with source code snippets from AST elements.
+
+        Populates the code_snippets field on each fact with actual source code
+        for the elements referenced in source_elements. This ensures downstream
+        agents (coordinator, output agents) have access to real code instead of
+        having to fabricate it.
+
+        Args:
+            facts: List of technical facts to enrich
+            ast_elements: List of code elements with source_code populated
+
+        Returns:
+            Enriched facts with code_snippets populated
+        """
+        # Build lookup: element name -> source code
+        element_source: dict[str, str] = {}
+        for elem in ast_elements:
+            if elem.source_code:
+                element_source[elem.name] = elem.source_code
+
+        enriched = []
+        for fact in facts:
+            snippets: dict[str, str] = {}
+            for elem_name in fact.source_elements:
+                if elem_name in element_source:
+                    snippets[elem_name] = element_source[elem_name]
+            # Also try to get source from tool executor if available
+            if self.tool_executor and not snippets:
+                for elem_name in fact.source_elements[
+                    :3
+                ]:  # Limit to 3 tool calls per fact
+                    try:
+                        result = self.tool_executor.execute(
+                            ToolCall(
+                                tool_name="get_element_source",
+                                arguments={"element_name": elem_name},
+                            )
+                        )
+                        if (
+                            result.success
+                            and result.result
+                            and result.result.get("found")
+                        ):
+                            source = result.result.get("source_code")
+                            if source:
+                                snippets[elem_name] = source
+                    except Exception:
+                        pass  # Graceful fallback
+            if snippets:
+                fact.code_snippets = snippets
+            enriched.append(fact)
+
+        return enriched
 
     def _save_facts(self, facts: list[TechnicalFact]) -> None:
         """Save facts to knowledge base."""

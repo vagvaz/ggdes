@@ -313,6 +313,13 @@ class Coordinator:
         # Create DocumentPlan
         sections = []
         for i, sec_data in enumerate(plan_data.get("sections", [])):
+            # Collect source code for referenced elements from facts
+            section_source_code: dict[str, str] = {}
+            for fact_id in sec_data.get("technical_facts", []):
+                matching_fact = next((f for f in facts if f.fact_id == fact_id), None)
+                if matching_fact and matching_fact.code_snippets:
+                    section_source_code.update(matching_fact.code_snippets)
+
             sections.append(
                 SectionPlan(
                     title=sec_data.get("title", f"Section {i + 1}"),
@@ -320,6 +327,7 @@ class Coordinator:
                     technical_facts=sec_data.get("technical_facts", []),
                     code_references=sec_data.get("code_references", []),
                     diagrams=sec_data.get("diagrams", []),
+                    source_code=section_source_code,
                 )
             )
 
@@ -346,6 +354,17 @@ class Coordinator:
             user_context=user_context,
         )
 
+        # Save per-format conversation for debugging
+        if self.analysis_id and conv.messages:
+            from ggdes.config import get_kb_path
+
+            conv_path = (
+                get_kb_path(self.config, self.analysis_id)
+                / "conversations"
+                / f"coordinator_{fmt}"
+            )
+            conv.save(conv_path)
+
         console.print(
             f"  [green]✓[/green] {fmt}: {len(sections)} sections, {len(diagrams)} diagrams"
         )
@@ -365,11 +384,19 @@ class Coordinator:
 Technical Facts Available ({len(facts)} total):
 """
 
-        # Summarize facts by category
+        # Summarize facts by category, including code snippets when available
         for category, cat_facts in facts_by_category.items():
             prompt += f"\n{category.upper()} ({len(cat_facts)} facts):\n"
             for fact in cat_facts[:5]:  # Limit to first 5 per category
                 prompt += f"  - {fact.fact_id}: {fact.description[:100]}...\n"
+                # Include source code snippets if available
+                if fact.code_snippets:
+                    for elem_name, code in list(fact.code_snippets.items())[:2]:
+                        # Truncate long snippets
+                        truncated_code = code[:300] + "..." if len(code) > 300 else code
+                        prompt += (
+                            f"    Source ({elem_name}):\n```\n{truncated_code}\n```\n"
+                        )
             if len(cat_facts) > 5:
                 prompt += f"  ... and {len(cat_facts) - 5} more\n"
 

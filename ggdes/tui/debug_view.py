@@ -173,11 +173,55 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
             self.follow_mode = event.value
 
     def poll_for_updates(self) -> None:
-        """Poll for conversation updates."""
-        if not self.analysis_id or not self.selected_agent:
+        """Poll for conversation updates and new agents."""
+        if not self.analysis_id:
             return
 
-        # Find the file for the currently selected agent
+        # Check for new agents that appeared since last load
+        analysis_path = self.kb_manager.get_analysis_path(self.analysis_id)
+        conversations_path = analysis_path / "conversations"
+
+        if conversations_path.exists():
+            current_agent_names = {name for name, _, _ in self.agents}
+            new_agents_found = False
+
+            for conv_dir in conversations_path.iterdir():
+                if conv_dir.is_dir():
+                    agent_name = conv_dir.name
+                    if agent_name not in current_agent_names:
+                        # New agent directory found
+                        raw_file = conv_dir / "conversation_raw.json"
+                        summary_file = conv_dir / "conversation_summary.json"
+
+                        try:
+                            if raw_file.exists():
+                                self.agents.append((agent_name, raw_file, "raw"))
+                                self.file_mtimes[str(raw_file)] = (
+                                    raw_file.stat().st_mtime
+                                )
+                                new_agents_found = True
+                            elif summary_file.exists():
+                                self.agents.append(
+                                    (agent_name, summary_file, "summary")
+                                )
+                                self.file_mtimes[str(summary_file)] = (
+                                    summary_file.stat().st_mtime
+                                )
+                                new_agents_found = True
+                        except Exception:
+                            pass
+
+            if new_agents_found:
+                self.update_agent_list()
+                self.app.notify(
+                    f"New agent conversations detected",
+                    title="Debug",
+                )
+
+        # Check for updates to the currently selected agent
+        if not self.selected_agent:
+            return
+
         agent_file = None
         for name, file_path, _storage_type in self.agents:
             if name == self.selected_agent:
@@ -556,9 +600,11 @@ class OutputsBrowser(Vertical):  # type: ignore[misc]
             "git_analysis": "📊 Git Analysis",
             "ast_base": "🔍 AST (Base)",
             "ast_head": "🔍 AST (Head)",
+            "semantic_diff": "🔀 Semantic Diff",
             "conversations": "💬 Conversations",
-            "facts": "📚 Facts",
+            "technical_facts": "📚 Technical Facts",
             "plans": "📋 Plans",
+            "diagram_cache": "🎨 Diagram Cache",
             "output": "📄 Output",
         }
 

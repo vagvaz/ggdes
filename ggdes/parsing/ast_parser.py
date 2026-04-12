@@ -143,9 +143,9 @@ class ASTParser:
 
         # Extract elements based on language
         if language == "python":
-            elements = self._extract_python_elements(tree, file_path, relative_to)
+            elements = self._extract_python_elements(tree, file_path, relative_to, source_code)
         elif language == "cpp":
-            elements = self._extract_cpp_elements(tree, file_path, relative_to)
+            elements = self._extract_cpp_elements(tree, file_path, relative_to, source_code)
         else:
             elements = []
 
@@ -165,10 +165,39 @@ class ASTParser:
             success=True,
         )
 
+    def _get_element_source(
+        self, start_line: int, end_line: int, source_lines: list[str] | None
+    ) -> str | None:
+        """Extract source code for an element from line numbers.
+
+        Args:
+            start_line: 1-indexed start line
+            end_line: 1-indexed end line
+            source_lines: List of source code lines
+
+        Returns:
+            Source code string or None if not available
+        """
+        if not source_lines:
+            return None
+        # Clamp to valid range
+        start_idx = max(0, start_line - 1)
+        end_idx = min(len(source_lines), end_line)
+        if start_idx >= end_idx:
+            return None
+        return "\n".join(source_lines[start_idx:end_idx])
+
     def _extract_python_elements(
-        self, tree: Tree, file_path: Path, relative_to: Path | None = None
+        self, tree: Tree, file_path: Path, relative_to: Path | None = None, source_code: str | None = None
     ) -> list[CodeElement]:
-        """Extract code elements from Python AST."""
+        """Extract code elements from Python AST.
+        
+        Args:
+            tree: Parsed tree-sitter tree
+            file_path: Path to source file
+            relative_to: Base path for making file_path relative
+            source_code: Original source code text (used to extract element source)
+        """
         elements = []
         root_node = tree.root_node
 
@@ -180,8 +209,10 @@ class ASTParser:
             except ValueError:
                 pass
 
+        # Split source into lines for extracting element source code
+        source_lines = source_code.splitlines() if source_code else None
+
         def extract_from_node(node: Any, parent_name: str | None = None) -> None:
-            """Recursively extract elements from AST nodes."""
             if node.type == "function_definition":
                 # Extract function
                 name_node = node.child_by_field_name("name")
@@ -225,6 +256,9 @@ class ASTParser:
                         file_path=display_path,
                         parent=parent_name,
                         decorators=decorators,
+                        source_code=self._get_element_source(
+                            node.start_point[0] + 1, node.end_point[0] + 1, source_lines
+                        ),
                     )
                     elements.append(element)
 
@@ -278,6 +312,9 @@ class ASTParser:
                         children=children,
                         decorators=decorators,
                         parent=parent_name,
+                        source_code=self._get_element_source(
+                            node.start_point[0] + 1, node.end_point[0] + 1, source_lines
+                        ),
                     )
                     elements.append(element)
 
@@ -295,9 +332,16 @@ class ASTParser:
         return elements
 
     def _extract_cpp_elements(
-        self, tree: Tree, file_path: Path, relative_to: Path | None = None
+        self, tree: Tree, file_path: Path, relative_to: Path | None = None, source_code: str | None = None
     ) -> list[CodeElement]:
-        """Extract code elements from C++ AST."""
+        """Extract code elements from C++ AST.
+        
+        Args:
+            tree: Parsed tree-sitter tree
+            file_path: Path to source file
+            relative_to: Base path for making file_path relative
+            source_code: Original source code text (used to extract element source)
+        """
         elements = []
         root_node = tree.root_node
 
@@ -308,6 +352,9 @@ class ASTParser:
                 display_path = str(file_path.relative_to(relative_to))
             except ValueError:
                 pass
+
+        # Split source into lines for extracting element source code
+        source_lines = source_code.splitlines() if source_code else None
 
         def extract_from_node(node: Any, parent_name: str | None = None) -> None:
             """Recursively extract elements from AST nodes."""
@@ -337,6 +384,9 @@ class ASTParser:
                             end_line=node.end_point[0] + 1,
                             file_path=display_path,
                             parent=parent_name,
+                            source_code=self._get_element_source(
+                                node.start_point[0] + 1, node.end_point[0] + 1, source_lines
+                            ),
                         )
                         elements.append(element)
 
@@ -368,6 +418,9 @@ class ASTParser:
                         file_path=display_path,
                         children=children,
                         parent=parent_name,
+                        source_code=self._get_element_source(
+                            node.start_point[0] + 1, node.end_point[0] + 1, source_lines
+                        ),
                     )
                     elements.append(element)
 

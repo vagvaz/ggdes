@@ -41,6 +41,10 @@ web = [
     "uvicorn[standard]>=0.32.0",
     "websockets>=13.0",
 ]
+render = [
+    "playwright>=1.40.0",
+    "markdown>=3.5.0",
+]
 
 [project.scripts]
 ggdes = "ggdes.cli:main"

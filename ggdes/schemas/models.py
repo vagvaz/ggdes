@@ -101,6 +101,10 @@ class CodeElement(BaseModel):
     dependencies: list[str] = Field(
         default_factory=list, description="Elements this depends on"
     )
+    source_code: str | None = Field(
+        None,
+        description="Actual source code of this element (lines start_line to end_line)",
+    )
 
 
 class CodeChangeDetail(BaseModel):
@@ -133,6 +137,11 @@ class TechnicalFact(BaseModel):
     verified: bool = Field(
         default=False, description="Whether fact was validated against AST"
     )
+    code_snippets: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of element names to their actual source code. "
+        "Used to ground LLM output in real code and prevent hallucination.",
+    )
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -155,6 +164,11 @@ class SectionPlan(BaseModel):
     code_references: list[str] = Field(description="Code elements to reference")
     diagrams: list[str] = Field(
         default_factory=list, description="Diagram IDs to embed"
+    )
+    source_code: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of element names to their actual source code. "
+        "Used to ground LLM output in real code and prevent hallucination.",
     )
 
 

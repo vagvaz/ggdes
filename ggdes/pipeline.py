@@ -360,22 +360,20 @@ class AnalysisPipeline:
         from ggdes.validation.code_references import CodeReferenceValidator
 
         changed_file_paths = [f.path for f in change_summary.files_changed]
-        code_elements_set = set()
-        # Collect element names from AST if available
+        # Collect element data from AST (including source_code for validation)
+        code_elements_dict: dict[str, dict[str, Any]] = {}
         ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
         if ast_head_dir.exists():
             for json_file in ast_head_dir.glob("*.json"):
                 try:
                     data = json.loads(json_file.read_text())
                     for elem_data in data.get("elements", []):
-                        code_elements_set.add(elem_data.get("name", ""))
+                        name = elem_data.get("name", "")
+                        if name:
+                            code_elements_dict[name] = elem_data
                 except Exception:
                     continue
 
-        # Convert set to dict format expected by CodeReferenceValidator
-        code_elements_dict: dict[str, dict[str, Any]] = {
-            name: {} for name in code_elements_set if name
-        }
         validator = CodeReferenceValidator(
             repo_path=self.repo_path,
             changed_files=changed_file_paths,
@@ -844,8 +842,13 @@ class AnalysisPipeline:
             try:
                 storage_policy = self.metadata.storage_policy
 
+                # Check if render_png flag is set in metadata
+                render_png = getattr(self.metadata, "render_png", False)
+
                 agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
-                path = agent.generate(storage_policy=storage_policy)
+                path = agent.generate(
+                    storage_policy=storage_policy, render_png=render_png
+                )
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:

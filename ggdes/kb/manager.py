@@ -82,6 +82,9 @@ class AnalysisMetadata(BaseModel):
     # Generated documents tracking
     documents: list[DocumentInfo] = Field(default_factory=list)
 
+    # Render markdown to PNG images
+    render_png: bool = False
+
     @field_validator("updated_at", mode="before")
     @classmethod
     def update_timestamp(cls, v: datetime, info: Any) -> datetime:

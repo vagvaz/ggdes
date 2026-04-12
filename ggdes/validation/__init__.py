@@ -1,6 +1,7 @@
 """Validation and guardrails."""
 
 from ggdes.validation.code_references import (
+    CodeBlockValidationResult,
     CodeReference,
     CodeReferenceValidator,
     ReferenceValidationResult,
@@ -15,6 +16,7 @@ from ggdes.validation.validators import (
 
 __all__ = [
     "ASTValidator",
+    "CodeBlockValidationResult",
     "CodeReference",
     "CodeReferenceValidator",
     "InputValidator",

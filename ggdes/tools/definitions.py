@@ -290,6 +290,40 @@ TOOL_GET_AST_ELEMENTS = ToolDefinition(
     returns="List of code elements with name, type, signature, file path, and line numbers",
 )
 
+TOOL_GET_ELEMENT_SOURCE = ToolDefinition(
+    name="get_element_source",
+    description=(
+        "Get the actual source code for a named code element (function, class, method). "
+        "Use this tool BEFORE describing what a function or class does, to ensure your "
+        "description matches the real implementation. This is the PRIMARY anti-hallucination "
+        "tool: always call this when you need to reference or describe specific code behavior, "
+        "signatures, or implementation details. Never guess or fabricate code — always retrieve "
+        "the actual source first."
+    ),
+    parameters=[
+        ToolParameter(
+            name="element_name",
+            type="string",
+            description="Name of the code element (function, class, or method name) to retrieve source for",
+            required=True,
+        ),
+        ToolParameter(
+            name="file_path",
+            type="string",
+            description="Optional file path to narrow the search scope when multiple elements share the same name",
+            required=False,
+        ),
+        ToolParameter(
+            name="max_lines",
+            type="integer",
+            description="Maximum number of source lines to return (default: 50, to avoid overwhelming context)",
+            required=False,
+        ),
+    ],
+    returns="Source code of the element with file path, line numbers, signature, and docstring. "
+    "Returns an error if the element is not found.",
+)
+
 # All available tools
 TOOL_DEFINITIONS: List[ToolDefinition] = [
     TOOL_GET_CHANGED_FILES,
@@ -297,6 +331,7 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
     TOOL_SEARCH_CODE,
     TOOL_VALIDATE_REFERENCE,
     TOOL_GET_AST_ELEMENTS,
+    TOOL_GET_ELEMENT_SOURCE,
 ]
 
 # Lookup by name

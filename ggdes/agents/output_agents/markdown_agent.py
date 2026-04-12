@@ -252,6 +252,26 @@ title {diagram.title}
 
         console.print(f"  [green]✓ Document saved:[/green] {output_path}")
 
+        # Optionally render markdown to PNG images
+        render_png = kwargs.get("render_png", False)
+        if render_png:
+            try:
+                from ggdes.rendering import MarkdownToPngRenderer
+
+                renderer = MarkdownToPngRenderer(
+                    output_dir=self.repo_path / "docs" / "diagrams"
+                )
+                png_paths = renderer.render(output_path, sections=True)
+                console.print(
+                    f"  [green]✓ Rendered {len(png_paths)} diagram images[/green]"
+                )
+            except ImportError:
+                console.print(
+                    "  [yellow]⚠ Playwright not installed. Install with: pip install ggdes[render] && playwright install chromium[/yellow]"
+                )
+            except Exception as e:
+                console.print(f"  [yellow]⚠ PNG rendering failed: {e}[/yellow]")
+
         # Save conversation
         from ggdes.config import get_kb_path
 
@@ -279,9 +299,26 @@ Technical Facts to Include:
 """
         for fact in facts:
             prompt += f"- [{fact.category}] {fact.description}\n"
+            # Include source code snippets from facts
+            if fact.code_snippets:
+                for elem_name, code in list(fact.code_snippets.items())[:3]:
+                    truncated = code[:500] + "..." if len(code) > 500 else code
+                    prompt += (
+                        f"  Actual source ({elem_name}):\n  ```\n  {truncated}\n  ```\n"
+                    )
 
         if section.code_references:
             prompt += f"\nCode References: {', '.join(section.code_references)}\n"
+
+        # Include source code from section plan (passed through from coordinator)
+        if section.source_code:
+            prompt += (
+                "\n=== ACTUAL SOURCE CODE (use ONLY this code for references) ===\n"
+            )
+            for elem_name, code in list(section.source_code.items())[:5]:
+                truncated = code[:500] + "..." if len(code) > 500 else code
+                prompt += f"\n{elem_name}:\n```\n{truncated}\n```\n"
+            prompt += "\n=== END SOURCE CODE ===\n"
 
         prompt += """
 Requirements:
@@ -290,6 +327,7 @@ Requirements:
 - Include specific details from the facts
 - Explain the "why" not just the "what"
 - Keep it concise but comprehensive
+- IMPORTANT: Only include code blocks that match the ACTUAL SOURCE CODE provided above. Do NOT fabricate or hallucinate code. If you reference code, use the exact code shown in the source sections above.
 
 Write the section content now:"""
 
