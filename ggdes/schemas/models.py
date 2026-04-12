@@ -40,6 +40,11 @@ class FileChange(BaseModel):
     lines_added: int = Field(default=0, description="Number of lines added")
     lines_deleted: int = Field(default=0, description="Number of lines deleted")
     summary: str = Field(description="Brief summary of what changed in this file")
+    relevant_line_ranges: list[tuple[int, int]] | None = Field(
+        default=None,
+        description="Line ranges relevant to the feature (1-based, inclusive). "
+        "Only set when semantic filtering is enabled. None means all lines are relevant.",
+    )
 
 
 class ChangeSummary(BaseModel):
@@ -64,6 +69,16 @@ class ChangeSummary(BaseModel):
     )
     dependencies_changed: list[str] = Field(
         default_factory=list, description="New/modified dependencies"
+    )
+    feature_description: str | None = Field(
+        default=None,
+        description="Feature description used for semantic filtering. "
+        "None means no filtering was applied.",
+    )
+    is_filtered: bool = Field(
+        default=False,
+        description="Whether semantic filtering was applied to this change summary. "
+        "When True, files_changed only contains files relevant to the feature.",
     )
 
 

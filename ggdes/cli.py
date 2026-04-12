@@ -1,6 +1,7 @@
 """CLI for GGDes."""
 
 import hashlib
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional
@@ -168,6 +169,12 @@ def analyze(
             help="Enable semantic diff analysis (slower but more detailed). Disable for faster analysis."
         ),
     ] = True,
+    no_filter: Annotated[
+        bool,
+        typer.Option(
+            help="Disable semantic change filtering. By default, changes are filtered to only include those relevant to the feature."
+        ),
+    ] = False,
     render_png: Annotated[
         bool,
         typer.Option(help="Render markdown output to PNG images (requires playwright)"),
@@ -333,6 +340,10 @@ def analyze(
 
             # Store render_png flag in metadata for pipeline use
             metadata.render_png = render_png
+
+            # Store feature description for semantic filtering
+            metadata.feature_description = feature
+            metadata.no_filter = no_filter
             kb_manager.save_metadata(analysis_id, metadata)
 
             # Setup logging
@@ -413,6 +424,22 @@ def analyze(
                 ].status = StageStatus.SKIPPED
                 metadata.stages[
                     kb_manager.STAGE_SEMANTIC_DIFF
+                ].status = StageStatus.SKIPPED
+                kb_manager.save_metadata(analysis_id, metadata)
+
+            # Configure change filter stage
+            if no_filter:
+                logger.info(
+                    "Semantic change filtering disabled - skipping change filter stage"
+                )
+                console.print(
+                    "[dim]Change filtering disabled - analyzing all changes[/dim]"
+                )
+
+                from ggdes.kb import StageStatus
+
+                metadata.stages[
+                    kb_manager.STAGE_CHANGE_FILTER
                 ].status = StageStatus.SKIPPED
                 kb_manager.save_metadata(analysis_id, metadata)
 

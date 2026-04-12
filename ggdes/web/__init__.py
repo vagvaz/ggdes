@@ -288,7 +288,7 @@ async def create_analysis(
     target_formats = formats or ["markdown"]
 
     try:
-        kb.create_analysis(
+        metadata = kb.create_analysis(
             analysis_id=analysis_id,
             name=name,
             repo_path=Path(config.repo.path) if config.repo.path else Path.cwd(),

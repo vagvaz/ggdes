@@ -8,13 +8,14 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
 from rich.console import Console
 
 from ggdes.agents import GitAnalyzer
 from ggdes.config import GGDesConfig, ParsingMode
 from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
-from ggdes.schemas import CodeElement, StoragePolicy
+from ggdes.schemas import ChangeSummary, CodeElement, StoragePolicy
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
@@ -62,6 +63,11 @@ class AnalysisPipeline:
                 return True
 
         console.print(f"\n[bold]Running stage:[/bold] {stage_name}")
+        logger.info(
+            "Pipeline stage starting | stage=%s analysis=%s",
+            stage_name,
+            self.analysis_id,
+        )
 
         with self._metadata_lock:
             self.metadata.start_stage(stage_name)
@@ -72,6 +78,8 @@ class AnalysisPipeline:
                 success = self._run_worktree_setup()
             elif stage_name == self.kb_manager.STAGE_GIT_ANALYSIS:
                 success = self._run_git_analysis()
+            elif stage_name == self.kb_manager.STAGE_CHANGE_FILTER:
+                success = self._run_change_filter()
             elif stage_name == self.kb_manager.STAGE_AST_PARSING_BASE:
                 success = self._run_ast_parsing("base")
             elif stage_name == self.kb_manager.STAGE_AST_PARSING_HEAD:
@@ -98,11 +106,21 @@ class AnalysisPipeline:
                     self.metadata.complete_stage(stage_name)
                     self.kb_manager.save_metadata(self.analysis_id, self.metadata)
                     console.print(f"[green]✓ Stage completed:[/green] {stage_name}")
+                    logger.info(
+                        "Pipeline stage completed | stage=%s analysis=%s",
+                        stage_name,
+                        self.analysis_id,
+                    )
                     return True
                 else:
                     self.metadata.fail_stage(stage_name, "Stage returned False")
                     self.kb_manager.save_metadata(self.analysis_id, self.metadata)
                     console.print(f"[red]✗ Stage failed:[/red] {stage_name}")
+                    logger.error(
+                        "Pipeline stage failed | stage=%s analysis=%s",
+                        stage_name,
+                        self.analysis_id,
+                    )
                     return False
 
         except Exception as e:
@@ -110,6 +128,11 @@ class AnalysisPipeline:
                 self.metadata.fail_stage(stage_name, str(e))
                 self.kb_manager.save_metadata(self.analysis_id, self.metadata)
             console.print(f"[red]✗ Stage failed:[/red] {stage_name} - {e}")
+            logger.exception(
+                "Pipeline stage exception | stage=%s analysis=%s",
+                stage_name,
+                self.analysis_id,
+            )
             return False
 
     def run_parallel_group(self, stage_names: list[str]) -> dict[str, bool]:
@@ -383,6 +406,104 @@ class AnalysisPipeline:
 
         return True
 
+    def _run_change_filter(self) -> bool:
+        """Filter changes by semantic relevance to the feature.
+
+        Uses the feature description from metadata (derived from --feature flag
+        or user context) to classify which changed files are relevant.
+
+        If no feature description is available, this stage is skipped.
+        """
+        # Get feature description from metadata
+        feature_description = getattr(self.metadata, "feature_description", None)
+
+        # Fall back to the analysis name if no explicit feature description
+        if not feature_description:
+            feature_description = self.metadata.name
+
+        # Check if filtering is explicitly disabled
+        if getattr(self.metadata, "no_filter", False):
+            console.print(
+                "  [dim]Semantic filtering disabled (--no-filter), skipping[/dim]"
+            )
+            return True
+
+        # Load the change summary from git analysis
+        summary_path = (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "git_analysis"
+            / "summary.json"
+        )
+
+        if not summary_path.exists():
+            console.print(
+                "  [yellow]No git analysis found, skipping change filter[/yellow]"
+            )
+            return True
+
+        try:
+            data = json.loads(summary_path.read_text())
+            change_summary = ChangeSummary(**data)
+        except Exception as e:
+            console.print(f"  [red]Error loading change summary:[/red] {e}")
+            return False
+
+        # If already filtered, skip
+        if change_summary.is_filtered:
+            console.print("  [dim]Changes already filtered, skipping[/dim]")
+            return True
+
+        # Get the git diff for classification
+        from ggdes.agents import GitAnalyzer
+
+        user_context = getattr(self.metadata, "user_context", None)
+        analyzer = GitAnalyzer(
+            self.repo_path, self.config, self.analysis_id, user_context=user_context
+        )
+
+        commit_range = self.metadata.commit_range
+        focus_commits = self.metadata.focus_commits
+
+        try:
+            diff = analyzer.get_diff(commit_range, focus_commits)
+        except Exception as e:
+            console.print(f"  [red]Error getting git diff:[/red] {e}")
+            return False
+
+        # Run the change filter
+        from ggdes.agents.change_filter import ChangeFilter
+
+        try:
+            change_filter = ChangeFilter(
+                config=self.config,
+                feature_description=feature_description,
+            )
+
+            filtered_summary = change_filter.filter_changes(change_summary, diff)
+
+            # Save the filtered summary (overwrites the original)
+            summary_path.write_text(json.dumps(filtered_summary.model_dump(), indent=2))
+
+            # Also save the original as a backup
+            backup_path = (
+                self.kb_manager.get_analysis_path(self.analysis_id)
+                / "git_analysis"
+                / "summary_unfiltered.json"
+            )
+            backup_path.write_text(json.dumps(change_summary.model_dump(), indent=2))
+
+            console.print(
+                f"  [dim]Filtered: {len(change_summary.files_changed)} → "
+                f"{len(filtered_summary.files_changed)} files[/dim]"
+            )
+
+        except Exception as e:
+            console.print(f"  [red]Change filter failed:[/red] {e}")
+            console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            return False
+
+        return True
+
     def _run_ast_parsing(self, variant: str) -> bool:
         """Parse AST for a worktree (base or head).
 
@@ -569,6 +690,7 @@ class AnalysisPipeline:
                             "lines_added": f.get("lines_added", 0),
                             "lines_deleted": f.get("lines_deleted", 0),
                             "summary": f.get("summary", ""),
+                            "relevant_line_ranges": f.get("relevant_line_ranges"),
                         }
                     )
             return result

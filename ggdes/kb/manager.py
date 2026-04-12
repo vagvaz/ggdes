@@ -73,6 +73,12 @@ class AnalysisMetadata(BaseModel):
     # User-provided context for all agents
     user_context: Optional[Dict[str, Any]] = None
 
+    # Feature description for semantic change filtering
+    feature_description: str | None = None
+
+    # Whether to disable semantic filtering
+    no_filter: bool = False
+
     # Worktree information
     worktrees: WorktreeInfo | None = None
 
@@ -168,6 +174,7 @@ class KnowledgeBaseManager:
     # Standard stage names
     STAGE_WORKTREE_SETUP = "worktree_setup"
     STAGE_GIT_ANALYSIS = "git_analysis"
+    STAGE_CHANGE_FILTER = "change_filter"
     STAGE_AST_PARSING_BASE = "ast_parsing_base"
     STAGE_AST_PARSING_HEAD = "ast_parsing_head"
     STAGE_SEMANTIC_DIFF = "semantic_diff"
@@ -178,6 +185,7 @@ class KnowledgeBaseManager:
     ALL_STAGES = [
         STAGE_WORKTREE_SETUP,
         STAGE_GIT_ANALYSIS,
+        STAGE_CHANGE_FILTER,
         STAGE_AST_PARSING_BASE,
         STAGE_AST_PARSING_HEAD,
         STAGE_SEMANTIC_DIFF,
