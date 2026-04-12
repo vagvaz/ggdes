@@ -99,7 +99,9 @@ class PlantUMLGenerator:
             )
 
             # PlantUML creates file with same name but different extension
-            generated_file = temp_input.with_suffix(f".{format}")
+            # When -o flag is used, output goes to the specified directory
+            # with the temp file's base name
+            generated_file = output_file.parent / (temp_input.stem + f".{format}")
             if generated_file.exists():
                 generated_file.rename(output_file)
 
