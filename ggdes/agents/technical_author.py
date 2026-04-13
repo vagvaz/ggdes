@@ -1,6 +1,7 @@
 """Technical Author Agent for synthesizing code analysis into technical facts."""
 
 import asyncio
+import difflib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -168,6 +169,37 @@ class TechnicalAuthor:
         data = json.loads(analysis_path.read_text())
         return ChangeSummary(**data)
 
+    def _get_worktree_paths(self) -> tuple[Path | None, Path | None]:
+        """Get base and head worktree paths from metadata.
+
+        Returns:
+            Tuple of (base_worktree_path, head_worktree_path) or (None, None) if not available
+        """
+        from ggdes.config import get_kb_path
+        from ggdes.kb import KnowledgeBaseManager
+
+        try:
+            kb_path = get_kb_path(self.config, self.analysis_id)
+            metadata_file = kb_path / "metadata.json"
+            if metadata_file.exists():
+                data = json.loads(metadata_file.read_text())
+                worktrees = data.get("worktrees")
+                if worktrees:
+                    base = (
+                        Path(worktrees.get("base", ""))
+                        if worktrees.get("base")
+                        else None
+                    )
+                    head = (
+                        Path(worktrees.get("head", ""))
+                        if worktrees.get("head")
+                        else None
+                    )
+                    return base, head
+        except Exception:
+            pass
+        return None, None
+
     def _load_ast_data(self, which: str = "head") -> list[CodeElement]:
         """Load AST data from KB.
 
@@ -234,44 +266,136 @@ class TechnicalAuthor:
         if not elements:
             return ""
 
-        context_parts = []
+        context_parts: list[str] = []
         included = 0
 
-        for elem in elements:
-            if included >= max_elements:
-                context_parts.append(
-                    f"\n... and {len(elements) - included} more elements (truncated)"
-                )
-                break
+    def _find_usages_in_worktree(
+        self,
+        element_name: str,
+        worktree_path: Path,
+        max_examples: int = 3,
+        context_lines: int = 3,
+    ) -> list[str]:
+        """Find usage examples of a function/method in a worktree's source files.
 
-            # Use source_code from CodeElement if available
-            if elem.source_code:
-                # Truncate long source code
-                lines = elem.source_code.splitlines()
-                if len(lines) > max_lines_per_element:
-                    truncated = "\n".join(lines[:max_lines_per_element])
-                    truncated += (
-                        f"\n... ({len(lines) - max_lines_per_element} more lines)"
-                    )
-                    source = truncated
-                else:
-                    source = elem.source_code
+        Searches for call sites of the given element (not its definition) and
+        returns the surrounding context lines as usage examples.
 
-                context_parts.append(
-                    f"### {elem.name} ({elem.element_type.value}) in {elem.file_path}\n"
-                    f"Lines {elem.start_line}-{elem.end_line}\n"
-                    f"```{self._get_language_hint(elem.file_path)}\n{source}\n```"
-                )
-                included += 1
-            elif elem.signature:
-                # Fall back to signature-only if no source code
-                context_parts.append(
-                    f"### {elem.name} ({elem.element_type.value}) in {elem.file_path}\n"
-                    f"Signature: {elem.signature}"
-                )
-                included += 1
+        Args:
+            element_name: Name of the function/method to find usages for
+            worktree_path: Path to the worktree to search in
+            max_examples: Maximum number of usage examples to return
+            context_lines: Number of lines before/after the call to include
 
-        return "\n\n".join(context_parts) if context_parts else ""
+        Returns:
+            List of code snippets showing usage examples
+        """
+        import re
+
+        # Build search patterns for different languages
+        # C++: ClassName::MethodName( or just MethodName(
+        # Python: func_name(
+        # Java/JS: methodName(
+        # For C++-style, also try without class prefix
+        search_names = [element_name]
+        if "::" in element_name:
+            # It's a C++ method, also try just the method name
+            method_part = element_name.split("::")[-1]
+            search_names.append(method_part)
+
+        # Find source files to search
+        if not worktree_path.exists():
+            return []
+
+        # Build regex patterns for each name variant
+        # Match function calls but NOT definitions
+        patterns = []
+        for name in search_names:
+            # Match: word( or word.word( but not: def word( or class word( or word word(
+            # This is tricky with regex, so we'll do line-by-line matching
+            patterns.append(name)
+
+        examples: list[tuple[int, str]] = []  # (priority, snippet)
+        seen_signatures: set[str] = set()
+
+        # Walk all source files
+        for src_dir in ["src", "lib", "include", "core"]:
+            src_path = worktree_path / src_dir
+            if not src_path.exists():
+                continue
+
+            try:
+                for file_path in src_path.rglob("*"):
+                    if not file_path.is_file():
+                        continue
+                    ext = file_path.suffix.lower()
+                    if ext not in {
+                        ".py",
+                        ".cpp",
+                        ".cc",
+                        ".cxx",
+                        ".hpp",
+                        ".h",
+                        ".java",
+                        ".js",
+                        ".ts",
+                        ".go",
+                        ".rs",
+                    }:
+                        continue
+
+                    try:
+                        content = file_path.read_text(errors="ignore")
+                    except Exception:
+                        continue
+
+                        lines = content.splitlines()
+                        for i, line in enumerate(lines):
+                            for name in search_names:
+                                # Look for function call pattern: name(
+                                # But exclude definition lines
+                                if f"{name}(" not in line:
+                                    continue
+                                # Skip if this looks like a definition
+                                stripped = line.strip()
+                                if any(
+                                    stripped.startswith(kw)
+                                    for kw in [
+                                        "def ",
+                                        "class ",
+                                        "fn ",
+                                        "func ",
+                                        "struct ",
+                                        "enum ",
+                                    ]
+                                ):
+                                    continue
+                                # Skip if it's the function definition itself
+                                if f"{name}(" in line and ("{" in line or "=" in line):
+                                    # Check if it's the definition (has { or = after or is alone on line)
+                                    # It's a definition, skip it
+                                    continue
+
+                                # Extract context
+                                start = max(0, i - context_lines)
+                                end = min(len(lines), i + context_lines + 1)
+                                context = lines[start:end]
+                                snippet = "\n".join(context)
+                                snippet_hash = hash(snippet)
+
+                                if snippet_hash not in seen_signatures:
+                                    seen_signatures.add(snippet_hash)
+                                    # Priority: prefer shorter snippets (more likely to be a call site)
+                                    priority = len(snippet)
+                                    examples.append((priority, snippet))
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        # Sort by priority (shorter first) and return top examples
+        examples.sort(key=lambda x: x[0])
+        return [ex[1] for _, ex in examples[:max_examples]]
 
     def _get_language_hint(self, file_path: str) -> str:
         """Get language hint for code block from file extension."""
@@ -319,6 +443,208 @@ class TechnicalAuthor:
                 else:
                     snippets[elem.name] = elem.source_code
         return snippets
+
+    def _compute_source_diffs(
+        self,
+        base_elements: list[CodeElement],
+        head_elements: list[CodeElement],
+        max_diffs: int = 20,
+        max_lines_per_diff: int = 60,
+    ) -> dict[str, dict[str, str]]:
+        """Compute source code diffs between base and head versions of elements.
+
+        For each element that exists in both base and head with different source code,
+        produce a unified diff showing what changed.
+
+        Args:
+            base_elements: AST elements from the base commit
+            head_elements: AST elements from the head commit
+            max_diffs: Maximum number of diffs to compute
+            max_lines_per_diff: Maximum lines per diff output
+
+        Returns:
+            Dict mapping element key (file_path::name) to:
+            {
+                "before": <base source code>,
+                "after": <head source code>,
+                "diff": <unified diff string>,
+                "element_name": <name>,
+                "file_path": <file path>,
+            }
+        """
+        # Build lookups by key (file_path::name)
+        base_by_key = {
+            f"{e.file_path}::{e.name}": e for e in base_elements if e.source_code
+        }
+        head_by_key = {
+            f"{e.file_path}::{e.name}": e for e in head_elements if e.source_code
+        }
+
+        # Find elements that exist in both with different source code
+        common_keys = set(base_by_key.keys()) & set(head_by_key.keys())
+        changed_keys = []
+        for key in common_keys:
+            base_src = base_by_key[key].source_code or ""
+            head_src = head_by_key[key].source_code or ""
+            if base_src != head_src:
+                changed_keys.append(key)
+
+        # Also include new elements (only in head) with their full source
+        new_keys = set(head_by_key.keys()) - set(base_by_key.keys())
+
+        # Also include deleted elements (only in base) with their full source
+        deleted_keys = set(base_by_key.keys()) - set(head_by_key.keys())
+
+        diffs: dict[str, dict[str, str]] = {}
+
+        # Prioritize changed elements (most valuable for understanding diffs)
+        for key in changed_keys[:max_diffs]:
+            base_elem = base_by_key[key]
+            head_elem = head_by_key[key]
+            base_lines = (base_elem.source_code or "").splitlines(keepends=True)
+            head_lines = (head_elem.source_code or "").splitlines(keepends=True)
+
+            # Produce unified diff
+            diff_lines = list(
+                difflib.unified_diff(
+                    base_lines,
+                    head_lines,
+                    fromfile=f"base/{base_elem.file_path}",
+                    tofile=f"head/{head_elem.file_path}",
+                    n=3,  # context lines
+                )
+            )
+
+            # Truncate long diffs
+            if len(diff_lines) > max_lines_per_diff:
+                diff_text = (
+                    "".join(diff_lines[: max_lines_per_diff // 2])
+                    + "\n... (truncated) ...\n"
+                    + "".join(diff_lines[-max_lines_per_diff // 2 :])
+                )
+            else:
+                diff_text = "".join(diff_lines)
+
+            diffs[key] = {
+                "before": base_elem.source_code or "",
+                "after": head_elem.source_code or "",
+                "diff": diff_text,
+                "element_name": head_elem.name,
+                "file_path": head_elem.file_path,
+            }
+
+        # Include new elements (no before, just after)
+        remaining = max_diffs - len(diffs)
+        for key in list(new_keys)[:remaining]:
+            head_elem = head_by_key[key]
+            diffs[key] = {
+                "before": "",
+                "after": head_elem.source_code or "",
+                "diff": f"+++ NEW: {head_elem.name} in {head_elem.file_path}\n"
+                + (head_elem.source_code or ""),
+                "element_name": head_elem.name,
+                "file_path": head_elem.file_path,
+            }
+
+        # Include deleted elements (no after, just before)
+        remaining = max_diffs - len(diffs)
+        for key in list(deleted_keys)[:remaining]:
+            base_elem = base_by_key[key]
+            diffs[key] = {
+                "before": base_elem.source_code or "",
+                "after": "",
+                "diff": f"--- DELETED: {base_elem.name} in {base_elem.file_path}\n"
+                + (base_elem.source_code or ""),
+                "element_name": base_elem.name,
+                "file_path": base_elem.file_path,
+            }
+
+        return diffs
+
+    def _build_diff_context(
+        self,
+        source_diffs: dict[str, dict[str, str]],
+        max_diffs: int = 15,
+        max_lines_per_element: int = 40,
+    ) -> str:
+        """Build a formatted context string from source code diffs.
+
+        This provides the LLM with before/after source code comparisons so it
+        can accurately describe what changed instead of fabricating details.
+
+        Args:
+            source_diffs: Output from _compute_source_diffs()
+            max_diffs: Maximum number of diffs to include
+            max_lines_per_element: Maximum lines per before/after block
+
+        Returns:
+            Formatted string with source code diffs
+        """
+        if not source_diffs:
+            return ""
+
+        parts = []
+        included = 0
+
+        for key, diff_data in source_diffs.items():
+            if included >= max_diffs:
+                parts.append(
+                    f"\n... and {len(source_diffs) - included} more diffs (truncated)"
+                )
+                break
+
+            element_name = diff_data["element_name"]
+            file_path = diff_data["file_path"]
+            before = diff_data["before"]
+            after = diff_data["after"]
+            diff_text = diff_data["diff"]
+
+            section = f"### {element_name} in {file_path}"
+
+            if before and after:
+                # Modified element: show before/after + diff
+                before_lines = before.splitlines()
+                after_lines = after.splitlines()
+
+                before_truncated = "\n".join(before_lines[:max_lines_per_element])
+                if len(before_lines) > max_lines_per_element:
+                    before_truncated += f"\n... ({len(before_lines) - max_lines_per_element} more lines)"
+
+                after_truncated = "\n".join(after_lines[:max_lines_per_element])
+                if len(after_lines) > max_lines_per_element:
+                    after_truncated += (
+                        f"\n... ({len(after_lines) - max_lines_per_element} more lines)"
+                    )
+
+                lang = self._get_language_hint(file_path)
+                section += f"\n**BEFORE:**\n```{lang}\n{before_truncated}\n```\n"
+                section += f"**AFTER:**\n```{lang}\n{after_truncated}\n```\n"
+                section += f"**DIFF:**\n```diff\n{diff_text}\n```"
+            elif after and not before:
+                # New element
+                after_lines = after.splitlines()
+                after_truncated = "\n".join(after_lines[:max_lines_per_element])
+                if len(after_lines) > max_lines_per_element:
+                    after_truncated += (
+                        f"\n... ({len(after_lines) - max_lines_per_element} more lines)"
+                    )
+
+                lang = self._get_language_hint(file_path)
+                section += f"\n**NEW ELEMENT:**\n```{lang}\n{after_truncated}\n```"
+            elif before and not after:
+                # Deleted element
+                before_lines = before.splitlines()
+                before_truncated = "\n".join(before_lines[:max_lines_per_element])
+                if len(before_lines) > max_lines_per_element:
+                    before_truncated += f"\n... ({len(before_lines) - max_lines_per_element} more lines)"
+
+                lang = self._get_language_hint(file_path)
+                section += f"\n**DELETED ELEMENT:**\n```{lang}\n{before_truncated}\n```"
+
+            parts.append(section)
+            included += 1
+
+        return "\n\n".join(parts) if parts else ""
 
     async def synthesize(
         self,
@@ -385,10 +711,21 @@ class TechnicalAuthor:
                 f"  [dim]Dropping {non_changed_head} head AST elements not in changed files[/dim]"
             )
 
+        # Compute source code diffs between base and head
+        source_diffs = self._compute_source_diffs(changed_base, changed_head)
+        diff_context = self._build_diff_context(source_diffs)
+        console.print(
+            f"  [dim]Computed {len(source_diffs)} source code diffs between base and head[/dim]"
+        )
+
+        # Pre-load source diffs into tool executor so get_element_source is instant
+        if self.tool_executor and source_diffs:
+            self.tool_executor.set_source_diffs_cache(source_diffs)
+
         if parallel:
             # Run all three analysis turns in parallel
             all_facts = await self._analyze_parallel(
-                change_summary, changed_base, changed_head
+                change_summary, changed_base, changed_head, source_diffs, diff_context
             )
         else:
             # Sequential execution
@@ -396,13 +733,21 @@ class TechnicalAuthor:
 
             # Turn 1: API Changes Analysis (only changed elements)
             api_facts = await self._analyze_api_changes(
-                change_summary, changed_base, changed_head
+                change_summary,
+                changed_base,
+                changed_head,
+                source_diffs=source_diffs,
+                diff_context=diff_context,
             )
             all_facts.extend(api_facts)
 
             # Turn 2: Behavioral Changes Analysis (only changed elements)
             behavior_facts = await self._analyze_behavioral_changes(
-                change_summary, changed_base, changed_head
+                change_summary,
+                changed_base,
+                changed_head,
+                source_diffs=source_diffs,
+                diff_context=diff_context,
             )
             all_facts.extend(behavior_facts)
 
@@ -432,7 +777,9 @@ class TechnicalAuthor:
             )
 
         # Enrich facts with source code snippets from AST elements
-        all_facts = self._enrich_facts_with_source_code(all_facts, changed_head)
+        all_facts = self._enrich_facts_with_source_code(
+            all_facts, changed_head, source_diffs
+        )
 
         # Save facts to KB
         self._save_facts(all_facts)
@@ -445,10 +792,12 @@ class TechnicalAuthor:
         base_elements: list[CodeElement],
         head_elements: list[CodeElement],
         conversation: ConversationContext | None = None,
+        source_diffs: dict[str, dict[str, str]] | None = None,
+        diff_context: str | None = None,
     ) -> list[TechnicalFact]:
         """Analyze API changes (signatures, new/deleted functions)."""
         logger.info(
-            "Technical Author: analyzing API changes | files=%d",
+            "Technical Author: analyzing API changes | files={}",
             len(change_summary.files_changed),
         )
         conv = conversation or self.conversation
@@ -528,6 +877,16 @@ Modified APIs ({len(modified_apis)}):
                 prompt += f"- {api['name']} in {api['file']}\n"
                 prompt += f"  Old: {api['old_sig']}\n"
                 prompt += f"  New: {api['new_sig']}\n"
+
+            # Include source code diffs if available
+            if diff_context:
+                prompt += f"""
+
+SOURCE CODE DIFFS (before/after comparisons of changed elements):
+{diff_context}
+
+Use the above source code diffs to accurately describe what changed. Reference the actual code in your descriptions.
+"""
 
             prompt += """
 Before writing your analysis, use the get_element_source tool to retrieve the actual source code for key functions and classes. This ensures your descriptions are grounded in real code.
@@ -619,10 +978,12 @@ Format as JSON array of TechnicalFact objects."""
         base_elements: list[CodeElement],
         head_elements: list[CodeElement],
         conversation: ConversationContext | None = None,
+        source_diffs: dict[str, dict[str, str]] | None = None,
+        diff_context: str | None = None,
     ) -> list[TechnicalFact]:
         """Analyze behavioral changes (what code does differently)."""
         logger.info(
-            "Technical Author: analyzing behavioral changes | files=%d",
+            "Technical Author: analyzing behavioral changes | files={}",
             len(change_summary.files_changed),
         )
         conv = conversation or self.conversation
@@ -646,6 +1007,16 @@ Files Changed ({len(change_summary.files_changed)}):
 """
         for f in change_summary.files_changed[:10]:
             prompt += f"- {f.path}: {f.summary}\n"
+
+        # Include source code diffs if available — this is the key anti-hallucination measure
+        if diff_context:
+            prompt += f"""
+
+SOURCE CODE DIFFS (before/after comparisons of changed elements):
+{diff_context}
+
+Use the above source code diffs to accurately describe what changed. When describing behavioral changes, reference the actual before/after code. Do NOT fabricate code — use the diffs provided above.
+"""
 
         prompt += f"""
 IMPORTANT: Only analyze behavioral changes in the {len(changed_files)} files that were changed. Do not reference files that were not in the git diff.
@@ -703,7 +1074,7 @@ Format as JSON array."""
     ) -> list[TechnicalFact]:
         """Analyze architecture/dependency changes."""
         logger.info(
-            "Technical Author: analyzing architecture changes | deps_changed=%d",
+            "Technical Author: analyzing architecture changes | deps_changed={}",
             len(change_summary.dependencies_changed),
         )
         facts = []
@@ -749,6 +1120,8 @@ Format as JSON array."""
         change_summary: ChangeSummary,
         changed_base: list[CodeElement],
         changed_head: list[CodeElement],
+        source_diffs: dict[str, dict[str, str]] | None = None,
+        diff_context: str | None = None,
     ) -> list[TechnicalFact]:
         """Run all three analysis turns in parallel using separate conversation contexts."""
         from ggdes.llm import ConversationContext
@@ -770,10 +1143,20 @@ Format as JSON array."""
 
         api_facts, behavior_facts, arch_facts = await asyncio.gather(
             self._analyze_api_changes(
-                change_summary, changed_base, changed_head, conversation=api_conv
+                change_summary,
+                changed_base,
+                changed_head,
+                conversation=api_conv,
+                source_diffs=source_diffs,
+                diff_context=diff_context,
             ),
             self._analyze_behavioral_changes(
-                change_summary, changed_base, changed_head, conversation=behavior_conv
+                change_summary,
+                changed_base,
+                changed_head,
+                conversation=behavior_conv,
+                source_diffs=source_diffs,
+                diff_context=diff_context,
             ),
             self._analyze_architecture_changes(
                 change_summary, changed_base, changed_head
@@ -907,27 +1290,38 @@ Format as JSON array."""
         return validated
 
     def _enrich_facts_with_source_code(
-        self, facts: list[TechnicalFact], ast_elements: list[CodeElement]
+        self,
+        facts: list[TechnicalFact],
+        ast_elements: list[CodeElement],
+        source_diffs: dict[str, dict[str, str]] | None = None,
     ) -> list[TechnicalFact]:
         """Enrich technical facts with source code snippets from AST elements.
 
         Populates the code_snippets field on each fact with actual source code
-        for the elements referenced in source_elements. This ensures downstream
-        agents (coordinator, output agents) have access to real code instead of
-        having to fabricate it.
+        for the elements referenced in source_elements. Also populates
+        before_after_code with before/after comparisons from source diffs.
 
         Args:
             facts: List of technical facts to enrich
             ast_elements: List of code elements with source_code populated
+            source_diffs: Optional dict from _compute_source_diffs() with before/after code
 
         Returns:
-            Enriched facts with code_snippets populated
+            Enriched facts with code_snippets and before_after_code populated
         """
         # Build lookup: element name -> source code
         element_source: dict[str, str] = {}
         for elem in ast_elements:
             if elem.source_code:
                 element_source[elem.name] = elem.source_code
+
+        # Build lookup: element name -> diff data (before/after)
+        diff_by_name: dict[str, dict[str, str]] = {}
+        if source_diffs:
+            for key, diff_data in source_diffs.items():
+                elem_name = diff_data.get("element_name", "")
+                if elem_name:
+                    diff_by_name[elem_name] = diff_data
 
         enriched = []
         for fact in facts:
@@ -959,6 +1353,45 @@ Format as JSON array."""
                         pass  # Graceful fallback
             if snippets:
                 fact.code_snippets = snippets
+
+            # Enrich with before/after code from source diffs
+            before_after: dict[str, dict[str, str]] = {}
+            for elem_name in fact.source_elements:
+                if elem_name in diff_by_name:
+                    diff_data = diff_by_name[elem_name]
+                    before_after[elem_name] = {
+                        "before": diff_data.get("before", ""),
+                        "after": diff_data.get("after", ""),
+                        "diff": diff_data.get("diff", ""),
+                    }
+            if before_after:
+                fact.before_after_code = before_after
+
+            # Enrich with usage examples from base and head worktrees
+            # Only for API-change facts where we can find real call sites
+            if fact.category in ("api", "api_change"):
+                usages: dict[str, dict[str, list[str]]] = {}
+                # Get worktree paths from metadata
+                base_worktree, head_worktree = self._get_worktree_paths()
+                for elem_name in fact.source_elements:
+                    before_usages: list[str] = []
+                    after_usages: list[str] = []
+                    if base_worktree:
+                        before_usages = self._find_usages_in_worktree(
+                            elem_name, base_worktree, max_examples=2
+                        )
+                    if head_worktree:
+                        after_usages = self._find_usages_in_worktree(
+                            elem_name, head_worktree, max_examples=2
+                        )
+                    if before_usages or after_usages:
+                        usages[elem_name] = {
+                            "before_usages": before_usages,
+                            "after_usages": after_usages,
+                        }
+                if usages:
+                    fact.usages = usages
+
             enriched.append(fact)
 
         return enriched

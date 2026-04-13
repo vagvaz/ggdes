@@ -35,6 +35,7 @@ class ToolExecutor:
         ast_elements: Optional[Dict[str, List[Any]]] = None,
         commit_range: Optional[str] = None,
         focus_commits: Optional[List[str]] = None,
+        source_diffs_cache: Optional[Dict[str, Dict[str, str]]] = None,
     ):
         """Initialize tool executor.
 
@@ -44,12 +45,15 @@ class ToolExecutor:
             ast_elements: Dict mapping file paths to AST element lists
             commit_range: Git commit range being analyzed
             focus_commits: Specific commits being focused on
+            source_diffs_cache: Pre-computed source code diffs (element_name -> {before, after, diff, file_path})
         """
         self.repo_path = repo_path
         self.changed_files = changed_files or []
         self.ast_elements = ast_elements or {}
         self.commit_range = commit_range
         self.focus_commits = focus_commits
+        # Pre-computed source diffs: keyed by element_name or "file_path::element_name"
+        self._source_diffs_cache: Dict[str, Dict[str, str]] = source_diffs_cache or {}
 
         # Build lookup structures
         self._element_names: Dict[str, List[str]] = {}  # name -> [file_paths]
@@ -68,6 +72,18 @@ class ToolExecutor:
                     if name not in self._element_names:
                         self._element_names[name] = []
                     self._element_names[name].append(file_path)
+
+    def set_source_diffs_cache(self, source_diffs: Dict[str, Dict[str, str]]) -> None:
+        """Set or update the pre-computed source diffs cache.
+
+        This lets get_element_source return instantly for cached elements
+        without requiring another LLM request.
+
+        Args:
+            source_diffs: Dict mapping element key (file_path::name or just name)
+                          to {before, after, diff, element_name, file_path}
+        """
+        self._source_diffs_cache = source_diffs
 
     def execute(self, call: ToolCall) -> ToolResult:
         """Execute a tool call.
@@ -663,6 +679,30 @@ class ToolExecutor:
         Returns:
             Dict with element source code, file path, line numbers, etc.
         """
+        # Fast path: check pre-loaded source diffs cache first (no LLM request needed)
+        if self._source_diffs_cache:
+            # Try file_path::name first, then just name
+            cache_key = f"{file_path}::{element_name}" if file_path else None
+            cache_key_name_only = element_name
+
+            cached = None
+            if cache_key and cache_key in self._source_diffs_cache:
+                cached = self._source_diffs_cache[cache_key]
+            elif cache_key_name_only in self._source_diffs_cache:
+                cached = self._source_diffs_cache[cache_key_name_only]
+
+            if cached:
+                return {
+                    "element_name": cached.get("element_name", element_name),
+                    "found": True,
+                    "file_path": cached.get("file_path", file_path or ""),
+                    "source_code": cached.get("after") or cached.get("before"),
+                    "before_code": cached.get("before"),
+                    "after_code": cached.get("after"),
+                    "diff": cached.get("diff"),
+                    "from_cache": True,
+                }
+
         # Search through AST elements for matching name
         candidates = []
 
