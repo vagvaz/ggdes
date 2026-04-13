@@ -40,6 +40,30 @@ class ReferenceValidationResult:
     error_message: str | None = None
 
 
+@dataclass
+class ProseClaim:
+    """A factual claim extracted from prose in LLM output."""
+
+    claim_text: str  # The full claim sentence
+    subject: str  # The thing being claimed about (e.g., "AddString overloads")
+    predicate: str  # What is claimed (e.g., "were removed", "is no longer")
+    claim_type: str  # 'existence', 'behavior', 'modification', 'parameter', 'unknown'
+    verification_needed: bool = True
+
+
+@dataclass
+class ProseClaimResult:
+    """Result of validating a prose claim."""
+
+    claim: ProseClaim
+    is_valid: bool
+    verification_method: str | None = (
+        None  # 'tool_lookup', 'source_code_match', 'ast_match', None
+    )
+    actual_facts: str | None = None  # What actually exists in the codebase
+    correction_suggestion: str | None = None
+
+
 class CodeReferenceValidator:
     """Validate code references in LLM output against diffs and AST.
 
@@ -529,6 +553,328 @@ class CodeReferenceValidator:
         # Weighted combination: bigram similarity is more indicative of structural match
         return 0.4 * jaccard + 0.6 * bigram_sim
 
+    def extract_prose_claims(self, text: str) -> list[ProseClaim]:
+        """Extract factual claims from prose in LLM output.
+
+        Identifies claims about code existence, behavior, modifications,
+        and API changes that can be verified against the actual source.
+
+        Args:
+            text: LLM-generated text containing prose claims
+
+        Returns:
+            List of ProseClaim objects that should be verified
+        """
+        claims: list[ProseClaim] = []
+
+        # Patterns for existence/modification claims
+        # Format: (regex pattern, claim_type, subject_group, predicate_group)
+        claim_patterns = [
+            # "X was removed" / "X was deleted" / "X no longer exists" / "X overloads were removed"
+            # Subject: word(s) before "was/were" - can include lowercase (e.g., "AddString overloads")
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>\s:]*(?:overloads?|methods?|functions?|classes?|parameters?|arguments?)?)\s+(?:was|were)\s+(removed|deleted|eliminated|no\s+longer\s+exists)",
+                "existence",
+            ),
+            # "X was added" / "X was introduced" / "X is new"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*(?:was|were|is)\s+)?(?:added|introduced|created|new))",
+                "existence",
+            ),
+            # "X no longer Ys" / "X no longer supports"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+no\s+longer\s+(\w+)",
+                "modification",
+            ),
+            # "X now Ys" / "X now supports" / "X now takes" / "X requires"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+now\s+(requires|supports|takes|does|has|eliminates)",
+                "modification",
+            ),
+            # "X has Y parameters" / "X takes Y arguments"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+(?:has|takes|accepts)\s+(\d+)\s+(parameters?|arguments?|overloads?)",
+                "parameter",
+            ),
+            # "X is deprecated" / "X is obsolete"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+is\s+(deprecated|obsolete|removed|redundant)",
+                "existence",
+            ),
+            # "X replaced by Y" / "X supplanted by Y"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+(?:was\s+)?replaced\s+by\s+([A-Za-z_][A-Za-z0-9_<>:]*)",
+                "modification",
+            ),
+            # "X does not Y" / "X doesn't Y"
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+(?:does\s+not|doesn't)\s+(\w+)",
+                "modification",
+            ),
+            # "X is Y" - constant value claims like "MAX_STRING_SIZE is 2^30"
+            (
+                r"([A-Z_][A-Z0-9_<>:]*)\s+is\s+(\d+\s*(?:<<|>>)?\s*\d+|\w+)",
+                "modification",
+            ),
+            # "X previously/before Y" - historical claims
+            (
+                r"([A-Za-z_][A-Za-z0-9_<>:]*(?:\s*::\s*[A-Za-z0-9_]+)?)\s+(?:previously|before|formerly)\s+(\w+)",
+                "modification",
+            ),
+        ]
+
+        for pattern, claim_type in claim_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                subject = match.group(1).strip()
+                predicate_parts = [
+                    match.group(i).strip()
+                    for i in range(2, match.lastindex + 1)
+                    if match.group(i)
+                ]
+                predicate = " ".join(predicate_parts)
+
+                # Skip if subject is too generic
+                skip_subjects = {
+                    "The",
+                    "This",
+                    "That",
+                    "It",
+                    "A",
+                    "An",
+                    "They",
+                    "We",
+                    "You",
+                }
+                if subject in skip_subjects:
+                    continue
+
+                # Get the full sentence for context
+                start = max(0, match.start() - 50)
+                end = min(len(text), match.end() + 100)
+                # Find sentence boundaries
+                sentence_start = (
+                    text.rfind(". ", start, match.start()) + 1
+                    if text.rfind(". ", start, match.start()) >= 0
+                    else start
+                )
+                sentence_end = text.find(". ", match.end())
+                if sentence_end < 0:
+                    sentence_end = text.find("\n", match.end())
+                if sentence_end < 0:
+                    sentence_end = end
+                claim_text = text[sentence_start : sentence_end + 1].strip()
+
+                claims.append(
+                    ProseClaim(
+                        claim_text=claim_text,
+                        subject=subject,
+                        predicate=predicate,
+                        claim_type=claim_type,
+                        verification_needed=True,
+                    )
+                )
+
+        return claims
+
+    def validate_prose_claims(
+        self, text: str, tool_executor: Any | None = None
+    ) -> list[ProseClaimResult]:
+        """Validate factual claims in prose against actual source code.
+
+        This detects hallucinated claims like "X was removed" when X still exists,
+        or "X now has Y parameters" when the actual signature is different.
+
+        Args:
+            text: LLM-generated text containing prose claims
+            tool_executor: Optional ToolExecutor for looking up element details
+
+        Returns:
+            List of ProseClaimResult objects with validation results
+        """
+        claims = self.extract_prose_claims(text)
+        results: list[ProseClaimResult] = []
+
+        for claim in claims:
+            result = self._verify_prose_claim(claim, tool_executor)
+            results.append(result)
+
+        return results
+
+    def _verify_prose_claim(
+        self, claim: ProseClaim, tool_executor: Any | None = None
+    ) -> ProseClaimResult:
+        """Verify a single prose claim against actual source code.
+
+        Args:
+            claim: The prose claim to verify
+            tool_executor: Optional tool executor for element lookups
+
+        Returns:
+            ProseClaimResult with validation details
+        """
+        subject = claim.subject
+        predicate = claim.predicate.lower()
+        claim_type = claim.claim_type
+
+        # Build element name for lookup (handle Class::method format)
+        element_name = subject.replace("::", ".")
+
+        # Try to find the element in our code elements
+        found = False
+        element_info: dict[str, Any] | None = None
+
+        if self.code_elements and element_name in self.code_elements:
+            found = True
+            element_info = self.code_elements[element_name]
+        elif self.code_elements:
+            # Try partial match
+            for name, info in self.code_elements.items():
+                if (
+                    element_name.lower() in name.lower()
+                    or name.lower() in element_name.lower()
+                ):
+                    found = True
+                    element_info = info
+                    break
+
+        # Verify based on claim type
+        if claim_type == "existence":
+            # Claims about removal/addition/existence
+            if any(
+                kw in predicate
+                for kw in ["removed", "deleted", "eliminated", "no longer exists"]
+            ):
+                # Claim: element was REMOVED
+                if found:
+                    # Element exists - claim is FALSE
+                    return ProseClaimResult(
+                        claim=claim,
+                        is_valid=False,
+                        verification_method="ast_match",
+                        actual_facts=f"'{subject}' still exists in the codebase. "
+                        f"Type: {element_info.get('element_type', 'unknown') if element_info else 'unknown'}.",
+                        correction_suggestion=f"Remove the claim that '{subject}' was removed. "
+                        f"The element still exists.",
+                    )
+                else:
+                    # Element not found - claim might be TRUE (it was removed)
+                    return ProseClaimResult(
+                        claim=claim,
+                        is_valid=True,
+                        verification_method="ast_match",
+                    )
+
+            elif any(
+                kw in predicate for kw in ["added", "introduced", "new", "created"]
+            ):
+                # Claim: element was ADDED
+                if found:
+                    # Element exists - claim is likely TRUE
+                    return ProseClaimResult(
+                        claim=claim,
+                        is_valid=True,
+                        verification_method="ast_match",
+                    )
+                else:
+                    # Element not found - claim is FALSE or unverifiable
+                    return ProseClaimResult(
+                        claim=claim,
+                        is_valid=False,
+                        verification_method="ast_match",
+                        actual_facts=f"'{subject}' was not found in the changed files.",
+                        correction_suggestion=f"Remove or rephrase the claim that '{subject}' was added. "
+                        f"The element was not found in the changed code.",
+                    )
+
+        elif claim_type == "parameter":
+            # Claims about parameter count
+            if found and element_info:
+                signature = element_info.get("signature", "")
+                # Count parameters in signature
+                param_match = re.search(r"\(([^)]*)\)", signature)
+                if param_match:
+                    params = param_match.group(1).strip()
+                    if params == "" or params == "void":
+                        actual_params = 0
+                    else:
+                        actual_params = len([p for p in params.split(",") if p.strip()])
+
+                    claimed_match = re.search(r"(\d+)", predicate)
+                    if claimed_match:
+                        claimed_count = int(claimed_match.group(1))
+                        if actual_params != claimed_count:
+                            return ProseClaimResult(
+                                claim=claim,
+                                is_valid=False,
+                                verification_method="signature_match",
+                                actual_facts=f"'{subject}' has {actual_params} parameter(s). Signature: {signature}",
+                                correction_suggestion=f"Correct the parameter count for '{subject}' to {actual_params}.",
+                            )
+
+        elif claim_type == "modification":
+            # Claims about behavior changes
+            if found and element_info:
+                # We have the element info - claim might be verifiable
+                # For now, mark as potentially valid if element exists
+                return ProseClaimResult(
+                    claim=claim,
+                    is_valid=True,
+                    verification_method="element_exists",
+                    actual_facts=f"'{subject}' exists. Signature: {element_info.get('signature', 'N/A')}",
+                )
+            elif not found and any(kw in predicate for kw in ["removed", "deleted"]):
+                # Element doesn't exist and claim is about removal - might be true
+                return ProseClaimResult(
+                    claim=claim,
+                    is_valid=True,
+                    verification_method="ast_match",
+                )
+
+        # Default: claim unverifiable with available tools
+        return ProseClaimResult(
+            claim=claim,
+            is_valid=True,  # Assume valid if we can't verify
+            verification_method=None,
+        )
+
+    def get_prose_correction_prompt(
+        self, invalid_claims: list[ProseClaimResult], original_text: str
+    ) -> str:
+        """Generate a correction prompt for invalid prose claims.
+
+        Args:
+            invalid_claims: List of invalid prose claim results
+            original_text: The original LLM output
+
+        Returns:
+            Correction prompt for the LLM
+        """
+        if not invalid_claims:
+            return ""
+
+        errors = []
+        for result in invalid_claims:
+            claim = result.claim
+            errors.append(
+                f'- CLAIM: "{claim.claim_text}"\n'
+                f"  ISSUE: {result.actual_facts or 'Could not verify'}\n"
+                f"  CORRECTION: {result.correction_suggestion or 'Remove or rephrase this claim'}"
+            )
+
+        return f"""Your previous response contains factual claims about the codebase that are INCORRECT:
+
+{chr(10).join(errors)}
+
+You must correct these claims by:
+1. Removing false claims about elements that still exist or were never removed
+2. Correcting parameter counts, signatures, and behavioral descriptions to match the actual code
+3. Only describing changes that are confirmed by the source code
+
+ORIGINAL RESPONSE:
+{original_text}
+
+Please provide a corrected response that ONLY makes claims verifiable from the actual source code:"""
+
     def get_correction_prompt(
         self, invalid_results: list[ReferenceValidationResult], original_text: str
     ) -> str:
@@ -611,23 +957,40 @@ Please provide a corrected response with valid code references:"""
             block_results = self.validate_code_blocks(current_output)
             invalid_blocks = [r for r in block_results if not r.is_valid]
 
-            if not invalid_refs and not invalid_blocks:
-                # All references and code blocks are valid
+            # Validate prose claims (factual claims about code behavior)
+            prose_results = self.validate_prose_claims(current_output)
+            invalid_prose = [r for r in prose_results if not r.is_valid]
+
+            if not invalid_refs and not invalid_blocks and not invalid_prose:
+                # All references, code blocks, and prose claims are valid
                 return current_output
 
             if attempt < max_corrections:
-                # Build correction prompt
-                correction_prompt = self._build_correction_prompt(
-                    invalid_refs, invalid_blocks, current_output
-                )
+                # Build combined correction prompt
+                correction_parts = []
+
+                if invalid_refs or invalid_blocks:
+                    correction_parts.append(
+                        self._build_correction_prompt(
+                            invalid_refs, invalid_blocks, current_output
+                        )
+                    )
+
+                if invalid_prose:
+                    correction_parts.append(
+                        self.get_prose_correction_prompt(invalid_prose, current_output)
+                    )
+
+                correction_prompt = "\n\n".join(correction_parts)
 
                 logger.warning(
                     "Code reference validation failed, requesting correction "
-                    "(attempt %d/%d) | invalid_refs=%d invalid_blocks=%d",
+                    "(attempt %d/%d) | invalid_refs=%d invalid_blocks=%d invalid_prose=%d",
                     attempt + 1,
                     max_corrections + 1,
                     len(invalid_refs),
                     len(invalid_blocks),
+                    len(invalid_prose),
                 )
 
                 # Generate corrected output
@@ -656,6 +1019,12 @@ Please provide a corrected response with valid code references:"""
                     warnings.append(
                         f"Potentially hallucinated code blocks: {', '.join(block_info)}"
                     )
+                if invalid_prose:
+                    prose_info = [
+                        f"'{r.claim.subject}' ({r.claim.claim_type})"
+                        for r in invalid_prose[:5]
+                    ]
+                    warnings.append(f"False prose claims: {', '.join(prose_info)}")
 
                 warning_text = "\n\n<!-- WARNING: " + "; ".join(warnings) + " -->"
                 return current_output + warning_text
