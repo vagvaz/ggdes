@@ -1,12 +1,14 @@
 """CLI for GGDes."""
 
 import hashlib
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional
 
 import typer
+import yaml
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
@@ -18,6 +20,39 @@ from ggdes.worktree import WorktreeManager
 
 app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
+
+
+def _load_user_context_from_file(context_file: Path) -> Dict[str, Any]:
+    """Load user context from a YAML or JSON file.
+
+    Args:
+        context_file: Path to the context file
+
+    Returns:
+        Dictionary with user-provided context
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+        ValueError: If the file format is invalid
+    """
+    if not context_file.exists():
+        raise FileNotFoundError(f"Context file not found: {context_file}")
+
+    if context_file.suffix in (".yaml", ".yml"):
+        with open(context_file) as f:
+            data = yaml.safe_load(f)
+    elif context_file.suffix == ".json":
+        with open(context_file) as f:
+            data = json.load(f)
+    else:
+        raise ValueError(f"Context file must be .yaml, .yml, or .json: {context_file}")
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            "Context file must contain a YAML/JSON object (key-value pairs)"
+        )
+
+    return data
 
 
 def _gather_user_context() -> Dict[str, Any]:
@@ -185,6 +220,13 @@ def analyze(
             help="Enable interactive review mode. After each stage, review the output and provide feedback before continuing."
         ),
     ] = False,
+    context_file: Annotated[
+        str | None,
+        typer.Option(
+            help="YAML or JSON file with user context (focus_areas, audience, purpose, detail_level). "
+            "If provided, skips the interactive questionnaire."
+        ),
+    ] = None,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -405,7 +447,13 @@ def analyze(
                     return
 
                 # Gather user context
-                user_context = _gather_user_context()
+                if context_file:
+                    user_context = _load_user_context_from_file(Path(context_file))
+                    console.print(
+                        f"[green]✓[/green] Loaded user context from: {context_file}"
+                    )
+                else:
+                    user_context = _gather_user_context()
 
                 # Store user context in metadata
                 if user_context:
@@ -602,6 +650,13 @@ def resume(
             help="Enable interactive review mode. After each stage, review the output and provide feedback before continuing."
         ),
     ] = False,
+    context_file: Annotated[
+        str | None,
+        typer.Option(
+            help="YAML or JSON file with user context (focus_areas, audience, purpose, detail_level). "
+            "If provided with --overwrite-context, uses this file instead of interactive questionnaire."
+        ),
+    ] = None,
 ) -> None:
     """Resume an incomplete analysis."""
     from ggdes.logging_config import get_logger, setup_file_logging
@@ -735,7 +790,11 @@ def resume(
         console.print("\n[bold]Reasking analysis configuration[/bold]")
         console.print("Update preferences for this analysis.\n")
 
-        user_context = _gather_user_context()
+        if context_file:
+            user_context = _load_user_context_from_file(Path(context_file))
+            console.print(f"[green]✓[/green] Loaded user context from: {context_file}")
+        else:
+            user_context = _gather_user_context()
 
         # Update metadata with new context
         if found_metadata is None or found_id is None:
@@ -778,7 +837,11 @@ def resume(
         console.print("\n[bold]Analysis Configuration[/bold]")
         console.print("No user context found. Please configure the analysis.\n")
 
-        user_context = _gather_user_context()
+        if context_file:
+            user_context = _load_user_context_from_file(Path(context_file))
+            console.print(f"[green]✓[/green] Loaded user context from: {context_file}")
+        else:
+            user_context = _gather_user_context()
         if found_metadata is None or found_id is None:
             console.print("[red]Error:[/red] Could not update metadata")
             raise typer.Exit(1)
