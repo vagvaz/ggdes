@@ -11,6 +11,7 @@ back into the conversation.
 
 import json
 import re
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -217,10 +218,11 @@ def chat_with_tools(
         )
 
     # Tool calling loop
+    all_tool_calls: List[ToolCall] = []  # Track for max-rounds reporting
     for round_num in range(max_rounds):
         # Get LLM response
         logger.info(
-            "Tool-augmented chat | round=%d/%d model=%s",
+            "Tool-augmented chat | round={}/{} model={}",
             round_num + 1,
             max_rounds,
             llm.model_name,
@@ -233,38 +235,26 @@ def chat_with_tools(
 
         # Parse tool calls from response
         tool_calls = _parse_tool_calls(response)
+        all_tool_calls.extend(tool_calls)
 
         if not tool_calls:
             # No tool calls - we're done
             logger.info(
-                "Tool-augmented chat completed | rounds=%d model=%s",
+                "Tool-augmented chat completed | rounds={} model={}",
                 round_num + 1,
                 llm.model_name,
             )
             return response
 
         # Execute tool calls
-        console.print(
-            f"  [dim]Tool round {round_num + 1}: {len(tool_calls)} call(s)[/dim]"
-        )
         logger.info(
-            "Tool calls | round=%d calls=%d tools=%s",
+            "Tool calls | round={} calls={} tools={}",
             round_num + 1,
             len(tool_calls),
             [c.tool_name for c in tool_calls],
         )
-        for call in tool_calls:
-            console.print(
-                f"    [dim]→ {call.tool_name}({json.dumps(call.arguments, default=str)[:80]})[/dim]"
-            )
 
         results = executor.execute_batch(tool_calls)
-
-        for result in results:
-            if result.success:
-                console.print(f"    [green]✓ {result.tool_name}[/green]")
-            else:
-                console.print(f"    [red]✗ {result.tool_name}: {result.error}[/red]")
 
         # Format results and add to conversation
         tool_results_text = _format_tool_results(results)
@@ -274,5 +264,38 @@ def chat_with_tools(
         working_messages.append({"role": "user", "content": tool_results_text})
 
     # If we hit max rounds, return the last response
-    console.print(f"  [yellow]Warning: Reached max tool rounds ({max_rounds})[/yellow]")
+    # Report which tools/elements were called repeatedly
+    if all_tool_calls:
+        # Aggregate by tool name
+        tool_counts: dict[str, int] = {}
+        element_names: list[str] = []
+        for tc in all_tool_calls:
+            tool_counts[tc.tool_name] = tool_counts.get(tc.tool_name, 0) + 1
+            if tc.tool_name == "get_element_source":
+                elem = tc.arguments.get("element_name", "?")
+                element_names.append(elem)
+
+        console.print(
+            f"  [yellow]Warning: Reached max tool rounds ({max_rounds})[/yellow]"
+        )
+        console.print(
+            f"  [dim]  Total tool calls: {len(all_tool_calls)} across {round_num} rounds[/dim]"
+        )
+        console.print(f"  [dim]  Tool usage: {tool_counts}[/dim]")
+        if element_names:
+            # Count repeated element requests
+            from collections import Counter
+
+            elem_counts = Counter(element_names)
+            repeated = {e: c for e, c in elem_counts.items() if c > 1}
+            if repeated:
+                console.print(f"  [yellow]  Repeated element requests:[/yellow]")
+                for elem, count in sorted(repeated.items(), key=lambda x: -x[1])[:5]:
+                    console.print(f"  [dim]    {elem}: {count}x[/dim]")
+                if len(repeated) > 5:
+                    console.print(f"  [dim]    ... and {len(repeated) - 5} more[/dim]")
+    else:
+        console.print(
+            f"  [yellow]Warning: Reached max tool rounds ({max_rounds})[/yellow]"
+        )
     return response
