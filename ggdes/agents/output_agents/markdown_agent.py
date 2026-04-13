@@ -290,7 +290,7 @@ title {diagram.title}
     async def _generate_section(self, section: SectionPlan) -> str:
         """Generate content for a document section."""
         logger.info(
-            "MarkdownAgent: generating section '%s' | facts=%d model=%s",
+            "MarkdownAgent: generating section | title={} facts={} model={}",
             section.title,
             len(section.technical_facts),
             self.llm.model_name,
