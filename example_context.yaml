@@ -1,0 +1,18 @@
+# Example context file for GGDes
+# This file provides user context that guides the documentation generation.
+# Load with: ggdes analyze --context-file example_context.yaml
+
+# What aspects of the changes should be focused on?
+focus_areas:
+  - API changes and their impact on existing code
+  - Breaking changes that require migration
+  - New functionality and its use cases
+
+# Who is the audience for the generated documentation?
+audience: developers
+
+# What is the purpose of this documentation?
+purpose: Help developers understand the changes and how to migrate their code
+
+# Level of detail: brief, medium, or comprehensive
+detail_level: comprehensive

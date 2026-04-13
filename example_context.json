@@ -1,0 +1,10 @@
+{
+  "focus_areas": [
+    "API changes and their impact on existing code",
+    "Breaking changes that require migration",
+    "New functionality and its use cases"
+  ],
+  "audience": "developers",
+  "purpose": "Help developers understand the changes and how to migrate their code",
+  "detail_level": "comprehensive"
+}

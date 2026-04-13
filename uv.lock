@@ -586,6 +586,11 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "types-defusedxml" },
+    { name = "types-markdown" },
+    { name = "types-pygments" },
+    { name = "types-pyyaml" },
+    { name = "types-reportlab" },
 ]
 render = [
     { name = "markdown" },
@@ -631,6 +636,11 @@ requires-dist = [
     { name = "tree-sitter-cpp", specifier = ">=0.23.0" },
     { name = "tree-sitter-python", specifier = ">=0.21.0" },
     { name = "typer", specifier = ">=0.12.0" },
+    { name = "types-defusedxml", marker = "extra == 'dev'", specifier = ">=0.7.0" },
+    { name = "types-markdown", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "types-pygments", marker = "extra == 'dev'", specifier = ">=2.18.0" },
+    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "types-reportlab", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.32.0" },
     { name = "websockets", marker = "extra == 'web'", specifier = ">=13.0" },
 ]
@@ -2631,6 +2641,63 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/24/cb09efec5cc954f7f9b930bf8279447d24618bb6758d4f6adf2574c41780/typer-0.24.1.tar.gz", hash = "sha256:e39b4732d65fbdcde189ae76cf7cd48aeae72919dea1fdfc16593be016256b45", size = 118613, upload-time = "2026-02-21T16:54:40.609Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4a/91/48db081e7a63bb37284f9fbcefda7c44c277b18b0e13fbc36ea2335b71e6/typer-0.24.1-py3-none-any.whl", hash = "sha256:112c1f0ce578bfb4cab9ffdabc68f031416ebcc216536611ba21f04e9aa84c9e", size = 56085, upload-time = "2026-02-21T16:54:41.616Z" },
+]
+
+[[package]]
+name = "types-defusedxml"
+version = "0.7.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/af/d324da5ffbf0af40477533a09ee6c902de335c445a8dcc88c58f62af6e5f/types_defusedxml-0.7.0.20260408.tar.gz", hash = "sha256:f35377d59344f98b57f9bf319cff2107aac35f9e4d42f9ed6cfeeafacffadb00", size = 10638, upload-time = "2026-04-08T04:26:12.239Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/68/7570cfb818d6a5b3ff964114527e28e360eccf18329b457f057a18596e64/types_defusedxml-0.7.0.20260408-py3-none-any.whl", hash = "sha256:2d68db82412170b91b3e490b7c118a4f4e5a27756a126e2453f629c8d514b106", size = 13435, upload-time = "2026-04-08T04:26:11.347Z" },
+]
+
+[[package]]
+name = "types-docutils"
+version = "0.22.3.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/49/48a386fe15539556de085b87a69568b028cca2fa4b92596a3d4f79ac6784/types_docutils-0.22.3.20260408.tar.gz", hash = "sha256:22d5d45e4e0d65a1bc8280987a73e28669bb1cc9d16b18d0afc91713d1be26da", size = 57383, upload-time = "2026-04-08T04:27:26.924Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/47/1667fda6e9fcb044f8fb797f6dc4367b88dc2ab40f1a035e387f5405e870/types_docutils-0.22.3.20260408-py3-none-any.whl", hash = "sha256:2545a86966022cdf1468d430b0007eba0837be77974a7f3fafa1b04a6815d531", size = 91981, upload-time = "2026-04-08T04:27:25.934Z" },
+]
+
+[[package]]
+name = "types-markdown"
+version = "3.10.2.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/0e/a690840934c459aa50e0470e7550d7f151632eafa4a8e3c21d18009ad15c/types_markdown-3.10.2.20260408.tar.gz", hash = "sha256:d5cba15ed65a1420e80e31c17e3d4a2ad7208a3f3a4da97fd2c5f093caf523cd", size = 19784, upload-time = "2026-04-08T04:33:07.644Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/7e/265a8df257c8dced6ea89295f793a19f0a49ccbfeae1ed562368b2caf7a3/types_markdown-3.10.2.20260408-py3-none-any.whl", hash = "sha256:b0bbe8b7a8174db732067b86e391262898f5f536589ea81efec6d35ceb829331", size = 25857, upload-time = "2026-04-08T04:33:06.769Z" },
+]
+
+[[package]]
+name = "types-pygments"
+version = "2.20.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-docutils" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/89/4b443128fa540c54a8f7ecdeec225aab4818534167c4a2d133099dc00fa6/types_pygments-2.20.0.20260408.tar.gz", hash = "sha256:e8a56a3ab1aee7f4ed8f1876d2f62c96e0f41ede52405a7d30c888f3989d8f00", size = 21115, upload-time = "2026-04-08T04:34:24.29Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/d8/30924b38eef70caef6b05af5440c84d7673cea2a042e206f404c8100a88d/types_pygments-2.20.0.20260408-py3-none-any.whl", hash = "sha256:6d347d5967b5f0654b659a8b8461a870b207b7e60cd4d646bbc047f6a8db8e1e", size = 29055, upload-time = "2026-04-08T04:34:23.412Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/73/b759b1e413c31034cc01ecdfb96b38115d0ab4db55a752a3929f0cd449fd/types_pyyaml-6.0.12.20260408.tar.gz", hash = "sha256:92a73f2b8d7f39ef392a38131f76b970f8c66e4c42b3125ae872b7c93b556307", size = 17735, upload-time = "2026-04-08T04:30:50.974Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/f0/c391068b86abb708882c6d75a08cd7d25b2c7227dab527b3a3685a3c635b/types_pyyaml-6.0.12.20260408-py3-none-any.whl", hash = "sha256:fbc42037d12159d9c801ebfcc79ebd28335a7c13b08a4cfbc6916df78fee9384", size = 20339, upload-time = "2026-04-08T04:30:50.113Z" },
+]
+
+[[package]]
+name = "types-reportlab"
+version = "4.4.10.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/b0/f386850507df2350c75c41a1ec6c48b9f961291438d2a4547a2c5f3fd2b2/types_reportlab-4.4.10.20260408.tar.gz", hash = "sha256:89021b00a7748fe948af91f939497420c5bf8f96048f8ea6cce6844ca26eea13", size = 71734, upload-time = "2026-04-08T04:31:18.842Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/76/70ec172660f79c09a1454e76a815146824f2b246ba4be716f94d771e2bb1/types_reportlab-4.4.10.20260408-py3-none-any.whl", hash = "sha256:ae7635b66963d89928333a6a0f7c47109a1ffc9cbd26689f15f592c3ba958b34", size = 112766, upload-time = "2026-04-08T04:31:17.753Z" },
 ]
 
 [[package]]

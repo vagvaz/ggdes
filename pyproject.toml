@@ -35,6 +35,12 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
+    # Type stubs for libraries without inline types
+    "types-PyYAML>=6.0.0",
+    "types-Markdown>=3.5.0",
+    "types-Pygments>=2.18.0",
+    "types-reportlab>=4.0.0",
+    "types-defusedxml>=0.7.0",
 ]
 web = [
     "fastapi>=0.115.0",
@@ -64,6 +70,8 @@ python_version = "3.10"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
+# Ignore missing stubs for optional dependencies (set to true to suppress all)
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

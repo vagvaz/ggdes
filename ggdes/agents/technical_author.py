@@ -269,6 +269,23 @@ class TechnicalAuthor:
         context_parts: list[str] = []
         included = 0
 
+        for elem in elements:
+            if included >= max_elements:
+                break
+            if elem.source_code:
+                lines = elem.source_code.splitlines()
+                if len(lines) > max_lines_per_element:
+                    code = (
+                        "\n".join(lines[:max_lines_per_element])
+                        + f"\n... ({len(lines) - max_lines_per_element} more lines)"
+                    )
+                else:
+                    code = elem.source_code
+                context_parts.append(f"### {elem.name}\n```\n{code}\n```")
+                included += 1
+
+        return "\n\n".join(context_parts)
+
     def _find_usages_in_worktree(
         self,
         element_name: str,

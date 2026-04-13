@@ -56,7 +56,7 @@ class StagePreview:
 class StageReviewer:
     """Generates previews and handles CLI review interaction for pipeline stages."""
 
-    def __init__(self, config, analysis_id: str):
+    def __init__(self, config: Any, analysis_id: str):
         self.config = config
         self.analysis_id = analysis_id
         self.kb_path = get_kb_path(config, analysis_id)
@@ -69,10 +69,11 @@ class StageReviewer:
         """Generate a reviewable preview of a stage's output."""
         method = f"_preview_{stage_name}"
         if hasattr(self, method):
-            return getattr(self, method)()
+            preview_method = getattr(self, method)
+            return preview_method()  # type: ignore[no-any-return]
         return None
 
-    def _preview_git_analysis(self) -> StagePreview:
+    def _preview_git_analysis(self) -> Optional[StagePreview]:
         """Preview git_analysis output."""
         summary_file = self.kb_path / "git_analysis" / "summary.json"
         if not summary_file.exists():
@@ -101,7 +102,7 @@ class StageReviewer:
             raw_data=data,
         )
 
-    def _preview_change_filter(self) -> StagePreview:
+    def _preview_change_filter(self) -> Optional[StagePreview]:
         """Preview semantic change filter output."""
         summary_file = self.kb_path / "git_analysis" / "summary.json"
         if not summary_file.exists():
@@ -140,7 +141,7 @@ class StageReviewer:
             raw_data=data,
         )
 
-    def _preview_technical_author(self) -> StagePreview:
+    def _preview_technical_author(self) -> Optional[StagePreview]:
         """Preview technical facts output."""
         facts_file = self.kb_path / "technical_facts" / "facts.json"
         if not facts_file.exists():
@@ -176,7 +177,7 @@ class StageReviewer:
             raw_data=facts_data,
         )
 
-    def _preview_coordinator_plan(self) -> StagePreview:
+    def _preview_coordinator_plan(self) -> Optional[StagePreview]:
         """Preview document plans output."""
         plans_dir = self.kb_path / "plans"
         if not plans_dir.exists():
@@ -209,7 +210,7 @@ class StageReviewer:
             raw_data=plans_data,
         )
 
-    def _preview_output_generation(self) -> StagePreview:
+    def _preview_output_generation(self) -> Optional[StagePreview]:
         """Preview generated documents."""
         output_dir = self.kb_path / "outputs"
         if not output_dir.exists():

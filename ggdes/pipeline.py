@@ -243,11 +243,7 @@ class AnalysisPipeline:
         with self._metadata_lock:
             for stage in stage_order[start_idx:]:
                 if self.metadata.is_stage_completed(stage):
-                    self.metadata.pending_stages.append(stage)
-                    if stage in self.metadata.completed_stages:
-                        self.metadata.completed_stages.remove(stage)
-                    if stage in self.metadata.failed_stages:
-                        self.metadata.failed_stages.remove(stage)
+                    self.metadata.reset_stage(stage)
             self.kb_manager.save_metadata(self.analysis_id, self.metadata)
 
     def run_parallel_group(self, stage_names: list[str]) -> dict[str, bool]:

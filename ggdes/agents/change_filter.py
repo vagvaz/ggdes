@@ -321,7 +321,7 @@ class ChangeFilter:
             )
 
         # Build diff content for each file (truncated for context window)
-        diff_parts = []
+        diff_parts: list[str] = []
         total_lines = 0
         max_diff_lines = 2000  # Limit diff content to avoid context overflow
 

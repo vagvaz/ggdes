@@ -628,7 +628,7 @@ class CodeReferenceValidator:
                 subject = match.group(1).strip()
                 predicate_parts = [
                     match.group(i).strip()
-                    for i in range(2, match.lastindex + 1)
+                    for i in range(2, (match.lastindex or 0) + 1)
                     if match.group(i)
                 ]
                 predicate = " ".join(predicate_parts)
@@ -1058,9 +1058,10 @@ Please provide a corrected response with valid code references:"""
                     f"- {ref.reference_type.capitalize()} '{ref.code_snippet}': {result.error_message}"
                 )
 
-        for result in invalid_blocks:
+        for block_result in invalid_blocks:
+            error_msg = block_result.error_message or "Invalid code block"
             errors.append(
-                f"- Code block (language: {result.language}): {result.error_message}"
+                f"- Code block (language: {block_result.language}): {error_msg}"
             )
 
         available_files = "\n".join(f"  - {f}" for f in sorted(self.changed_files))
