@@ -179,6 +179,12 @@ def analyze(
         bool,
         typer.Option(help="Render markdown output to PNG images (requires playwright)"),
     ] = False,
+    interactive: Annotated[
+        bool,
+        typer.Option(
+            help="Enable interactive review mode. After each stage, review the output and provide feedback before continuing."
+        ),
+    ] = False,
 ) -> None:
     """Start a new analysis of git commits."""
     # Load configuration
@@ -366,7 +372,7 @@ def analyze(
             # Run pipeline
             from ggdes.pipeline import AnalysisPipeline
 
-            pipeline = AnalysisPipeline(config, analysis_id)
+            pipeline = AnalysisPipeline(config, analysis_id, interactive=interactive)
 
             # Step 1: Setup worktrees (always needed)
             logger.info("Setting up worktrees...")
@@ -590,6 +596,12 @@ def resume(
         bool,
         typer.Option(help="Reask user questions to update context for new formats"),
     ] = False,
+    interactive: Annotated[
+        bool,
+        typer.Option(
+            help="Enable interactive review mode. After each stage, review the output and provide feedback before continuing."
+        ),
+    ] = False,
 ) -> None:
     """Resume an incomplete analysis."""
     from ggdes.logging_config import get_logger, setup_file_logging
@@ -784,7 +796,7 @@ def resume(
         if found_id is None:
             console.print("[red]Error:[/red] Could not determine analysis ID")
             raise typer.Exit(1)
-        pipeline = AnalysisPipeline(config, found_id)
+        pipeline = AnalysisPipeline(config, found_id, interactive=interactive)
 
         if stage:
             # Run specific stage

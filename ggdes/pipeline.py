@@ -6,7 +6,7 @@ import json
 import threading
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from loguru import logger
 from rich.console import Console
@@ -15,6 +15,7 @@ from ggdes.agents import GitAnalyzer
 from ggdes.config import GGDesConfig, ParsingMode
 from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
+from ggdes.review import ReviewSession
 from ggdes.schemas import ChangeSummary, CodeElement, StoragePolicy
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
@@ -26,15 +27,19 @@ console = Console()
 class AnalysisPipeline:
     """Orchestrate the multi-stage analysis pipeline."""
 
-    def __init__(self, config: GGDesConfig, analysis_id: str):
+    def __init__(
+        self, config: GGDesConfig, analysis_id: str, interactive: bool = False
+    ):
         """Initialize pipeline.
 
         Args:
             config: GGDes configuration
             analysis_id: Analysis identifier
+            interactive: If True, pause after each stage for user review
         """
         self.config = config
         self.analysis_id = analysis_id
+        self.interactive = interactive
         self.kb_manager = KnowledgeBaseManager(config)
         metadata = self.kb_manager.load_metadata(analysis_id)
 
@@ -45,6 +50,7 @@ class AnalysisPipeline:
         self.repo_path = Path(self.metadata.repo_path)
         self.wt_manager = WorktreeManager(config, self.repo_path)
         self._metadata_lock = threading.Lock()
+        self._review_session: Optional["ReviewSession"] = None
 
     def run_stage(self, stage_name: str) -> bool:
         """Run a specific stage.
@@ -111,6 +117,14 @@ class AnalysisPipeline:
                         stage_name,
                         self.analysis_id,
                     )
+                    # Interactive review after stage completion
+                    if self.interactive:
+                        should_continue = self._maybe_review(stage_name)
+                        if not should_continue:
+                            console.print(
+                                "[yellow]Analysis paused for review.[/yellow]"
+                            )
+                            return False
                     return True
                 else:
                     self.metadata.fail_stage(stage_name, "Stage returned False")
@@ -134,6 +148,107 @@ class AnalysisPipeline:
                 self.analysis_id,
             )
             return False
+
+    def _maybe_review(self, stage_name: str) -> bool:
+        """Present interactive review UI after a stage completes.
+
+        Args:
+            stage_name: The stage that just completed
+
+        Returns:
+            True if analysis should continue, False if paused
+        """
+        from ggdes.review import SKIP_STAGES, StageReviewer, REVIEWABLE_STAGES
+
+        # Skip review for infrastructure/non-reviewable stages
+        if stage_name in SKIP_STAGES:
+            return True
+
+        # Skip review for stages not in our reviewable list
+        if stage_name not in REVIEWABLE_STAGES:
+            return True
+
+        # Initialize review session if not already done
+        if self._review_session is None:
+            from ggdes.pipeline.review import ReviewSession
+
+            self._review_session = ReviewSession(
+                analysis_id=self.analysis_id,
+                interactive=True,
+            )
+
+        # Check if user chose to skip remaining reviews
+        if self._review_session.is_skipping():
+            return True
+
+        # Generate preview of stage output
+        reviewer = StageReviewer(self.config, self.analysis_id)
+        preview = reviewer.generate_preview(stage_name)
+
+        if preview is None:
+            console.print(
+                f"[dim]No output found for {stage_name}, skipping review[/dim]"
+            )
+            return True
+
+        # Present review UI and get user decision
+        review = reviewer.review_stage(preview)
+        self._review_session.add_review(review)
+
+        console.print(f"[dim]Decision: {review.decision.value}[/dim]")
+
+        if review.decision.value == "skip":
+            return True
+
+        if review.decision.value == "accept":
+            return True
+
+        # Regeneration requested
+        if review.decision.value in ("regenerate_all", "regenerate_partial"):
+            # Invalidate this stage and all subsequent stages so they re-run
+            self._invalidate_from_stage(stage_name)
+            console.print(
+                f"[yellow]Stages will be regenerated on resume. "
+                f"Feedback: {review.feedback or '(no specific feedback)'}[/yellow]"
+            )
+            return True
+
+        return True
+
+    def _invalidate_from_stage(self, stage_name: str) -> None:
+        """Reset a stage and all subsequent stages to pending so they re-run.
+
+        Args:
+            stage_name: First stage to invalidate
+        """
+        from ggdes.kb.manager import AnalysisMetadata
+
+        stage_order = [
+            self.kb_manager.STAGE_WORKTREE_SETUP,
+            self.kb_manager.STAGE_GIT_ANALYSIS,
+            self.kb_manager.STAGE_CHANGE_FILTER,
+            self.kb_manager.STAGE_AST_PARSING_BASE,
+            self.kb_manager.STAGE_AST_PARSING_HEAD,
+            self.kb_manager.STAGE_SEMANTIC_DIFF,
+            self.kb_manager.STAGE_TECHNICAL_AUTHOR,
+            self.kb_manager.STAGE_COORDINATOR_PLAN,
+            self.kb_manager.STAGE_OUTPUT_GENERATION,
+        ]
+
+        try:
+            start_idx = stage_order.index(stage_name)
+        except ValueError:
+            return
+
+        with self._metadata_lock:
+            for stage in stage_order[start_idx:]:
+                if self.metadata.is_stage_completed(stage):
+                    self.metadata.pending_stages.append(stage)
+                    if stage in self.metadata.completed_stages:
+                        self.metadata.completed_stages.remove(stage)
+                    if stage in self.metadata.failed_stages:
+                        self.metadata.failed_stages.remove(stage)
+            self.kb_manager.save_metadata(self.analysis_id, self.metadata)
 
     def run_parallel_group(self, stage_names: list[str]) -> dict[str, bool]:
         """Run multiple stages in parallel using ThreadPoolExecutor.
