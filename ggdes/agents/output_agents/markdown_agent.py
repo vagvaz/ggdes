@@ -328,6 +328,63 @@ Technical Facts to Include:
                 prompt += f"\n{elem_name}:\n```\n{truncated}\n```\n"
             prompt += "\n=== END SOURCE CODE ===\n"
 
+        # Include before/after code comparisons from section plan
+        if section.before_after_code:
+            prompt += (
+                "\n=== CODE CHANGES (before/after comparisons) ===\n"
+                "Use these to accurately describe what changed. Reference the actual code.\n"
+            )
+            for elem_name, ba in list(section.before_after_code.items())[:5]:
+                before = ba.get("before", "")
+                after = ba.get("after", "")
+                diff_text = ba.get("diff", "")
+                if before and after:
+                    # Modified element
+                    before_trunc = before[:400] + "..." if len(before) > 400 else before
+                    after_trunc = after[:400] + "..." if len(after) > 400 else after
+                    prompt += f"\n--- {elem_name} (MODIFIED) ---\n"
+                    prompt += f"BEFORE:\n```\n{before_trunc}\n```\n"
+                    prompt += f"AFTER:\n```\n{after_trunc}\n```\n"
+                    if diff_text:
+                        diff_trunc = (
+                            diff_text[:300] + "..."
+                            if len(diff_text) > 300
+                            else diff_text
+                        )
+                        prompt += f"DIFF:\n```diff\n{diff_trunc}\n```\n"
+                elif after and not before:
+                    # New element
+                    after_trunc = after[:400] + "..." if len(after) > 400 else after
+                    prompt += f"\n--- {elem_name} (NEW) ---\n```\n{after_trunc}\n```\n"
+                elif before and not after:
+                    # Deleted element
+                    before_trunc = before[:400] + "..." if len(before) > 400 else before
+                    prompt += (
+                        f"\n--- {elem_name} (DELETED) ---\n```\n{before_trunc}\n```\n"
+                    )
+            prompt += "\n=== END CODE CHANGES ===\n"
+
+        # Include usage examples (before and after call sites)
+        if section.usages:
+            prompt += (
+                "\n=== USAGE EXAMPLES (real call sites from codebase) ===\n"
+                "These show how the changed APIs are actually called in the codebase.\n"
+            )
+            for elem_name, usage_data in list(section.usages.items())[:5]:
+                before_usages = usage_data.get("before_usages", [])
+                after_usages = usage_data.get("after_usages", [])
+                if before_usages:
+                    prompt += f"\n--- {elem_name}: BEFORE CHANGE ---\n"
+                    for usage in before_usages[:3]:
+                        usage_trunc = usage[:300] + "..." if len(usage) > 300 else usage
+                        prompt += f"```\n{usage_trunc}\n```\n"
+                if after_usages:
+                    prompt += f"\n--- {elem_name}: AFTER CHANGE ---\n"
+                    for usage in after_usages[:3]:
+                        usage_trunc = usage[:300] + "..." if len(usage) > 300 else usage
+                        prompt += f"```\n{usage_trunc}\n```\n"
+            prompt += "\n=== END USAGE EXAMPLES ===\n"
+
         prompt += """
 Requirements:
 - Write in clear, technical prose

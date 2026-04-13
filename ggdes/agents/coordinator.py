@@ -329,10 +329,16 @@ class Coordinator:
         for i, sec_data in enumerate(plan_data.get("sections", [])):
             # Collect source code for referenced elements from facts
             section_source_code: dict[str, str] = {}
+            section_before_after: dict[str, dict[str, str]] = {}
+            section_usages: dict[str, dict[str, list[str]]] = {}
             for fact_id in sec_data.get("technical_facts", []):
                 matching_fact = next((f for f in facts if f.fact_id == fact_id), None)
                 if matching_fact and matching_fact.code_snippets:
                     section_source_code.update(matching_fact.code_snippets)
+                if matching_fact and matching_fact.before_after_code:
+                    section_before_after.update(matching_fact.before_after_code)
+                if matching_fact and matching_fact.usages:
+                    section_usages.update(matching_fact.usages)
 
             sections.append(
                 SectionPlan(
@@ -342,6 +348,8 @@ class Coordinator:
                     code_references=sec_data.get("code_references", []),
                     diagrams=sec_data.get("diagrams", []),
                     source_code=section_source_code,
+                    before_after_code=section_before_after,
+                    usages=section_usages,
                 )
             )
 
@@ -411,6 +419,19 @@ Technical Facts Available ({len(facts)} total):
                         prompt += (
                             f"    Source ({elem_name}):\n```\n{truncated_code}\n```\n"
                         )
+                # Include before/after code if available
+                if fact.before_after_code:
+                    for elem_name, ba in list(fact.before_after_code.items())[:2]:
+                        before = ba.get("before", "")
+                        after = ba.get("after", "")
+                        if before and after:
+                            prompt += (
+                                f"    Changed ({elem_name}):\n"
+                                f"      Before: {before[:150]}{'...' if len(before) > 150 else ''}\n"
+                                f"      After: {after[:150]}{'...' if len(after) > 150 else ''}\n"
+                            )
+                        elif after and not before:
+                            prompt += f"    New ({elem_name}): {after[:200]}{'...' if len(after) > 200 else ''}\n"
             if len(cat_facts) > 5:
                 prompt += f"  ... and {len(cat_facts) - 5} more\n"
 

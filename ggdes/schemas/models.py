@@ -157,6 +157,19 @@ class TechnicalFact(BaseModel):
         description="Mapping of element names to their actual source code. "
         "Used to ground LLM output in real code and prevent hallucination.",
     )
+    before_after_code: dict[str, dict[str, str]] = Field(
+        default_factory=dict,
+        description="Mapping of element names to before/after code comparisons. "
+        "Each value has 'before', 'after', and 'diff' keys with source code "
+        "from base and head commits. Used to show actual code changes.",
+    )
+    usages: dict[str, dict[str, list[str]]] = Field(
+        default_factory=dict,
+        description="Mapping of element names to usage examples. "
+        "Each value has 'before_usages' and 'after_usages' keys with code snippets "
+        "showing how the element was called before and after the change. "
+        "Examples are extracted from real call sites in the codebase.",
+    )
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -184,6 +197,18 @@ class SectionPlan(BaseModel):
         default_factory=dict,
         description="Mapping of element names to their actual source code. "
         "Used to ground LLM output in real code and prevent hallucination.",
+    )
+    before_after_code: dict[str, dict[str, str]] = Field(
+        default_factory=dict,
+        description="Mapping of element names to before/after code comparisons. "
+        "Each value has 'before', 'after', and 'diff' keys. "
+        "Used to show actual code changes in documentation.",
+    )
+    usages: dict[str, dict[str, list[str]]] = Field(
+        default_factory=dict,
+        description="Mapping of element names to usage examples. "
+        "Each value has 'before_usages' and 'after_usages' keys with code snippets "
+        "showing how the element was called before and after the change.",
     )
 
 
