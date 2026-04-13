@@ -148,13 +148,14 @@ def retry_on_failure(
 
                         logger.warning(
                             "LLM call failed (attempt {}/{}) | provider={} model={} "
-                            "method={} duration={:.1f}s error={} | retrying in {:.1f}s...",
+                            "method={} duration={:.1f}s error_type={} error={} | retrying in {:.1f}s...",
                             attempt + 1,
                             max_retries + 1,
                             provider_name,
                             model_name,
                             method_name,
                             call_duration,
+                            type(e).__name__,
                             e,
                             actual_delay,
                         )
@@ -162,12 +163,13 @@ def retry_on_failure(
                     else:
                         logger.error(
                             "LLM call failed after {} attempts | provider={} model={} "
-                            "method={} duration={:.1f}s error={}",
+                            "method={} duration={:.1f}s error_type={} error={}",
                             max_retries + 1,
                             provider_name,
                             model_name,
                             method_name,
                             call_duration,
+                            type(e).__name__,
                             e,
                         )
 
@@ -691,12 +693,13 @@ class LLMProvider(ABC):
                     call_duration = time.time() - call_start
                     logger.error(
                         "Structured output failed after {} attempts | provider={} "
-                        "model={} response_model={} duration={:.1f}s error={}",
+                        "model={} response_model={} duration={:.1f}s error_type={} error={}",
                         max_retries + 1,
                         self.__class__.__name__,
                         self.model_name,
                         model_name,
                         call_duration,
+                        type(e).__name__,
                         e,
                     )
 

@@ -754,7 +754,7 @@ Then provide a structured ChangeSummary.
     async def _chat_with_context(self, context: List[Dict[str, Any]]) -> str:
         """Send chat request with full conversation context."""
         logger.info(
-            "Git Analyzer: LLM chat call | messages=%d model=%s",
+            "Git Analyzer: LLM chat call | messages={} model={}",
             len(context),
             self.llm.model_name,
         )
