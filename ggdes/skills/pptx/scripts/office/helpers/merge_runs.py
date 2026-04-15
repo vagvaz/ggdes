@@ -9,7 +9,7 @@ Also:
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import defusedxml.minidom
 
@@ -40,7 +40,7 @@ def merge_runs(input_dir: str) -> tuple[int, str]:
         return 0, f"Error: {e}"
 
 
-def _find_elements(root, tag: str) -> List[Any]:
+def _find_elements(root, tag: str) -> list[Any]:
     results = []
 
     def traverse(node):
@@ -64,7 +64,7 @@ def _get_child(parent, tag: str):
     return None
 
 
-def _get_children(parent, tag: str) -> List[Any]:
+def _get_children(parent, tag: str) -> list[Any]:
     results = []
     for child in parent.childNodes:
         if child.nodeType == child.ELEMENT_NODE:

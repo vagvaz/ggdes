@@ -4,7 +4,7 @@ import asyncio
 import difflib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from rich.console import Console
@@ -19,7 +19,7 @@ from ggdes.schemas import (
     StoragePolicy,
     TechnicalFact,
 )
-from ggdes.tools import ToolCall, ToolExecutor, TOOL_DEFINITIONS, chat_with_tools
+from ggdes.tools import TOOL_DEFINITIONS, ToolCall, ToolExecutor, chat_with_tools
 
 console = Console()
 
@@ -36,9 +36,9 @@ class TechnicalAuthor:
         repo_path: Path,
         config: GGDesConfig,
         analysis_id: str,
-        user_context: Optional[Dict[str, Any]] = None,
-        language_expert_skill: Optional[str] = None,
-        tool_executor: Optional[ToolExecutor] = None,
+        user_context: dict[str, Any] | None = None,
+        language_expert_skill: str | None = None,
+        tool_executor: ToolExecutor | None = None,
     ):
         """Initialize technical author.
 
@@ -176,7 +176,6 @@ class TechnicalAuthor:
             Tuple of (base_worktree_path, head_worktree_path) or (None, None) if not available
         """
         from ggdes.config import get_kb_path
-        from ggdes.kb import KnowledgeBaseManager
 
         try:
             kb_path = get_kb_path(self.config, self.analysis_id)
@@ -307,7 +306,6 @@ class TechnicalAuthor:
         Returns:
             List of code snippets showing usage examples
         """
-        import re
 
         # Build search patterns for different languages
         # C++: ClassName::MethodName( or just MethodName(
@@ -601,9 +599,8 @@ class TechnicalAuthor:
             return ""
 
         parts = []
-        included = 0
 
-        for key, diff_data in source_diffs.items():
+        for included, diff_data in enumerate(source_diffs.values()):
             if included >= max_diffs:
                 parts.append(
                     f"\n... and {len(source_diffs) - included} more diffs (truncated)"
@@ -659,7 +656,6 @@ class TechnicalAuthor:
                 section += f"\n**DELETED ELEMENT:**\n```{lang}\n{before_truncated}\n```"
 
             parts.append(section)
-            included += 1
 
         return "\n\n".join(parts) if parts else ""
 
@@ -955,10 +951,10 @@ Format as JSON array of TechnicalFact objects."""
 
     async def _analyze_api_batch(
         self,
-        new_apis: List[str],
-        deleted_apis: List[str],
-        modified_apis: List[dict[str, str]],
-    ) -> List[TechnicalFact]:
+        new_apis: list[str],
+        deleted_apis: list[str],
+        modified_apis: list[dict[str, str]],
+    ) -> list[TechnicalFact]:
         """Process API changes in a batch."""
         # Simplified batch processing
         facts = []
@@ -1197,7 +1193,7 @@ Format as JSON array."""
 
         return all_facts
 
-    async def _generate_facts_response(self, context: List[Dict[str, Any]]) -> str:
+    async def _generate_facts_response(self, context: list[dict[str, Any]]) -> str:
         """Generate response from conversation context.
 
         Uses tool-augmented chat when a ToolExecutor is available, allowing
@@ -1335,7 +1331,7 @@ Format as JSON array."""
         # Build lookup: element name -> diff data (before/after)
         diff_by_name: dict[str, dict[str, str]] = {}
         if source_diffs:
-            for key, diff_data in source_diffs.items():
+            for diff_data in source_diffs.values():
                 elem_name = diff_data.get("element_name", "")
                 if elem_name:
                     diff_by_name[elem_name] = diff_data

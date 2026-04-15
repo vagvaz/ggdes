@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rich.console import Console
 
@@ -238,7 +238,7 @@ class SemanticDiffAnalyzer:
 
         # Log that we're only analyzing changed files
         console.print(
-            f"[dim]  Only analyzing files that changed in the commit range[/dim]"
+            "[dim]  Only analyzing files that changed in the commit range[/dim]"
         )
 
         for file_path in changed_files:
@@ -529,7 +529,7 @@ class SemanticDiffAnalyzer:
 
         return changes
 
-    def _parse_ast_elements(self, content: str, file_path: str) -> List[Dict[str, Any]]:
+    def _parse_ast_elements(self, content: str, file_path: str) -> list[dict[str, Any]]:
         """Parse AST elements from code content.
 
         Returns list of dicts with:

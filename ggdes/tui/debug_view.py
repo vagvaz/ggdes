@@ -214,7 +214,7 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
             if new_agents_found:
                 self.update_agent_list()
                 self.app.notify(
-                    f"New agent conversations detected",
+                    "New agent conversations detected",
                     title="Debug",
                 )
 

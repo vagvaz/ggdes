@@ -4,7 +4,7 @@ Defines the schema for tools that LLM agents can invoke during analysis.
 These tools provide grounded access to the codebase, preventing hallucinations.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ class ToolParameter(BaseModel):
     required: bool = Field(
         default=True, description="Whether this parameter is required"
     )
-    enum: Optional[List[str]] = Field(
+    enum: list[str] | None = Field(
         default=None, description="Allowed values if this is an enum type"
     )
 
@@ -28,10 +28,10 @@ class ToolDefinition(BaseModel):
 
     name: str = Field(description="Unique tool name")
     description: str = Field(description="What this tool does and when to use it")
-    parameters: List[ToolParameter] = Field(description="Parameters this tool accepts")
+    parameters: list[ToolParameter] = Field(description="Parameters this tool accepts")
     returns: str = Field(description="Description of what this tool returns")
 
-    def to_openai_schema(self) -> Dict[str, Any]:
+    def to_openai_schema(self) -> dict[str, Any]:
         """Convert to OpenAI function calling schema.
 
         Returns:
@@ -41,7 +41,7 @@ class ToolDefinition(BaseModel):
         required = []
 
         for param in self.parameters:
-            prop: Dict[str, Any] = {
+            prop: dict[str, Any] = {
                 "type": param.type,
                 "description": param.description,
             }
@@ -65,7 +65,7 @@ class ToolDefinition(BaseModel):
             },
         }
 
-    def to_anthropic_schema(self) -> Dict[str, Any]:
+    def to_anthropic_schema(self) -> dict[str, Any]:
         """Convert to Anthropic tool use schema.
 
         Returns:
@@ -75,7 +75,7 @@ class ToolDefinition(BaseModel):
         required = []
 
         for param in self.parameters:
-            prop: Dict[str, Any] = {
+            prop: dict[str, Any] = {
                 "type": param.type,
                 "description": param.description,
             }
@@ -101,10 +101,10 @@ class ToolCall(BaseModel):
     """A tool invocation request from an LLM."""
 
     tool_name: str = Field(description="Name of the tool to invoke")
-    arguments: Dict[str, Any] = Field(
+    arguments: dict[str, Any] = Field(
         default_factory=dict, description="Arguments for the tool"
     )
-    call_id: Optional[str] = Field(
+    call_id: str | None = Field(
         default=None, description="Call ID for tracking (used by OpenAI-style APIs)"
     )
 
@@ -115,7 +115,7 @@ class ToolResult(BaseModel):
     tool_name: str = Field(description="Name of the tool that was executed")
     success: bool = Field(description="Whether the tool execution succeeded")
     result: Any = Field(description="The tool's return value")
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None, description="Error message if execution failed"
     )
 
@@ -325,7 +325,7 @@ TOOL_GET_ELEMENT_SOURCE = ToolDefinition(
 )
 
 # All available tools
-TOOL_DEFINITIONS: List[ToolDefinition] = [
+TOOL_DEFINITIONS: list[ToolDefinition] = [
     TOOL_GET_CHANGED_FILES,
     TOOL_READ_FILE,
     TOOL_SEARCH_CODE,
@@ -338,7 +338,7 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
 _TOOL_LOOKUP = {tool.name: tool for tool in TOOL_DEFINITIONS}
 
 
-def get_tool_by_name(name: str) -> Optional[ToolDefinition]:
+def get_tool_by_name(name: str) -> ToolDefinition | None:
     """Get a tool definition by name.
 
     Args:

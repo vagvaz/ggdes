@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, field_validator
@@ -71,7 +71,7 @@ class AnalysisMetadata(BaseModel):
     storage_policy: StoragePolicy = StoragePolicy.SUMMARY
 
     # User-provided context for all agents
-    user_context: Optional[Dict[str, Any]] = None
+    user_context: dict[str, Any] | None = None
 
     # Feature description for semantic change filtering
     feature_description: str | None = None

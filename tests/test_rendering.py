@@ -295,7 +295,6 @@ Content 3."""
     @pytest.mark.asyncio
     async def test_render_html_to_png_async(self, tmp_path: Path) -> None:
         """Test PNG rendering with mocked Playwright."""
-        import asyncio
         from unittest.mock import AsyncMock
 
         from ggdes.rendering import MarkdownToPngRenderer
@@ -389,10 +388,10 @@ Content two.""")
         Since playwright is imported inside the function, we test by
         checking the error message format in the implementation.
         """
-        from ggdes.rendering.markdown_to_png import MarkdownToPngRenderer
-
         # Verify the error message format in the code
         import inspect
+
+        from ggdes.rendering.markdown_to_png import MarkdownToPngRenderer
 
         source = inspect.getsource(MarkdownToPngRenderer._render_html_to_png_async)
 

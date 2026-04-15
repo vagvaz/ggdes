@@ -72,6 +72,8 @@ warn_return_any = true
 warn_unused_ignores = true
 # Ignore missing stubs for optional dependencies (set to true to suppress all)
 ignore_missing_imports = true
+# Exclude skills scripts from type checking (they are standalone helper scripts)
+exclude = ["ggdes/skills/"]
 
 [dependency-groups]
 dev = [

@@ -3,19 +3,15 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ggdes.agents.change_filter import (
     ChangeFilter,
+    ChangeFilterResult,
     DiffHunk,
     FileClassification,
-    ChangeFilterResult,
     group_hunks_by_file,
     parse_diff_into_hunks,
 )
-from ggdes.config import GGDesConfig
 from ggdes.schemas import ChangeSummary, ChangeType, FileChange, ImpactLevel
-
 
 # ============================================================
 # Diff Parsing Tests

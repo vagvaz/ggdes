@@ -6,10 +6,10 @@ all or part of the output before proceeding.
 
 from ggdes.review.review import (
     ReviewDecision,
-    StageReview,
     ReviewSession,
+    StageReview,
 )
-from ggdes.review.reviewer import StageReviewer, SKIP_STAGES, REVIEWABLE_STAGES
+from ggdes.review.reviewer import REVIEWABLE_STAGES, SKIP_STAGES, StageReviewer
 
 __all__ = [
     "ReviewDecision",

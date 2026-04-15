@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ggdes.schemas import StoragePolicy
 
@@ -38,8 +38,8 @@ class ConversationContext:
             max_tokens: Token threshold before compression
         """
         self.system_prompt = system_prompt
-        self.messages: List[Dict[str, Any]] = []  # Raw conversation history
-        self.summaries: List[str] = []  # Progressive summaries
+        self.messages: list[dict[str, Any]] = []  # Raw conversation history
+        self.summaries: list[str] = []  # Progressive summaries
         self.storage_policy = storage_policy
         self.max_tokens = max_tokens
         self.current_tokens = 0
@@ -69,7 +69,7 @@ class ConversationContext:
         else:
             self.summaries.append(content)
 
-    def get_context_for_llm(self) -> List[Dict[str, Any]]:
+    def get_context_for_llm(self) -> list[dict[str, Any]]:
         """Get messages formatted for LLM API call.
 
         Returns:
@@ -87,7 +87,7 @@ class ConversationContext:
         """
         return self.current_tokens > self.max_tokens
 
-    def get_compressed_context(self) -> List[Dict[str, Any]]:
+    def get_compressed_context(self) -> list[dict[str, Any]]:
         """Compress conversation to fit within token limits.
 
         Strategy: Keep system prompt, summarize older messages,
@@ -112,7 +112,7 @@ class ConversationContext:
             {"role": "system", "content": f"Previous conversation summary: {summary}"},
         ] + recent_messages
 
-    def _summarize_turns(self, turns: List[Dict[str, Any]]) -> str:
+    def _summarize_turns(self, turns: list[dict[str, Any]]) -> str:
         """Summarize a list of conversation turns.
 
         Args:
@@ -193,7 +193,7 @@ class ConversationContext:
 
     @classmethod
     def load(
-        cls, kb_path: Path, storage_policy: Optional[StoragePolicy] = None
+        cls, kb_path: Path, storage_policy: StoragePolicy | None = None
     ) -> "ConversationContext":
         """Load conversation from KB.
 

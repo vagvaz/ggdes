@@ -6,7 +6,7 @@ import json
 import threading
 import traceback
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 from rich.console import Console
@@ -16,7 +16,7 @@ from ggdes.config import GGDesConfig, ParsingMode
 from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
 from ggdes.review import ReviewSession
-from ggdes.schemas import ChangeSummary, CodeElement, StoragePolicy
+from ggdes.schemas import ChangeSummary, CodeElement
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
@@ -50,7 +50,7 @@ class AnalysisPipeline:
         self.repo_path = Path(self.metadata.repo_path)
         self.wt_manager = WorktreeManager(config, self.repo_path)
         self._metadata_lock = threading.Lock()
-        self._review_session: Optional["ReviewSession"] = None
+        self._review_session: ReviewSession | None = None
 
     def run_stage(self, stage_name: str) -> bool:
         """Run a specific stage.
@@ -158,7 +158,7 @@ class AnalysisPipeline:
         Returns:
             True if analysis should continue, False if paused
         """
-        from ggdes.review import SKIP_STAGES, StageReviewer, REVIEWABLE_STAGES
+        from ggdes.review import REVIEWABLE_STAGES, SKIP_STAGES, StageReviewer
 
         # Skip review for infrastructure/non-reviewable stages
         if stage_name in SKIP_STAGES:
@@ -221,7 +221,6 @@ class AnalysisPipeline:
         Args:
             stage_name: First stage to invalidate
         """
-        from ggdes.kb.manager import AnalysisMetadata
 
         stage_order = [
             self.kb_manager.STAGE_WORKTREE_SETUP,
@@ -649,7 +648,7 @@ class AnalysisPipeline:
         # Get list of changed files from git analysis if available
         changed_files = self._get_changed_files_from_analysis()
 
-        console.print(f"  [dim]Filtering AST parsing to changed files only[/dim]")
+        console.print("  [dim]Filtering AST parsing to changed files only[/dim]")
 
         # Determine parsing mode
         parsing_config = self.config.parsing
@@ -839,7 +838,6 @@ class AnalysisPipeline:
             detect_primary_language,
             get_expert_skill_for_language,
         )
-        from ggdes.tools import ToolExecutor
 
         console.print("  [dim]Initializing Technical Author...[/dim]")
 
@@ -1003,7 +1001,7 @@ class AnalysisPipeline:
                 f"  [dim]Performing semantic diff on {len(changed_files)} changed files...[/dim]"
             )
             console.print(
-                f"  [dim]Only analyzing files that changed in the commit range[/dim]"
+                "  [dim]Only analyzing files that changed in the commit range[/dim]"
             )
 
             result = analyzer.analyze(

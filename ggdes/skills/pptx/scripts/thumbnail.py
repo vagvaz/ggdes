@@ -21,7 +21,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import defusedxml.minidom
 from office.soffice import get_soffice_env
@@ -93,7 +93,7 @@ def main():
         sys.exit(1)
 
 
-def get_slide_info(pptx_path: Path) -> List[Dict[str, Any]]:
+def get_slide_info(pptx_path: Path) -> list[dict[str, Any]]:
     with zipfile.ZipFile(pptx_path, "r") as zf:
         rels_content = zf.read("ppt/_rels/presentation.xml.rels").decode("utf-8")
         rels_dom = defusedxml.minidom.parseString(rels_content)
@@ -120,10 +120,10 @@ def get_slide_info(pptx_path: Path) -> List[Dict[str, Any]]:
 
 
 def build_slide_list(
-    slide_info: List[Dict[str, Any]],
-    visible_images: List[Path],
+    slide_info: list[dict[str, Any]],
+    visible_images: list[Path],
     temp_dir: Path,
-) -> List[tuple[Path, str]]:
+) -> list[tuple[Path, str]]:
     if visible_images:
         with Image.open(visible_images[0]) as img:
             placeholder_size = img.size

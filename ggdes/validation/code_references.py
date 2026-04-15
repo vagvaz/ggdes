@@ -1,9 +1,9 @@
 """Code reference validation for LLM outputs."""
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -12,8 +12,8 @@ from loguru import logger
 class CodeReference:
     """A code reference found in LLM output."""
 
-    file_path: Optional[str]  # File path if specified
-    line_number: Optional[int]  # Line number if specified
+    file_path: str | None  # File path if specified
+    line_number: int | None  # Line number if specified
     code_snippet: str  # The referenced code
     reference_type: str  # 'function', 'class', 'variable', 'snippet', 'code_block'
 
@@ -76,9 +76,9 @@ class CodeReferenceValidator:
         self,
         repo_path: Path,
         changed_files: list[str] | None = None,
-        code_elements: Optional[Dict[str, Dict[str, Any]]] = None,
+        code_elements: dict[str, dict[str, Any]] | None = None,
         diff_content: str | None = None,
-        source_code: Optional[Dict[str, str]] = None,
+        source_code: dict[str, str] | None = None,
     ):
         """Initialize code reference validator.
 
@@ -97,7 +97,7 @@ class CodeReferenceValidator:
         self.diff_content = diff_content or ""
 
         # Build source code index from code_elements and explicit source_code
-        self.source_code: Dict[str, str] = {}
+        self.source_code: dict[str, str] = {}
         if source_code:
             self.source_code.update(source_code)
         # Also extract source_code from code_elements if available

@@ -1,27 +1,25 @@
 """Comprehensive tests for GGDes pipeline module."""
 
 import json
-import pytest
-import threading
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock, mock_open, ANY
-from typing import Any
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
-from ggdes.pipeline import AnalysisPipeline
+import pytest
+
 from ggdes.config import (
-    GGDesConfig,
-    PathsConfig,
     FeaturesConfig,
+    GGDesConfig,
     ParsingConfig,
     ParsingMode,
+    PathsConfig,
 )
 from ggdes.kb.manager import (
-    KnowledgeBaseManager,
     AnalysisMetadata,
-    StageStatus,
+    KnowledgeBaseManager,
     WorktreeInfo,
 )
+from ggdes.pipeline import AnalysisPipeline
 from ggdes.schemas import StoragePolicy
 
 
@@ -595,21 +593,23 @@ class TestGetChangedFilesDetailed:
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
                 # Mock file reading
-                with patch(
-                    "builtins.open",
-                    mock_open(read_data=json.dumps(mock_analysis_data)),
-                ):
-                    with patch(
+                with (
+                    patch(
+                        "builtins.open",
+                        mock_open(read_data=json.dumps(mock_analysis_data)),
+                    ),
+                    patch(
                         "ggdes.pipeline.json.loads",
                         return_value=mock_analysis_data,
-                    ):
-                        result = pipeline._get_changed_files_detailed()
+                    ),
+                ):
+                    result = pipeline._get_changed_files_detailed()
 
-                        assert len(result) == 2
-                        assert result[0]["path"] == "src/main.py"
-                        assert result[0]["change_type"] == "modified"
-                        assert result[0]["lines_added"] == 10
-                        assert result[1]["path"] == "tests/test_main.py"
+                    assert len(result) == 2
+                    assert result[0]["path"] == "src/main.py"
+                    assert result[0]["change_type"] == "modified"
+                    assert result[0]["lines_added"] == 10
+                    assert result[1]["path"] == "tests/test_main.py"
 
     def test_get_changed_files_detailed_no_file(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
@@ -1253,17 +1253,19 @@ class TestGetChangedFilesFromAnalysis:
             with patch("ggdes.pipeline.WorktreeManager"):
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                with patch(
-                    "builtins.open",
-                    mock_open(read_data=json.dumps(mock_analysis_data)),
-                ):
-                    with patch(
+                with (
+                    patch(
+                        "builtins.open",
+                        mock_open(read_data=json.dumps(mock_analysis_data)),
+                    ),
+                    patch(
                         "ggdes.pipeline.json.loads",
                         return_value=mock_analysis_data,
-                    ):
-                        result = pipeline._get_changed_files_from_analysis()
+                    ),
+                ):
+                    result = pipeline._get_changed_files_from_analysis()
 
-                        assert result == ["src/main.py", "tests/test.py"]
+                    assert result == ["src/main.py", "tests/test.py"]
 
     def test_get_changed_files_no_file(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata

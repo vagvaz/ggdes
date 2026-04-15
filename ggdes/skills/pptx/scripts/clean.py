@@ -18,7 +18,6 @@ This script removes:
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
 
 import defusedxml.minidom
 
@@ -102,7 +101,7 @@ def remove_trash_directory(unpacked_dir: Path) -> list[str]:
     return removed
 
 
-def get_slide_referenced_files(unpacked_dir: Path) -> Set[str]:
+def get_slide_referenced_files(unpacked_dir: Path) -> set[str]:
     referenced = set()
     slides_rels_dir = unpacked_dir / "ppt" / "slides" / "_rels"
 
@@ -151,7 +150,7 @@ def remove_orphaned_rels_files(unpacked_dir: Path) -> list[str]:
     return removed
 
 
-def get_referenced_files(unpacked_dir: Path) -> Set[str]:
+def get_referenced_files(unpacked_dir: Path) -> set[str]:
     referenced = set()
 
     for rels_file in unpacked_dir.rglob("*.rels"):
@@ -169,7 +168,7 @@ def get_referenced_files(unpacked_dir: Path) -> Set[str]:
     return referenced
 
 
-def remove_orphaned_files(unpacked_dir: Path, referenced: Set[str]) -> List[str]:
+def remove_orphaned_files(unpacked_dir: Path, referenced: set[str]) -> list[str]:
     resource_dirs = [
         "media",
         "embeddings",

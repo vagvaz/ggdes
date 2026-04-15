@@ -1,11 +1,11 @@
 """CLI for GGDes."""
 
+import builtins
 import hashlib
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
 
 import typer
 import yaml
@@ -22,7 +22,7 @@ app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
 
 
-def _load_user_context_from_file(context_file: Path) -> Dict[str, Any]:
+def _load_user_context_from_file(context_file: Path) -> dict[str, Any]:
     """Load user context from a YAML or JSON file.
 
     Args:
@@ -55,13 +55,13 @@ def _load_user_context_from_file(context_file: Path) -> Dict[str, Any]:
     return data
 
 
-def _gather_user_context() -> Dict[str, Any]:
+def _gather_user_context() -> dict[str, Any]:
     """Gather user context through interactive questionnaire.
 
     Returns:
         Dictionary with user-provided context for all agents
     """
-    context: Dict[str, Any] = {}
+    context: dict[str, Any] = {}
 
     console.print("\n[bold cyan]Analysis Configuration[/bold cyan]")
     console.print("Help me create the best documentation for your changes.\n")
@@ -741,11 +741,14 @@ def resume(
             )
 
         # When formats change, ask if user wants to update context too
-        if not overwrite_context and found_metadata.user_context:
-            if typer.confirm(
+        if (
+            not overwrite_context
+            and found_metadata.user_context
+            and typer.confirm(
                 "\nFormats have changed. Do you want to update the analysis configuration for these new formats?"
-            ):
-                overwrite_context = True
+            )
+        ):
+            overwrite_context = True
 
     # Check if can resume
     if found_id is None:
@@ -944,15 +947,14 @@ def cleanup(
     console.print(f"[green]Cleaned up worktrees for:[/green] {found_id}")
 
     # Optionally remove from KB
-    if remove_kb:
-        if typer.confirm(
-            f"Remove analysis '{found_metadata.name}' from knowledge base?"
-        ):
-            if found_id is None:
-                console.print("[red]Error:[/red] Could not determine analysis ID")
-                raise typer.Exit(1)
-            kb_manager.delete_analysis(found_id)
-            console.print(f"[green]Removed from knowledge base:[/green] {found_id}")
+    if remove_kb and typer.confirm(
+        f"Remove analysis '{found_metadata.name}' from knowledge base?"
+    ):
+        if found_id is None:
+            console.print("[red]Error:[/red] Could not determine analysis ID")
+            raise typer.Exit(1)
+        kb_manager.delete_analysis(found_id)
+        console.print(f"[green]Removed from knowledge base:[/green] {found_id}")
 
 
 @app.command()
@@ -1162,17 +1164,17 @@ def debug(
         .debug-tabs {
             height: 1fr;
         }
-        
+
         .browser-container {
             height: 100%;
         }
-        
+
         .agent-list-panel {
             width: 20%;
             border: solid $primary-darken-2;
             padding: 0 1;
         }
-        
+
         .message-list-panel {
             width: 40%;
             border: solid $primary-darken-2;
@@ -1199,19 +1201,19 @@ def debug(
             margin-top: 0;
             margin-bottom: 1;
         }
-        
+
         .message-detail-panel {
             width: 40%;
             border: solid $primary-darken-2;
             padding: 0 1;
         }
-        
+
         .file-tree-panel {
             width: 25%;
             border: solid $primary-darken-2;
             padding: 0 1;
         }
-        
+
         .outputs-header {
             height: auto;
             margin-bottom: 1;
@@ -1222,29 +1224,29 @@ def debug(
             width: auto;
             margin-left: 1;
         }
-        
+
         .content-viewer-panel {
             width: 75%;
             border: solid $primary-darken-2;
             padding: 0 1;
         }
-        
+
         #message-detail {
             height: 1fr;
         }
-        
+
         #content-viewer {
             height: 1fr;
         }
-        
+
         #file-tree {
             height: 1fr;
         }
-        
+
         #agent-list {
             height: 1fr;
         }
-        
+
         #message-list {
             height: 1fr;
         }
@@ -1390,7 +1392,7 @@ def export(
         analysis_path = kb_manager.get_analysis_path(found_id)
 
         # Collect all analysis data
-        export_data: Dict[str, Any] = {
+        export_data: dict[str, Any] = {
             "metadata": found_metadata.model_dump(),
             "analysis_id": found_id,
             "exported_at": datetime.now().isoformat(),
@@ -1407,7 +1409,7 @@ def export(
         # Load technical facts
         facts_dir = analysis_path / "technical_facts"
         if facts_dir.exists():
-            facts: List[Any] = []
+            facts: builtins.list[Any] = []
             for fact_file in facts_dir.glob("*.json"):
                 facts.append(json.loads(fact_file.read_text()))
             export_data["data"]["technical_facts"] = facts
@@ -1415,7 +1417,7 @@ def export(
         # Load document plans
         plans_dir = analysis_path / "plans"
         if plans_dir.exists():
-            plans: Dict[str, Any] = {}
+            plans: dict[str, Any] = {}
             for plan_file in plans_dir.glob("*.json"):
                 plans[plan_file.stem] = json.loads(plan_file.read_text())
             export_data["data"]["document_plans"] = plans
@@ -1632,7 +1634,7 @@ def doctor(
     kb_path = Path(config.paths.knowledge_base).expanduser()
 
     if kb_path.exists():
-        analyses: List[Path] = [p for p in kb_path.glob("*/metadata.yaml")]
+        analyses: builtins.list[Path] = [p for p in kb_path.glob("*/metadata.yaml")]
         console.print(f"  [green]✓[/green] Knowledge base: {kb_path}")
         console.print(f"    [dim]Found {len(analyses)} analysis(es)[/dim]")
     else:

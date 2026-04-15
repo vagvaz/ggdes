@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from rich.console import Console
@@ -12,10 +12,10 @@ from ggdes.agents.skill_utils import (
     get_expert_skill_for_language,
     load_skill,
 )
+from ggdes.config import GGDesConfig
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
-from ggdes.config import GGDesConfig
 from ggdes.schemas import ChangeSummary, StoragePolicy
 
 console = Console()
@@ -28,8 +28,8 @@ class GitAnalyzer:
         self,
         repo_path: Path,
         config: GGDesConfig,
-        analysis_id: Optional[str] = None,
-        user_context: Optional[Dict[str, Any]] = None,
+        analysis_id: str | None = None,
+        user_context: dict[str, Any] | None = None,
     ):
         """Initialize git analyzer.
 
@@ -51,8 +51,8 @@ class GitAnalyzer:
 
         # Store analysis data for code reference validation
         self._current_diff: str = ""
-        self._current_files: List[Dict[str, Any]] = []
-        self._current_commits: List[Dict[str, Any]] = []
+        self._current_files: list[dict[str, Any]] = []
+        self._current_commits: list[dict[str, Any]] = []
 
         # Detect language and load expert skill (with graceful fallback)
         self._load_language_expert_skill()
@@ -203,8 +203,8 @@ class GitAnalyzer:
             raise RuntimeError(error_msg) from e
 
     def get_commit_log(
-        self, commit_range: str, focus_commits: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+        self, commit_range: str, focus_commits: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Get commit log with messages.
 
         Args:
@@ -290,8 +290,8 @@ class GitAnalyzer:
             return commits
 
     def get_changed_files(
-        self, commit_range: str, focus_commits: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+        self, commit_range: str, focus_commits: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Get list of changed files with stats.
 
         Args:
@@ -486,7 +486,7 @@ class GitAnalyzer:
         return change_summary
 
     async def _analyze_single(
-        self, diff: str, files: List[Dict[str, Any]], commits: List[Dict[str, Any]]
+        self, diff: str, files: list[dict[str, Any]], commits: list[dict[str, Any]]
     ) -> ChangeSummary:
         """Single-pass analysis for diffs that fit in context."""
         console.print(
@@ -605,7 +605,7 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
         return change_summary
 
     async def _analyze_chunked(
-        self, diff: str, files: List[Dict[str, Any]], commits: List[Dict[str, Any]]
+        self, diff: str, files: list[dict[str, Any]], commits: list[dict[str, Any]]
     ) -> ChangeSummary:
         """Multi-chunk analysis for large diffs."""
         if not self.conversation:
@@ -683,7 +683,7 @@ Then provide a structured ChangeSummary.
 
         return change_summary
 
-    def _chunk_diff(self, diff: str, max_tokens: int = 25000) -> List[Dict[str, Any]]:
+    def _chunk_diff(self, diff: str, max_tokens: int = 25000) -> list[dict[str, Any]]:
         """Split diff into chunks by file or token size."""
         chunks: list[dict[str, Any]] = []
         current_chunk_content: list[str] = []
@@ -751,7 +751,7 @@ Then provide a structured ChangeSummary.
 
         return chunks
 
-    async def _chat_with_context(self, context: List[Dict[str, Any]]) -> str:
+    async def _chat_with_context(self, context: list[dict[str, Any]]) -> str:
         """Send chat request with full conversation context."""
         logger.info(
             "Git Analyzer: LLM chat call | messages={} model={}",
@@ -765,7 +765,7 @@ Then provide a structured ChangeSummary.
         )
 
     async def _generate_structured(
-        self, context: List[Dict[str, Any]]
+        self, context: list[dict[str, Any]]
     ) -> ChangeSummary:
         """Generate structured output from conversation context with code reference validation."""
         logger.info(

@@ -6,7 +6,7 @@ and partial regeneration targets across pipeline stages.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class ReviewDecision(Enum):
@@ -31,7 +31,7 @@ class StageReview:
 
     stage_name: str
     decision: ReviewDecision
-    feedback: Optional[str] = None
+    feedback: str | None = None
     partial_keys: list[str] = field(default_factory=list)
     items_reviewed: int = 0
     items_accepted: int = 0
@@ -44,7 +44,7 @@ class ReviewSession:
     analysis_id: str
     interactive: bool = False
     stage_reviews: list[StageReview] = field(default_factory=list)
-    current_stage: Optional[str] = None
+    current_stage: str | None = None
     # Maps stage_name -> list of item keys to regenerate (for partial regen)
     pending_partial_regen: dict[str, list[str]] = field(default_factory=dict)
     # Accumulated feedback keyed by stage name
@@ -62,11 +62,11 @@ class ReviewSession:
         elif review.decision == ReviewDecision.SKIP:
             self.skip_remaining = True
 
-    def get_feedback(self, stage_name: str) -> Optional[str]:
+    def get_feedback(self, stage_name: str) -> str | None:
         """Get accumulated feedback for a stage (from itself or earlier)."""
         return self.stage_feedback.get(stage_name)
 
-    def get_partial_keys(self, stage_name: str) -> Optional[list[str]]:
+    def get_partial_keys(self, stage_name: str) -> list[str] | None:
         """Get partial regeneration keys for a stage, if any."""
         return self.pending_partial_regen.get(stage_name)
 

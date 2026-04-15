@@ -1,11 +1,11 @@
 """Comprehensive tests for GGDes schemas module."""
 
-import pytest
 from datetime import datetime
-from typing import Any
 
+import pytest
+
+from ggdes.kb.manager import StageStatus
 from ggdes.schemas import (
-    StoragePolicy,
     ChangeSummary,
     ChangeType,
     CodeChangeDetail,
@@ -16,10 +16,10 @@ from ggdes.schemas import (
     FileChange,
     ImpactLevel,
     SectionPlan,
+    StoragePolicy,
     TechnicalFact,
 )
-from ggdes.semantic_diff import SemanticDiffResult, SemanticChange, SemanticChangeType
-from ggdes.kb.manager import StageStatus
+from ggdes.semantic_diff import SemanticChange, SemanticChangeType, SemanticDiffResult
 
 
 class TestStoragePolicy:

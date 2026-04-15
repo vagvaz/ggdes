@@ -6,17 +6,16 @@ and collects user feedback for regeneration.
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
-from rich.table import Table
-from rich.syntax import Syntax
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt, PromptBase
+from rich.prompt import Prompt
+from rich.syntax import Syntax
+from rich.table import Table
 
 from ggdes.config import get_kb_path
-from ggdes.review.review import ReviewDecision, StageReview, ReviewSession
+from ggdes.review.review import ReviewDecision, StageReview
 
 console = Console()
 
@@ -65,7 +64,7 @@ class StageReviewer:
     # Preview generation per stage
     # -------------------------------------------------------------------------
 
-    def generate_preview(self, stage_name: str) -> Optional[StagePreview]:
+    def generate_preview(self, stage_name: str) -> StagePreview | None:
         """Generate a reviewable preview of a stage's output."""
         method = f"_preview_{stage_name}"
         if hasattr(self, method):
@@ -73,7 +72,7 @@ class StageReviewer:
             return preview_method()  # type: ignore[no-any-return]
         return None
 
-    def _preview_git_analysis(self) -> Optional[StagePreview]:
+    def _preview_git_analysis(self) -> StagePreview | None:
         """Preview git_analysis output."""
         summary_file = self.kb_path / "git_analysis" / "summary.json"
         if not summary_file.exists():
@@ -102,7 +101,7 @@ class StageReviewer:
             raw_data=data,
         )
 
-    def _preview_change_filter(self) -> Optional[StagePreview]:
+    def _preview_change_filter(self) -> StagePreview | None:
         """Preview semantic change filter output."""
         summary_file = self.kb_path / "git_analysis" / "summary.json"
         if not summary_file.exists():
@@ -141,7 +140,7 @@ class StageReviewer:
             raw_data=data,
         )
 
-    def _preview_technical_author(self) -> Optional[StagePreview]:
+    def _preview_technical_author(self) -> StagePreview | None:
         """Preview technical facts output."""
         facts_file = self.kb_path / "technical_facts" / "facts.json"
         if not facts_file.exists():
@@ -177,7 +176,7 @@ class StageReviewer:
             raw_data=facts_data,
         )
 
-    def _preview_coordinator_plan(self) -> Optional[StagePreview]:
+    def _preview_coordinator_plan(self) -> StagePreview | None:
         """Preview document plans output."""
         plans_dir = self.kb_path / "plans"
         if not plans_dir.exists():
@@ -210,7 +209,7 @@ class StageReviewer:
             raw_data=plans_data,
         )
 
-    def _preview_output_generation(self) -> Optional[StagePreview]:
+    def _preview_output_generation(self) -> StagePreview | None:
         """Preview generated documents."""
         output_dir = self.kb_path / "outputs"
         if not output_dir.exists():
@@ -348,7 +347,7 @@ class StageReviewer:
         """Prompt user to select specific items for partial regeneration."""
         console.print()
         console.print(
-            f"[yellow]Select items to regenerate (comma-separated numbers or ranges):[/yellow]"
+            "[yellow]Select items to regenerate (comma-separated numbers or ranges):[/yellow]"
         )
         for i, item in enumerate(preview.key_items[:10]):
             console.print(f"  [cyan]{i}[/cyan]  {item['label']}")
@@ -403,7 +402,7 @@ class StageReviewer:
             if valid and keys:
                 return keys
 
-            console.print(f"[red]Invalid selection. Try again.[/red]")
+            console.print("[red]Invalid selection. Try again.[/red]")
 
     # -------------------------------------------------------------------------
     # Utilities

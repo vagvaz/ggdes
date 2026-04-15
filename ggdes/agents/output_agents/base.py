@@ -3,9 +3,8 @@
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any
 
-from loguru import logger
 from rich.console import Console
 
 console = Console()
@@ -25,10 +24,10 @@ class OutputAgent(ABC):
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
-        self.user_context: Optional[Dict[str, Any]] = None
-        self._diagram_generator: Optional[Any] = None
-        self._diagram_cache: Optional[Any] = None
-        self._validated_elements: Optional[Set[str]] = None
+        self.user_context: dict[str, Any] | None = None
+        self._diagram_generator: Any | None = None
+        self._diagram_cache: Any | None = None
+        self._validated_elements: set[str] | None = None
 
     def _get_diagram_cache(self) -> Any:
         """Get or create diagram cache instance."""
@@ -82,7 +81,7 @@ class OutputAgent(ABC):
             console.print(f"  [dim]Could not load user context: {e}[/dim]")
             self.user_context = None
 
-    def _load_validated_elements(self) -> Set[str]:
+    def _load_validated_elements(self) -> set[str]:
         """Load and cache valid code element names from AST data.
 
         Returns:
@@ -92,11 +91,9 @@ class OutputAgent(ABC):
             return self._validated_elements
 
         from ggdes.config import get_kb_path
-        from ggdes.kb import KnowledgeBaseManager
 
-        valid_names: Set[str] = set()
+        valid_names: set[str] = set()
 
-        kb_manager = KnowledgeBaseManager(self.config)
         ast_head_dir = get_kb_path(self.config, self.analysis_id) / "ast_head"
 
         if ast_head_dir.exists():
@@ -171,11 +168,11 @@ class OutputAgent(ABC):
 
     def _generate_diagrams_for_facts(
         self,
-        facts: List[Any],
+        facts: list[Any],
         output_dir: Path,
-        diagram_types: Optional[List[str]] = None,
+        diagram_types: list[str] | None = None,
         use_cache: bool = True,
-    ) -> List[tuple[str, Path, str]]:
+    ) -> list[tuple[str, Path, str]]:
         """Generate diagrams from technical facts with caching support.
 
         Args:
@@ -231,13 +228,13 @@ class OutputAgent(ABC):
 
     def _generate_architecture_diagram(
         self,
-        architecture_facts: List[Any],
-        api_facts: List[Any],
-        all_facts: List[Any],
+        architecture_facts: list[Any],
+        api_facts: list[Any],
+        all_facts: list[Any],
         generator: Any,
         output_dir: Path,
         cache: Any,
-    ) -> Optional[tuple[str, Path, str]]:
+    ) -> tuple[str, Path, str] | None:
         """Generate architecture diagram from facts.
 
         Returns:
@@ -325,13 +322,13 @@ class OutputAgent(ABC):
 
     def _generate_flow_diagram(
         self,
-        behavior_facts: List[Any],
-        data_flow_facts: List[Any],
-        all_facts: List[Any],
+        behavior_facts: list[Any],
+        data_flow_facts: list[Any],
+        all_facts: list[Any],
         generator: Any,
         output_dir: Path,
         cache: Any,
-    ) -> Optional[tuple[str, Path, str]]:
+    ) -> tuple[str, Path, str] | None:
         """Generate flow diagram from facts.
 
         Returns:
@@ -390,11 +387,11 @@ class OutputAgent(ABC):
 
     def _generate_class_diagram(
         self,
-        facts: List[Any],
+        facts: list[Any],
         generator: Any,
         output_dir: Path,
         cache: Any,
-    ) -> Optional[tuple[str, Path, str]]:
+    ) -> tuple[str, Path, str] | None:
         """Generate class diagram from facts.
 
         Returns:

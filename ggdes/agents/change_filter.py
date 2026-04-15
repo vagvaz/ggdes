@@ -1,9 +1,7 @@
 """Semantic change filter that uses LLM to classify diff hunks by relevance to a feature."""
 
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -137,11 +135,11 @@ def parse_diff_into_hunks(diff: str) -> list[DiffHunk]:
                         hunk_start_line
                         + len(
                             [
-                                l
-                                for l in current_hunk_lines
-                                if not l.startswith("-")
-                                and not l.startswith("\\")
-                                and not l.startswith("@@")
+                                line
+                                for line in current_hunk_lines
+                                if not line.startswith("-")
+                                and not line.startswith("\\")
+                                and not line.startswith("@@")
                             ]
                         ),
                     )

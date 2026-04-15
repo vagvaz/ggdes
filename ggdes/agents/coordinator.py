@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from rich.console import Console
@@ -31,7 +31,7 @@ class Coordinator:
         repo_path: Path,
         config: GGDesConfig,
         analysis_id: str,
-        user_context: Optional[Dict[str, Any]] = None,
+        user_context: dict[str, Any] | None = None,
     ):
         """Initialize coordinator.
 
@@ -194,8 +194,8 @@ class Coordinator:
         return plans
 
     def _categorize_facts(
-        self, facts: List[TechnicalFact]
-    ) -> Dict[str, List[TechnicalFact]]:
+        self, facts: list[TechnicalFact]
+    ) -> dict[str, list[TechnicalFact]]:
         """Group facts by category for planning."""
         categories: dict[str, list[TechnicalFact]] = {}
         for fact in facts:
@@ -206,8 +206,8 @@ class Coordinator:
         return categories
 
     async def _gather_user_input(
-        self, facts_by_category: Dict[str, List[TechnicalFact]]
-    ) -> Dict[str, Any]:
+        self, facts_by_category: dict[str, list[TechnicalFact]]
+    ) -> dict[str, Any]:
         """Interactive mode: ask user for context and preferences."""
         # Use pre-populated context from CLI as defaults
         context = dict(self.user_context)
@@ -289,9 +289,9 @@ class Coordinator:
     async def _create_format_plan(
         self,
         fmt: str,
-        facts: List[TechnicalFact],
-        facts_by_category: Dict[str, List[TechnicalFact]],
-        user_context: Dict[str, Any],
+        facts: list[TechnicalFact],
+        facts_by_category: dict[str, list[TechnicalFact]],
+        user_context: dict[str, Any],
     ) -> DocumentPlan:
         """Create a document plan for a specific format with its own conversation context."""
         from ggdes.llm import ConversationContext
@@ -396,9 +396,9 @@ class Coordinator:
     def _build_planning_prompt(
         self,
         fmt: str,
-        facts: List[TechnicalFact],
-        facts_by_category: Dict[str, List[TechnicalFact]],
-        user_context: Dict[str, Any],
+        facts: list[TechnicalFact],
+        facts_by_category: dict[str, list[TechnicalFact]],
+        user_context: dict[str, Any],
     ) -> str:
         """Build prompt for document planning."""
         prompt = f"""Create a document plan for a {fmt.upper()} format design document.
@@ -503,8 +503,8 @@ Provide a document plan as JSON:
         return prompt
 
     async def _generate_plan_response(
-        self, context: List[Dict[str, Any]], fmt: str
-    ) -> Dict[str, Any]:
+        self, context: list[dict[str, Any]], fmt: str
+    ) -> dict[str, Any]:
         """Generate document plan from conversation context."""
         logger.info(
             "Coordinator: LLM call for %s plan | messages=%d model=%s",

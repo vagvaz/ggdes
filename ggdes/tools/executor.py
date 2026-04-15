@@ -7,13 +7,12 @@ file system, and AST data to provide grounded responses.
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rich.console import Console
 
 from ggdes.tools.definitions import (
     ToolCall,
-    ToolDefinition,
     ToolResult,
     get_tool_by_name,
 )
@@ -31,11 +30,11 @@ class ToolExecutor:
     def __init__(
         self,
         repo_path: Path,
-        changed_files: Optional[List[Dict[str, Any]]] = None,
-        ast_elements: Optional[Dict[str, List[Any]]] = None,
-        commit_range: Optional[str] = None,
-        focus_commits: Optional[List[str]] = None,
-        source_diffs_cache: Optional[Dict[str, Dict[str, str]]] = None,
+        changed_files: list[dict[str, Any]] | None = None,
+        ast_elements: dict[str, list[Any]] | None = None,
+        commit_range: str | None = None,
+        focus_commits: list[str] | None = None,
+        source_diffs_cache: dict[str, dict[str, str]] | None = None,
     ):
         """Initialize tool executor.
 
@@ -53,11 +52,11 @@ class ToolExecutor:
         self.commit_range = commit_range
         self.focus_commits = focus_commits
         # Pre-computed source diffs: keyed by element_name or "file_path::element_name"
-        self._source_diffs_cache: Dict[str, Dict[str, str]] = source_diffs_cache or {}
+        self._source_diffs_cache: dict[str, dict[str, str]] = source_diffs_cache or {}
 
         # Build lookup structures
-        self._element_names: Dict[str, List[str]] = {}  # name -> [file_paths]
-        self._file_elements: Dict[str, List[Any]] = {}  # filepath -> [elements]
+        self._element_names: dict[str, list[str]] = {}  # name -> [file_paths]
+        self._file_elements: dict[str, list[Any]] = {}  # filepath -> [elements]
         self._build_element_index()
 
     def _build_element_index(self) -> None:
@@ -73,7 +72,7 @@ class ToolExecutor:
                         self._element_names[name] = []
                     self._element_names[name].append(file_path)
 
-    def set_source_diffs_cache(self, source_diffs: Dict[str, Dict[str, str]]) -> None:
+    def set_source_diffs_cache(self, source_diffs: dict[str, dict[str, str]]) -> None:
         """Set or update the pre-computed source diffs cache.
 
         This lets get_element_source return instantly for cached elements
@@ -135,7 +134,7 @@ class ToolExecutor:
                 error=str(e),
             )
 
-    def execute_batch(self, calls: List[ToolCall]) -> List[ToolResult]:
+    def execute_batch(self, calls: list[ToolCall]) -> list[ToolResult]:
         """Execute multiple tool calls.
 
         Args:
@@ -153,8 +152,8 @@ class ToolExecutor:
     def _get_changed_files(
         self,
         include_contextual: bool = True,
-        change_type_filter: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        change_type_filter: str | None = None,
+    ) -> dict[str, Any]:
         """Get changed files categorized by focus level.
 
         Args:
@@ -250,9 +249,9 @@ class ToolExecutor:
     def _read_file(
         self,
         path: str,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        start_line: int | None = None,
+        end_line: int | None = None,
+    ) -> dict[str, Any]:
         """Read a file from the repository.
 
         Args:
@@ -288,7 +287,7 @@ class ToolExecutor:
 
         # Skip binary files
         try:
-            with open(file_path, "r", encoding="utf-8", errors="strict") as f:
+            with open(file_path, encoding="utf-8", errors="strict") as f:
                 content = f.read()
         except UnicodeDecodeError:
             return {
@@ -326,9 +325,9 @@ class ToolExecutor:
     def _search_code(
         self,
         pattern: str,
-        file_pattern: Optional[str] = None,
+        file_pattern: str | None = None,
         max_results: int = 20,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search for code patterns in the repository.
 
         Args:
@@ -381,9 +380,9 @@ class ToolExecutor:
     def _search_code_python(
         self,
         pattern: str,
-        file_pattern: Optional[str] = None,
+        file_pattern: str | None = None,
         max_results: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fallback Python-based code search.
 
         Args:
@@ -410,7 +409,7 @@ class ToolExecutor:
                 if not file_path.is_file():
                     continue
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(file_path, encoding="utf-8", errors="ignore") as f:
                         for line_num, line in enumerate(f, 1):
                             if compiled.search(line):
                                 rel_path = str(file_path.relative_to(self.repo_path))
@@ -432,8 +431,8 @@ class ToolExecutor:
         self,
         reference_type: str,
         name: str,
-        file_path: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        file_path: str | None = None,
+    ) -> dict[str, Any]:
         """Validate that a code reference exists in the codebase.
 
         Args:
@@ -529,7 +528,7 @@ class ToolExecutor:
             "suggestions": suggestions,
         }
 
-    def _validate_file_reference(self, path: str) -> Dict[str, Any]:
+    def _validate_file_reference(self, path: str) -> dict[str, Any]:
         """Validate that a file exists in the repository.
 
         Args:
@@ -561,7 +560,7 @@ class ToolExecutor:
             "suggestions": suggestions,
         }
 
-    def _find_similar_names(self, name: str, reference_type: str) -> List[str]:
+    def _find_similar_names(self, name: str, reference_type: str) -> list[str]:
         """Find similar names in the codebase for suggestions.
 
         Args:
@@ -596,9 +595,9 @@ class ToolExecutor:
 
     def _get_ast_elements(
         self,
-        file_path: Optional[str] = None,
-        element_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        file_path: str | None = None,
+        element_type: str | None = None,
+    ) -> dict[str, Any]:
         """Get AST elements for files.
 
         Args:
@@ -634,7 +633,7 @@ class ToolExecutor:
             "elements": elements,
         }
 
-    def _element_to_dict(self, elem: Any) -> Dict[str, Any]:
+    def _element_to_dict(self, elem: Any) -> dict[str, Any]:
         """Convert an AST element to a dict for tool results.
 
         Args:
@@ -662,9 +661,9 @@ class ToolExecutor:
     def _get_element_source(
         self,
         element_name: str,
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
         max_lines: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get the actual source code for a named code element.
 
         This is the primary anti-hallucination tool: it retrieves real source

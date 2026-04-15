@@ -310,10 +310,10 @@ class PlantUMLGenerator:
 
 
 def generate_architecture_diagram(
-    components: List[Dict[str, Any]],
-    relationships: List[Tuple[str, str, str]],
+    components: list[dict[str, Any]],
+    relationships: list[tuple[str, str, str]],
     title: str = "System Architecture",
-    generator: Optional[PlantUMLGenerator] = None,
+    generator: PlantUMLGenerator | None = None,
 ) -> str:
     """Generate PlantUML code for an architecture diagram.
 
@@ -359,7 +359,7 @@ def generate_architecture_diagram(
 
 
 def generate_flow_diagram(
-    steps: List[Dict[str, Any]],
+    steps: list[dict[str, Any]],
     title: str = "Process Flow",
     direction: str = "TB",
 ) -> str:
@@ -415,8 +415,8 @@ def generate_flow_diagram(
 
 
 def generate_class_diagram(
-    classes: List[Dict[str, Any]],
-    relationships: Optional[List[Tuple[str, str, str]]] = None,
+    classes: list[dict[str, Any]],
+    relationships: list[tuple[str, str, str]] | None = None,
     title: str = "Class Diagram",
 ) -> str:
     """Generate PlantUML code for a class diagram.
@@ -481,8 +481,8 @@ def generate_class_diagram(
 
 
 def generate_sequence_diagram(
-    participants: List[str],
-    messages: List[Dict[str, Any]],
+    participants: list[str],
+    messages: list[dict[str, Any]],
     title: str = "Sequence Diagram",
 ) -> str:
     """Generate PlantUML code for a sequence diagram.

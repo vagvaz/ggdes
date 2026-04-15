@@ -143,9 +143,13 @@ class ASTParser:
 
         # Extract elements based on language
         if language == "python":
-            elements = self._extract_python_elements(tree, file_path, relative_to, source_code)
+            elements = self._extract_python_elements(
+                tree, file_path, relative_to, source_code
+            )
         elif language == "cpp":
-            elements = self._extract_cpp_elements(tree, file_path, relative_to, source_code)
+            elements = self._extract_cpp_elements(
+                tree, file_path, relative_to, source_code
+            )
         else:
             elements = []
 
@@ -188,10 +192,14 @@ class ASTParser:
         return "\n".join(source_lines[start_idx:end_idx])
 
     def _extract_python_elements(
-        self, tree: Tree, file_path: Path, relative_to: Path | None = None, source_code: str | None = None
+        self,
+        tree: Tree,
+        file_path: Path,
+        relative_to: Path | None = None,
+        source_code: str | None = None,
     ) -> list[CodeElement]:
         """Extract code elements from Python AST.
-        
+
         Args:
             tree: Parsed tree-sitter tree
             file_path: Path to source file
@@ -332,10 +340,14 @@ class ASTParser:
         return elements
 
     def _extract_cpp_elements(
-        self, tree: Tree, file_path: Path, relative_to: Path | None = None, source_code: str | None = None
+        self,
+        tree: Tree,
+        file_path: Path,
+        relative_to: Path | None = None,
+        source_code: str | None = None,
     ) -> list[CodeElement]:
         """Extract code elements from C++ AST.
-        
+
         Args:
             tree: Parsed tree-sitter tree
             file_path: Path to source file
@@ -385,7 +397,9 @@ class ASTParser:
                             file_path=display_path,
                             parent=parent_name,
                             source_code=self._get_element_source(
-                                node.start_point[0] + 1, node.end_point[0] + 1, source_lines
+                                node.start_point[0] + 1,
+                                node.end_point[0] + 1,
+                                source_lines,
                             ),
                         )
                         elements.append(element)

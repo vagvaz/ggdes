@@ -11,8 +11,7 @@ back into the conversation.
 
 import json
 import re
-from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from rich.console import Console
@@ -27,7 +26,7 @@ console = Console()
 MAX_TOOL_ROUNDS = 10
 
 
-def _format_tools_prompt(tools: List[ToolDefinition]) -> str:
+def _format_tools_prompt(tools: list[ToolDefinition]) -> str:
     """Format tool definitions as a prompt section for the LLM.
 
     Args:
@@ -85,7 +84,7 @@ def _format_tools_prompt(tools: List[ToolDefinition]) -> str:
     return "\n".join(lines)
 
 
-def _parse_tool_calls(response: str) -> List[ToolCall]:
+def _parse_tool_calls(response: str) -> list[ToolCall]:
     """Parse tool call blocks from LLM response.
 
     Looks for ```tool_call ... ``` blocks containing JSON.
@@ -127,7 +126,7 @@ def _parse_tool_calls(response: str) -> List[ToolCall]:
     return calls
 
 
-def _format_tool_results(results: List[ToolResult]) -> str:
+def _format_tool_results(results: list[ToolResult]) -> str:
     """Format tool execution results for inclusion in LLM messages.
 
     Args:
@@ -155,12 +154,12 @@ def _format_tool_results(results: List[ToolResult]) -> str:
 
 def chat_with_tools(
     llm: LLMProvider,
-    messages: List[Dict[str, Any]],
-    tools: List[ToolDefinition],
+    messages: list[dict[str, Any]],
+    tools: list[ToolDefinition],
     executor: ToolExecutor,
-    system_prompt: Optional[str] = None,
+    system_prompt: str | None = None,
     temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
     max_rounds: int = MAX_TOOL_ROUNDS,
 ) -> str:
     """Chat with an LLM agent that can use tools.
@@ -218,7 +217,7 @@ def chat_with_tools(
         )
 
     # Tool calling loop
-    all_tool_calls: List[ToolCall] = []  # Track for max-rounds reporting
+    all_tool_calls: list[ToolCall] = []  # Track for max-rounds reporting
     for round_num in range(max_rounds):
         # Get LLM response
         logger.info(
@@ -289,7 +288,7 @@ def chat_with_tools(
             elem_counts = Counter(element_names)
             repeated = {e: c for e, c in elem_counts.items() if c > 1}
             if repeated:
-                console.print(f"  [yellow]  Repeated element requests:[/yellow]")
+                console.print("  [yellow]  Repeated element requests:[/yellow]")
                 for elem, count in sorted(repeated.items(), key=lambda x: -x[1])[:5]:
                     console.print(f"  [dim]    {elem}: {count}x[/dim]")
                 if len(repeated) > 5:

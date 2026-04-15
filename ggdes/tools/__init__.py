@@ -7,11 +7,11 @@ actual code elements.
 
 from ggdes.tools.chat_with_tools import chat_with_tools
 from ggdes.tools.definitions import (
+    TOOL_DEFINITIONS,
     ToolCall,
     ToolDefinition,
     ToolParameter,
     ToolResult,
-    TOOL_DEFINITIONS,
     get_tool_by_name,
 )
 from ggdes.tools.executor import ToolExecutor

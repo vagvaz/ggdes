@@ -10,13 +10,7 @@ Tests cover:
 - chat_with_tools(): tool call parsing and execution loop
 """
 
-import json
-import os
-import re
 import subprocess
-import tempfile
-from pathlib import Path
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -38,7 +32,6 @@ from ggdes.tools.definitions import (
     TOOL_SEARCH_CODE,
     TOOL_VALIDATE_REFERENCE,
 )
-
 
 # =============================================================================
 # ToolParameter Tests
@@ -793,12 +786,14 @@ class TestToolExecutorSearchCode:
 
     def test_max_results_limit(self, executor):
         """Test that max_results limits the output."""
-        with patch.object(
-            executor, "_search_code_python", return_value=[]
-        ) as mock_search:
-            with patch("subprocess.run", side_effect=FileNotFoundError()):
-                result = executor._search_code(".", max_results=5)
-                # The mock prevents actual results, but verifies the flow
+        with (
+            patch.object(
+                executor, "_search_code_python", return_value=[]
+            ) as mock_search,
+            patch("subprocess.run", side_effect=FileNotFoundError()),
+        ):
+            result = executor._search_code(".", max_results=5)
+            # The mock prevents actual results, but verifies the flow
 
 
 class TestToolExecutorValidateReference:

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -223,7 +223,7 @@ class DocumentPlan(BaseModel):
     diagrams: list[DiagramSpec] = Field(description="Diagrams to generate")
     template: str | None = Field(None, description="Template to use if any")
     created_at: datetime = Field(default_factory=datetime.now)
-    user_context: Optional[Dict[str, Any]] = Field(
+    user_context: dict[str, Any] | None = Field(
         None, description="User-provided context for output generation"
     )
 
