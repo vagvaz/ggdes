@@ -4,6 +4,7 @@ Provides a web UI for managing and viewing analyses, with real-time
 updates and a modern, responsive interface.
 """
 
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -142,10 +143,8 @@ async def get_analysis(analysis_id: str) -> dict[str, Any]:
         kb.get_analysis_path(analysis_id) / "git_analysis" / "summary.json"
     )
     if git_summary_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             git_summary = json.loads(git_summary_path.read_text())
-        except Exception:
-            pass
 
     # Load technical facts count
     facts_dir = kb.get_analysis_path(analysis_id) / "technical_facts"
@@ -288,7 +287,7 @@ async def create_analysis(
     target_formats = formats or ["markdown"]
 
     try:
-        metadata = kb.create_analysis(
+        kb.create_analysis(
             analysis_id=analysis_id,
             name=name,
             repo_path=Path(config.repo.path) if config.repo.path else Path.cwd(),

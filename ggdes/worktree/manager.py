@@ -1,5 +1,6 @@
 """Worktree management for isolated git operations."""
 
+import contextlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -125,10 +126,8 @@ class WorktreeManager:
             print(f"[worktree] {error_msg}")
             # Clean up base worktree if head fails
             if base_path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     _remove_worktree(base_path)
-                except Exception:
-                    pass
             raise RuntimeError(error_msg) from e
 
         # Verify worktrees were created

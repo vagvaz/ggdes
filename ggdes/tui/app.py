@@ -1183,7 +1183,7 @@ class GGDesTUI(App[None]):
             target_formats = formats or ["markdown"]
 
             # Create analysis in KB
-            metadata = self.kb_manager.create_analysis(
+            self.kb_manager.create_analysis(
                 analysis_id=analysis_id,
                 name=name,
                 repo_path=Path(self.config.repo.path)

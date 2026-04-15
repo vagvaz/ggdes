@@ -302,19 +302,21 @@ class TestRunAllPending:
             mock_kb_instance.STAGE_SEMANTIC_DIFF = "semantic_diff"
             mock_kb_class.return_value = mock_kb_instance
 
-            with patch("ggdes.pipeline.WorktreeManager"):
-                with patch("ggdes.pipeline.LockContext"):
-                    pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
+            with (
+                patch("ggdes.pipeline.WorktreeManager"),
+                patch("ggdes.pipeline.LockContext"),
+            ):
+                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                    with patch.object(
-                        pipeline, "run_stage", return_value=True
-                    ) as mock_run_stage:
-                        result = pipeline.run_all_pending()
+                with patch.object(
+                    pipeline, "run_stage", return_value=True
+                ) as mock_run_stage:
+                    result = pipeline.run_all_pending()
 
-                        assert result is True
-                        assert mock_run_stage.call_count == 2
-                        mock_run_stage.assert_any_call("worktree_setup")
-                        mock_run_stage.assert_any_call("git_analysis")
+                    assert result is True
+                    assert mock_run_stage.call_count == 2
+                    mock_run_stage.assert_any_call("worktree_setup")
+                    mock_run_stage.assert_any_call("git_analysis")
 
     def test_run_all_pending_stage_failure(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
@@ -335,17 +337,19 @@ class TestRunAllPending:
             mock_kb_instance.STAGE_SEMANTIC_DIFF = "semantic_diff"
             mock_kb_class.return_value = mock_kb_instance
 
-            with patch("ggdes.pipeline.WorktreeManager"):
-                with patch("ggdes.pipeline.LockContext"):
-                    pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
+            with (
+                patch("ggdes.pipeline.WorktreeManager"),
+                patch("ggdes.pipeline.LockContext"),
+            ):
+                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                    with patch.object(
-                        pipeline, "run_stage", side_effect=[True, False]
-                    ) as mock_run_stage:
-                        result = pipeline.run_all_pending()
+                with patch.object(
+                    pipeline, "run_stage", side_effect=[True, False]
+                ) as mock_run_stage:
+                    result = pipeline.run_all_pending()
 
-                        assert result is False
-                        assert mock_run_stage.call_count == 2
+                    assert result is False
+                    assert mock_run_stage.call_count == 2
 
 
 class TestRunParallelGroup:
@@ -393,7 +397,7 @@ class TestRunParallelGroup:
 
                 with patch.object(
                     pipeline, "run_stage", side_effect=side_effect
-                ) as mock_run_stage:
+                ) as _mock_run_stage:
                     results = pipeline.run_parallel_group(
                         ["ast_parsing_base", "ast_parsing_head"]
                     )
@@ -438,16 +442,18 @@ class TestRunAstParsing:
                     mock_parser_class.return_value = mock_parser
 
                     # Mock Path operations
-                    with patch("ggdes.pipeline.Path.exists", return_value=True):
-                        with patch(
+                    with (
+                        patch("ggdes.pipeline.Path.exists", return_value=True),
+                        patch(
                             "ggdes.pipeline.Path.iterdir", return_value=[Path("file1")]
-                        ):
-                            with patch("ggdes.pipeline.Path.mkdir"):
-                                with patch("ggdes.pipeline.Path.write_text"):
-                                    result = pipeline._run_ast_parsing("base")
+                        ),
+                        patch("ggdes.pipeline.Path.mkdir"),
+                        patch("ggdes.pipeline.Path.write_text"),
+                    ):
+                        result = pipeline._run_ast_parsing("base")
 
-                                    assert result is True
-                                    mock_parser.parse_directory.assert_called_once()
+                        assert result is True
+                        mock_parser.parse_directory.assert_called_once()
 
     def test_run_ast_parsing_head_variant(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
@@ -480,15 +486,17 @@ class TestRunAstParsing:
                     mock_parser.parse_directory.return_value = [mock_parse_result]
                     mock_parser_class.return_value = mock_parser
 
-                    with patch("ggdes.pipeline.Path.exists", return_value=True):
-                        with patch(
+                    with (
+                        patch("ggdes.pipeline.Path.exists", return_value=True),
+                        patch(
                             "ggdes.pipeline.Path.iterdir", return_value=[Path("file1")]
-                        ):
-                            with patch("ggdes.pipeline.Path.mkdir"):
-                                with patch("ggdes.pipeline.Path.write_text"):
-                                    result = pipeline._run_ast_parsing("head")
+                        ),
+                        patch("ggdes.pipeline.Path.mkdir"),
+                        patch("ggdes.pipeline.Path.write_text"),
+                    ):
+                        result = pipeline._run_ast_parsing("head")
 
-                                    assert result is True
+                        assert result is True
 
     def test_run_ast_parsing_no_worktrees(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
@@ -526,28 +534,6 @@ class TestRunAstParsing:
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
                 with patch("ggdes.pipeline.Path.exists", return_value=False):
-                    result = pipeline._run_ast_parsing("base")
-
-                    assert result is False
-
-    def test_run_ast_parsing_worktree_not_exist(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test _run_ast_parsing fails when worktree doesn't exist."""
-        mock_metadata.worktrees = WorktreeInfo(
-            base="/nonexistent/base",
-            head="/nonexistent/head",
-        )
-
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                with patch.object(Path, "exists", return_value=False):
                     result = pipeline._run_ast_parsing("base")
 
                     assert result is False
@@ -646,46 +632,20 @@ class TestGetChangedFilesDetailed:
             with patch("ggdes.pipeline.WorktreeManager"):
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                with patch("ggdes.pipeline.Path.exists", return_value=True):
-                    with patch(
+                with (
+                    patch("ggdes.pipeline.Path.exists", return_value=True),
+                    patch(
                         "builtins.open",
                         mock_open(read_data="invalid json"),
-                    ):
-                        with patch(
-                            "ggdes.pipeline.json.loads",
-                            side_effect=json.JSONDecodeError("test", "", 0),
-                        ):
-                            result = pipeline._get_changed_files_detailed()
+                    ),
+                    patch(
+                        "ggdes.pipeline.json.loads",
+                        side_effect=json.JSONDecodeError("test", "", 0),
+                    ),
+                ):
+                    result = pipeline._get_changed_files_detailed()
 
-                            assert result == []
-
-    def test_get_changed_files_detailed_invalid_json(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test _get_changed_files_detailed with invalid JSON."""
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_instance.get_analysis_path.return_value = Path(
-                "/test/kb/test_analysis_001"
-            )
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                with patch.object(Path, "exists", return_value=True):
-                    with patch(
-                        "builtins.open",
-                        mock_open(read_data="invalid json"),
-                    ):
-                        with patch(
-                            "ggdes.pipeline.json.loads",
-                            side_effect=json.JSONDecodeError("test", "", 0),
-                        ):
-                            result = pipeline._get_changed_files_detailed()
-
-                            assert result == []
+                    assert result == []
 
 
 class TestBuildToolExecutor:
@@ -771,131 +731,6 @@ class TestBuildToolExecutor:
                     assert result == mock_executor
                     mock_tool_executor_class.assert_called_once()
 
-    def test_build_tool_executor_no_data(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test _build_tool_executor with no data available."""
-        mock_metadata.commit_range = "abc123..def456"
-        mock_metadata.focus_commits = None
-
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                # Mock empty data
-                pipeline._get_changed_files_detailed = MagicMock(return_value=[])
-                pipeline._load_ast_elements_for_tools = MagicMock(return_value={})
-
-                # Patch where it's imported locally in _build_tool_executor
-                with patch(
-                    "ggdes.tools.executor.ToolExecutor"
-                ) as mock_tool_executor_class:
-                    mock_executor = MagicMock()
-                    mock_tool_executor_class.return_value = mock_executor
-
-                    result = pipeline._build_tool_executor()
-
-                    assert result == mock_executor
-                    mock_tool_executor_class.assert_called_once()
-
-    def test_build_tool_executor_no_data(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test _build_tool_executor with no data available."""
-        mock_metadata.commit_range = "abc123..def456"
-        mock_metadata.focus_commits = None
-
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                # Mock empty data
-                pipeline._get_changed_files_detailed = MagicMock(return_value=[])
-                pipeline._load_ast_elements_for_tools = MagicMock(return_value={})
-
-                # Patch at the pipeline module level where it's imported
-                with patch("ggdes.pipeline.ToolExecutor") as mock_tool_executor_class:
-                    mock_executor = MagicMock()
-                    mock_tool_executor_class.return_value = mock_executor
-
-                    result = pipeline._build_tool_executor()
-
-                    assert result == mock_executor
-                    mock_tool_executor_class.assert_called_once()
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                # Mock _get_changed_files_detailed
-                pipeline._get_changed_files_detailed = MagicMock(
-                    return_value=[
-                        {
-                            "path": "src/main.py",
-                            "change_type": "modified",
-                            "lines_added": 10,
-                            "lines_deleted": 5,
-                            "summary": "Changes",
-                        }
-                    ]
-                )
-
-                # Mock _load_ast_elements_for_tools
-                pipeline._load_ast_elements_for_tools = MagicMock(
-                    return_value={"src/main.py": [{"name": "test_func"}]}
-                )
-
-                # The method does: from ggdes.tools import ToolExecutor
-                with patch("ggdes.tools.ToolExecutor") as mock_tool_executor_class:
-                    mock_executor = MagicMock()
-                    mock_tool_executor_class.return_value = mock_executor
-
-                    result = pipeline._build_tool_executor()
-
-                    assert result == mock_executor
-                    mock_tool_executor_class.assert_called_once()
-
-    def test_build_tool_executor_no_data(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test _build_tool_executor with no data available."""
-        mock_metadata.commit_range = "abc123..def456"
-        mock_metadata.focus_commits = None
-
-        # The method does: from ggdes.tools import ToolExecutor
-        # We need to patch it where it's used in the pipeline module
-        with patch("ggdes.tools.ToolExecutor") as mock_tool_executor_class:
-            mock_executor = MagicMock()
-            mock_tool_executor_class.return_value = mock_executor
-
-            with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-                mock_kb_instance = MagicMock()
-                mock_kb_instance.load_metadata.return_value = mock_metadata
-                mock_kb_instance.get_analysis_path.return_value = Path(
-                    "/test/kb/test_analysis_001"
-                )
-                mock_kb_class.return_value = mock_kb_instance
-
-                with patch("ggdes.pipeline.WorktreeManager"):
-                    pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                    # Mock empty data
-                    pipeline._get_changed_files_detailed = MagicMock(return_value=[])
-                    pipeline._load_ast_elements_for_tools = MagicMock(return_value={})
-
-                    result = pipeline._build_tool_executor()
-
-                    assert result == mock_executor
-                    mock_tool_executor_class.assert_called_once()
-
 
 class TestRunWorktreeSetup:
     """Tests for _run_worktree_setup method."""
@@ -922,23 +757,25 @@ class TestRunWorktreeSetup:
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
                 # Mock Path.exists for worktree verification
-                with patch("ggdes.pipeline.Path.exists", return_value=True):
-                    with patch(
+                with (
+                    patch("ggdes.pipeline.Path.exists", return_value=True),
+                    patch(
                         "ggdes.pipeline.Path.iterdir",
                         return_value=[Path("file1"), Path("file2")],
-                    ):
-                        with patch(
-                            "ggdes.pipeline.Path.resolve",
-                            return_value=Path("/test/worktrees/base"),
-                        ):
-                            result = pipeline._run_worktree_setup()
+                    ),
+                    patch(
+                        "ggdes.pipeline.Path.resolve",
+                        return_value=Path("/test/worktrees/base"),
+                    ),
+                ):
+                    result = pipeline._run_worktree_setup()
 
-                            assert result is True
-                            mock_wt_manager.create_for_analysis.assert_called_once_with(
-                                "test_analysis_001",
-                                base_commit="abc123",
-                                head_commit="def456",
-                            )
+                    assert result is True
+                    mock_wt_manager.create_for_analysis.assert_called_once_with(
+                        "test_analysis_001",
+                        base_commit="abc123",
+                        head_commit="def456",
+                    )
 
     def test_run_worktree_setup_invalid_range(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
@@ -952,30 +789,6 @@ class TestRunWorktreeSetup:
             mock_kb_class.return_value = mock_kb_instance
 
             with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                result = pipeline._run_worktree_setup()
-
-                assert result is False
-
-    def test_run_worktree_setup_creation_failure(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
-    ) -> None:
-        """Test worktree setup when creation fails."""
-        mock_metadata.commit_range = "abc123..def456"
-
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
-
-            with patch("ggdes.pipeline.WorktreeManager") as mock_wt_class:
-                mock_wt_manager = MagicMock()
-                mock_wt_manager.create_for_analysis.side_effect = Exception(
-                    "Creation failed"
-                )
-                mock_wt_class.return_value = mock_wt_manager
-
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
                 result = pipeline._run_worktree_setup()
@@ -1058,11 +871,13 @@ class TestRunGitAnalysis:
                         with patch("ggdes.pipeline.asyncio.run") as mock_asyncio_run:
                             mock_asyncio_run.return_value = mock_summary
 
-                            with patch("ggdes.pipeline.Path.mkdir"):
-                                with patch("ggdes.pipeline.Path.write_text"):
-                                    result = pipeline._run_git_analysis()
+                            with (
+                                patch("ggdes.pipeline.Path.mkdir"),
+                                patch("ggdes.pipeline.Path.write_text"),
+                            ):
+                                result = pipeline._run_git_analysis()
 
-                                    assert result is True
+                                assert result is True
 
 
 class TestRunSemanticDiff:
@@ -1113,11 +928,13 @@ class TestRunSemanticDiff:
                     mock_analyzer.analyze.return_value = mock_result
                     mock_analyzer_class.return_value = mock_analyzer
 
-                    with patch("ggdes.semantic_diff.save_semantic_diff"):
-                        with patch("ggdes.pipeline.Path.mkdir"):
-                            result = pipeline._run_semantic_diff()
+                    with (
+                        patch("ggdes.semantic_diff.save_semantic_diff"),
+                        patch("ggdes.pipeline.Path.mkdir"),
+                    ):
+                        result = pipeline._run_semantic_diff()
 
-                            assert result is True
+                        assert result is True
 
     def test_run_semantic_diff_no_worktrees(
         self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata

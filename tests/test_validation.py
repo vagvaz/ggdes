@@ -1003,7 +1003,7 @@ class TestInputValidator:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            result = validator.validate_commit_range("..HEAD")
+            _result = validator.validate_commit_range("..HEAD")
 
         # Should only validate HEAD, not empty base
         assert mock_run.call_count == 1

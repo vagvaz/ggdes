@@ -1560,17 +1560,9 @@ def doctor(
     console.print("[dim]Checking Python version...[/dim]")
     import sys
 
-    if sys.version_info >= (3, 10):
-        console.print(
-            "  [green]✓[/green] Python version: {}.{}.{}".format(*sys.version_info[:3])
-        )
-    else:
-        console.print(
-            "  [red]✗[/red] Python version too old: {}.{}.{} (requires 3.10+)".format(
-                *sys.version_info[:3]
-            )
-        )
-        issues_found += 1
+    console.print(
+        "  [green]✓[/green] Python version: {}.{}.{}".format(*sys.version_info[:3])
+    )
 
     # Check 2: Dependencies
     console.print("[dim]Checking dependencies...[/dim]")

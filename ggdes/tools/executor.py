@@ -616,7 +616,7 @@ class ToolExecutor:
                 elements.append(self._element_to_dict(elem))
         else:
             # Get all elements
-            for fp, file_elements in self._file_elements.items():
+            for _fp, file_elements in self._file_elements.items():
                 for elem in file_elements:
                     elements.append(self._element_to_dict(elem))
 

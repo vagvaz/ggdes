@@ -451,7 +451,7 @@ Content.""")
         with patch.object(renderer, "_render_html_to_png_async") as mock_render:
             mock_render.return_value = tmp_path / "output.png"
 
-            result = renderer.render(markdown_path, sections=True)
+            _result = renderer.render(markdown_path, sections=True)
 
             # Check that the filename was sanitized
             call_args = mock_render.call_args

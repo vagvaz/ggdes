@@ -807,10 +807,10 @@ class TestToolExecutorSearchCode:
         with (
             patch.object(
                 executor, "_search_code_python", return_value=[]
-            ) as mock_search,
+            ) as _mock_search,
             patch("subprocess.run", side_effect=FileNotFoundError()),
         ):
-            result = executor._search_code(".", max_results=5)
+            _result = executor._search_code(".", max_results=5)
             # The mock prevents actual results, but verifies the flow
 
 
@@ -1190,7 +1190,7 @@ class TestChatWithTools:
             original_console = getattr(chat_module, "console", None)
             chat_module.console = MagicMock()
         try:
-            result = chat_with_tools(
+            _result = chat_with_tools(
                 llm=mock_llm,
                 messages=messages,
                 tools=TOOL_DEFINITIONS[:1],

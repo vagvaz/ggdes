@@ -293,7 +293,7 @@ class AnalysisPipeline:
         console.print(f"[bold]Running {len(pending)} pending stages...[/bold]")
 
         # Define parallel groups - stages that can run concurrently
-        PARALLEL_GROUP = {
+        parallel_group = {
             self.kb_manager.STAGE_AST_PARSING_BASE,
             self.kb_manager.STAGE_AST_PARSING_HEAD,
             self.kb_manager.STAGE_SEMANTIC_DIFF,
@@ -306,13 +306,13 @@ class AnalysisPipeline:
                 stage = pending[i]
 
                 # Check if this stage is part of a parallel group
-                if stage in PARALLEL_GROUP:
+                if stage in parallel_group:
                     # Find all pending stages from this parallel group
-                    pending_parallel = [s for s in pending[i:] if s in PARALLEL_GROUP]
+                    pending_parallel = [s for s in pending[i:] if s in parallel_group]
                     # Find all completed stages from this group
-                    completed_in_group = PARALLEL_GROUP - set(pending_parallel)
+                    completed_in_group = parallel_group - set(pending_parallel)
 
-                    if len(pending_parallel) == len(PARALLEL_GROUP):
+                    if len(pending_parallel) == len(parallel_group):
                         # All stages in the group are pending - run them in parallel
                         results = self.run_parallel_group(list(pending_parallel))
                         if not all(results.values()):
@@ -328,7 +328,7 @@ class AnalysisPipeline:
                     else:
                         # Some stages already completed - run remaining sequentially
                         console.print(
-                            f"[dim]Parallel group partially completed ({len(completed_in_group)}/{len(PARALLEL_GROUP)}), running remaining sequentially[/dim]"
+                            f"[dim]Parallel group partially completed ({len(completed_in_group)}/{len(parallel_group)}), running remaining sequentially[/dim]"
                         )
                         for parallel_stage in pending_parallel:
                             success = self.run_stage(parallel_stage)
@@ -507,7 +507,7 @@ class AnalysisPipeline:
                 except Exception:
                     continue
 
-        validator = CodeReferenceValidator(
+        CodeReferenceValidator(
             repo_path=self.repo_path,
             changed_files=changed_file_paths,
             code_elements=code_elements_dict,

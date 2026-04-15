@@ -531,9 +531,8 @@ class OutputsBrowser(Vertical):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
-        if event.button.id == "refresh-outputs":
-            if self.analysis_id:
-                self.load_outputs(self.analysis_id, force_refresh=True)
+        if event.button.id == "refresh-outputs" and self.analysis_id:
+            self.load_outputs(self.analysis_id, force_refresh=True)
 
     def watch_analysis_id(self, analysis_id: str | None) -> None:
         """Load outputs when analysis changes."""

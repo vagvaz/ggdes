@@ -531,12 +531,12 @@ class CodeReferenceValidator:
 
         # Also check for n-gram overlap (bigrams) for structural similarity
         bigrams1 = (
-            set(zip(text1.split(), text1.split()[1:]))
+            set(zip(text1.split(), text1.split()[1:], strict=True))
             if len(text1.split()) > 1
             else set()
         )
         bigrams2 = (
-            set(zip(text2.split(), text2.split()[1:]))
+            set(zip(text2.split(), text2.split()[1:], strict=True))
             if len(text2.split()) > 1
             else set()
         )

@@ -94,7 +94,7 @@ class StageReviewer:
         return StagePreview(
             stage_name="git_analysis",
             display_name="Git Analysis",
-            summary=f"{len(files)} files changed across {len(set(f.get('commit_hash', '') for f in files))} commits",
+            summary=f"{len(files)} files changed across {len({f.get('commit_hash', '') for f in files})} commits",
             item_count=len(files),
             key_items=key_items,
             item_keys=[f.get("path", f) for f in files],

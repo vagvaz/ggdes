@@ -182,9 +182,11 @@ class TestAnalysisComparator:
         """Test that compare raises ValueError when analysis not found."""
         comparator = AnalysisComparator(mock_config)
 
-        with patch.object(comparator.kb_manager, "load_metadata", return_value=None):
-            with pytest.raises(ValueError, match="Analysis not found: analysis_001"):
-                comparator.compare("analysis_001", "analysis_002")
+        with (
+            patch.object(comparator.kb_manager, "load_metadata", return_value=None),
+            pytest.raises(ValueError, match="Analysis not found: analysis_001"),
+        ):
+            comparator.compare("analysis_001", "analysis_002")
 
     def test_compare_success(
         self,

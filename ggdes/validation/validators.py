@@ -266,22 +266,20 @@ class ASTValidator:
         potential_names = set(re.findall(pattern, text))
 
         for name in potential_names:
-            if name not in self.element_names:
-                # Common false positives
-                if name not in (
-                    "if",
-                    "while",
-                    "for",
-                    "return",
-                    "print",
-                    "len",
-                    "range",
-                    "str",
-                    "int",
-                ):
-                    warnings.append(
-                        f"Potential hallucination: '{name}' not found in codebase"
-                    )
+            if name not in self.element_names and name not in (
+                "if",
+                "while",
+                "for",
+                "return",
+                "print",
+                "len",
+                "range",
+                "str",
+                "int",
+            ):
+                warnings.append(
+                    f"Potential hallucination: '{name}' not found in codebase"
+                )
 
         return ValidationResult(True, errors, warnings)
 
