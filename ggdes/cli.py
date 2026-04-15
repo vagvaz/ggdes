@@ -13,6 +13,8 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
 
+import tomli
+
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.utils.lock import LockContext
@@ -20,6 +22,24 @@ from ggdes.worktree import WorktreeManager
 
 app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
+
+
+def _get_version() -> str:
+    """Read version from pyproject.toml."""
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    with open(pyproject_path, "rb") as f:
+        return tomli.load(f)["project"]["version"]
+
+
+@app.callback(invoke_without_command=True)
+def version_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", is_flag=True, help="Show version"),
+):
+    """Show version information."""
+    if version:
+        console.print(f"[bold]ggdes[/bold] version [cyan]{_get_version()}[/cyan]")
+        raise typer.Exit()
 
 
 def _load_user_context_from_file(context_file: Path) -> dict[str, Any]:
