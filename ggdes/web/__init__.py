@@ -7,7 +7,7 @@ updates and a modern, responsive interface.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
@@ -64,13 +64,13 @@ def get_config() -> GGDesConfig:
     return config
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
 async def root() -> HTMLResponse:
     """Serve the main web interface."""
     return HTMLResponse(content=INDEX_HTML, status_code=200)
 
 
-@app.get("/api/analyses")
+@app.get("/api/analyses")  # type: ignore[untyped-decorator]
 async def list_analyses() -> list[dict[str, Any]]:
     """List all analyses."""
     kb = get_kb()
@@ -127,7 +127,7 @@ async def list_analyses() -> list[dict[str, Any]]:
     return analyses
 
 
-@app.get("/api/analyses/{analysis_id}")
+@app.get("/api/analyses/{analysis_id}")  # type: ignore[untyped-decorator]
 async def get_analysis(analysis_id: str) -> dict[str, Any]:
     """Get detailed information about an analysis."""
     kb = get_kb()
@@ -209,7 +209,7 @@ async def get_analysis(analysis_id: str) -> dict[str, Any]:
     }
 
 
-@app.post("/api/analyses/{analysis_id}/resume")
+@app.post("/api/analyses/{analysis_id}/resume")  # type: ignore[untyped-decorator]
 async def resume_analysis(analysis_id: str) -> dict[str, Any]:
     """Resume an analysis."""
     config = get_config()
@@ -238,7 +238,7 @@ async def resume_analysis(analysis_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/api/analyses/{analysis_id}/delete")
+@app.post("/api/analyses/{analysis_id}/delete")  # type: ignore[untyped-decorator]
 async def delete_analysis(analysis_id: str, remove_kb: bool = True) -> dict[str, Any]:
     """Delete an analysis."""
     config = get_config()
@@ -271,7 +271,7 @@ async def delete_analysis(analysis_id: str, remove_kb: bool = True) -> dict[str,
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/api/analyses")
+@app.post("/api/analyses")  # type: ignore[untyped-decorator]
 async def create_analysis(
     name: str,
     commit_range: str,
@@ -317,7 +317,7 @@ async def create_analysis(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.get("/api/analyses/{analysis_id}/documents")
+@app.get("/api/analyses/{analysis_id}/documents")  # type: ignore[untyped-decorator]
 async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of generated documents for an analysis."""
     kb = get_kb()
@@ -351,7 +351,7 @@ async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
     return documents
 
 
-@app.get("/api/analyses/{analysis_id}/documents/{format}/download")
+@app.get("/api/analyses/{analysis_id}/documents/{format}/download")  # type: ignore[untyped-decorator]
 async def download_document(analysis_id: str, format: str) -> FileResponse:
     """Download a generated document."""
     kb = get_kb()
@@ -376,7 +376,7 @@ async def download_document(analysis_id: str, format: str) -> FileResponse:
     raise HTTPException(status_code=404, detail="Document not found")
 
 
-@app.get("/api/analyses/{analysis_id}/diagrams")
+@app.get("/api/analyses/{analysis_id}/diagrams")  # type: ignore[untyped-decorator]
 async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of diagrams for an analysis."""
     kb = get_kb()
@@ -403,7 +403,7 @@ async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
     return diagrams
 
 
-@app.websocket("/ws")
+@app.websocket("/ws")  # type: ignore[untyped-decorator]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await manager.connect(websocket)
@@ -427,7 +427,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         manager.disconnect(websocket)
 
 
-@app.get("/api/stats")
+@app.get("/api/stats")  # type: ignore[untyped-decorator]
 async def get_stats() -> dict[str, Any]:
     """Get overall system statistics."""
     kb = get_kb()
@@ -487,7 +487,7 @@ async def get_stats() -> dict[str, Any]:
     }
 
 
-@app.get("/api/worktrees/cleanup-preview")
+@app.get("/api/worktrees/cleanup-preview")  # type: ignore[untyped-decorator]
 async def preview_worktree_cleanup(
     days: int = Query(default=7, ge=1),
 ) -> dict[str, Any]:
@@ -513,7 +513,7 @@ async def preview_worktree_cleanup(
     }
 
 
-@app.post("/api/worktrees/cleanup")
+@app.post("/api/worktrees/cleanup")  # type: ignore[untyped-decorator]
 async def cleanup_worktrees(days: int = Query(default=7, ge=1)) -> dict[str, Any]:
     """Clean up old worktrees."""
     config = get_config()

@@ -1,9 +1,10 @@
 """Prompt management with versioning for GGDes."""
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 
 class PromptLoader:
@@ -75,11 +76,8 @@ class PromptLoader:
         if format_kwargs:
             # Use safe substitution to avoid errors for missing keys
             # that might be filled later
-            try:
+            with suppress(KeyError):
                 prompt_text = prompt_text.format(**format_kwargs)
-            except KeyError:
-                # Return unformatted if keys are missing
-                pass
 
         return prompt_text  # type: ignore[no-any-return]
 

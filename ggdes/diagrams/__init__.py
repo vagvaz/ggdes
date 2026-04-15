@@ -3,7 +3,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 
 class PlantUMLGenerator:

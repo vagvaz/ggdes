@@ -31,7 +31,7 @@ from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.worktree import WorktreeManager
 
 
-class StageStatusWidget(Static):  # type: ignore[misc]
+class StageStatusWidget(Static):
     """Widget showing stage status with visual indicators."""
 
     STATUS_COLORS = {
@@ -63,7 +63,7 @@ class StageStatusWidget(Static):  # type: ignore[misc]
         yield Label(f"[{color}]{icon}[/{color}] {self.stage_name}")
 
 
-class AnalysisListItem(ListItem):  # type: ignore[misc]
+class AnalysisListItem(ListItem):
     """List item showing analysis summary."""
 
     def __init__(self, analysis_id: str, name: str, status: str, **kwargs: Any) -> None:
@@ -78,7 +78,7 @@ class AnalysisListItem(ListItem):  # type: ignore[misc]
             yield Label(f"[{self.status}] {self.analysis_id[:20]}...")
 
 
-class AnalysisDetailView(VerticalScroll):  # type: ignore[misc]
+class AnalysisDetailView(VerticalScroll):
     """Detail view for a selected analysis."""
 
     analysis_id: reactive[str | None] = reactive(None)
@@ -124,7 +124,7 @@ class AnalysisDetailView(VerticalScroll):  # type: ignore[misc]
                 f"[bold]Progress:[/bold] {completed}/{total_stages} stages complete"
             )
             progress = ProgressBar(total=total_stages, show_eta=False)
-            progress.update(completed)
+            progress.progress = completed
             yield progress
             yield Label("")
 
@@ -167,7 +167,7 @@ class AnalysisDetailView(VerticalScroll):  # type: ignore[misc]
                 yield Label(f"  Head: {metadata.worktrees.head}")
 
 
-class WorktreeView(VerticalScroll):  # type: ignore[misc]
+class WorktreeView(VerticalScroll):
     """View for managing worktrees."""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -197,10 +197,10 @@ class WorktreeView(VerticalScroll):  # type: ignore[misc]
                 yield Label("")
 
 
-class GitLogView(VerticalScroll):  # type: ignore[misc]
+class GitLogView(VerticalScroll):
     """View for browsing git commits and selecting commit ranges."""
 
-    commits: reactive[list[dict]] = reactive([])
+    commits: reactive[list[dict[str, Any]]] = reactive([])
     start_commit: reactive[str | None] = reactive(None)
     end_commit: reactive[str | None] = reactive(None)
     focus_commits: reactive[set[str]] = reactive(set())
@@ -242,7 +242,7 @@ class GitLogView(VerticalScroll):  # type: ignore[misc]
         yield Label("")
         yield Label("[bold]Commits:[/bold] (Use ↑↓ to navigate, Enter to select)")
 
-        table = DataTable(id="commit-table", cursor_type="row")
+        table: DataTable[Any] = DataTable(id="commit-table", cursor_type="row")
         table.add_columns("Hash", "Date", "Author", "Message", "Type")
         yield table
 
@@ -506,14 +506,14 @@ class GitLogView(VerticalScroll):  # type: ignore[misc]
 
         for row_key in table.rows:
             commit_hash = str(row_key.value)
-            table.remove_row_style(row_key)
+            table.remove_row_style(row_key)  # type: ignore[attr-defined]
 
             if commit_hash == self.start_commit:
-                table.add_row_style(row_key, "green")
+                table.add_row_style(row_key, "green")  # type: ignore[attr-defined]
             elif commit_hash == self.end_commit:
-                table.add_row_style(row_key, "red")
+                table.add_row_style(row_key, "red")  # type: ignore[attr-defined]
             elif commit_hash in self.focus_commits:
-                table.add_row_style(row_key, "yellow")
+                table.add_row_style(row_key, "yellow")  # type: ignore[attr-defined]
 
     def get_commit_range(self) -> str | None:
         """Get the selected commit range in git format (start..end)."""
@@ -526,7 +526,7 @@ class GitLogView(VerticalScroll):  # type: ignore[misc]
         return list(self.focus_commits)
 
 
-class CommandHelp(Static):  # type: ignore[misc]
+class CommandHelp(Static):
     """Help widget showing useful git/worktree commands."""
 
     COMMANDS = """
@@ -583,7 +583,7 @@ class CommandHelp(Static):  # type: ignore[misc]
         yield Label(self.COMMANDS)
 
 
-class ConfirmDialog(Screen):  # type: ignore[misc]
+class ConfirmDialog(Screen[None]):
     """Simple confirmation dialog."""
 
     def __init__(
@@ -639,7 +639,7 @@ class ConfirmDialog(Screen):  # type: ignore[misc]
     """
 
 
-class NewAnalysisDialog(Screen):  # type: ignore[misc]
+class NewAnalysisDialog(Screen[None]):
     """Dialog for creating a new analysis."""
 
     def __init__(
@@ -755,7 +755,7 @@ class NewAnalysisDialog(Screen):  # type: ignore[misc]
     """
 
 
-class GGDesTUI(App):  # type: ignore[misc]
+class GGDesTUI(App[None]):
     """Main TUI application for GGDes."""
 
     CSS = """
@@ -965,7 +965,7 @@ class GGDesTUI(App):  # type: ignore[misc]
     def _get_gitlog_view(self) -> GitLogView | None:
         """Get the git log view if it exists."""
         try:
-            return self.query_one("#git-log-view", GitLogView)  # type: ignore[no-any-return]
+            return self.query_one("#git-log-view", GitLogView)
         except Exception:
             return None
 

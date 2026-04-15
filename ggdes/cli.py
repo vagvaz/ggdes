@@ -1126,7 +1126,7 @@ def debug(
     from ggdes.kb import KnowledgeBaseManager
     from ggdes.tui.debug_view import DebugView
 
-    class DebugTUI(App):  # type: ignore[misc]
+    class DebugTUI(App[None]):
         """Standalone debug TUI application."""
 
         CSS = """

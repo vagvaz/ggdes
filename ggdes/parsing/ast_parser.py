@@ -1,6 +1,7 @@
 """AST parsing for code analysis using tree-sitter."""
 
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ class ParseResult:
     file_path: str
     language: str
     elements: list[CodeElement]
-    tree: Tree
+    tree: Tree | None
     success: bool
     error_message: str | None = None
 
@@ -51,8 +52,8 @@ class ASTParser:
             pass
 
         # C++ support - will be loaded dynamically if available
-        self._languages["cpp"] = None
-        self._parsers["cpp"] = None
+        self._languages["cpp"] = None  # type: ignore[assignment]
+        self._parsers["cpp"] = None  # type: ignore[assignment]
 
     def _get_parser(self, language: str) -> Parser | None:
         """Get or initialize parser for a language."""
@@ -156,10 +157,8 @@ class ASTParser:
         # Make file path relative if requested
         display_path = str(file_path)
         if relative_to:
-            try:
+            with suppress(ValueError):
                 display_path = str(file_path.relative_to(relative_to))
-            except ValueError:
-                pass
 
         return ParseResult(
             file_path=display_path,
@@ -212,10 +211,8 @@ class ASTParser:
         # Make file path relative if requested
         display_path = str(file_path)
         if relative_to:
-            try:
+            with suppress(ValueError):
                 display_path = str(file_path.relative_to(relative_to))
-            except ValueError:
-                pass
 
         # Split source into lines for extracting element source code
         source_lines = source_code.splitlines() if source_code else None
@@ -360,10 +357,8 @@ class ASTParser:
         # Make file path relative if requested
         display_path = str(file_path)
         if relative_to:
-            try:
+            with suppress(ValueError):
                 display_path = str(file_path.relative_to(relative_to))
-            except ValueError:
-                pass
 
         # Split source into lines for extracting element source code
         source_lines = source_code.splitlines() if source_code else None

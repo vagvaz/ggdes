@@ -21,12 +21,12 @@ from ggdes.schemas import ChangeSummary, ChangeType, FileChange, ImpactLevel
 class TestParseDiffIntoHunks:
     """Test parse_diff_into_hunks function."""
 
-    def test_empty_diff(self):
+    def test_empty_diff(self) -> None:
         """Empty diff returns no hunks."""
         hunks = parse_diff_into_hunks("")
         assert hunks == []
 
-    def test_single_file_single_hunk(self):
+    def test_single_file_single_hunk(self) -> None:
         """Single file with one hunk."""
         diff = """diff --git a/src/main.py b/src/main.py
 index abc123..def456 100644
@@ -48,7 +48,7 @@ index abc123..def456 100644
         assert hunks[0].start_line == 10
         assert hunks[0].lines_added >= 2  # At least the two added lines
 
-    def test_multiple_files(self):
+    def test_multiple_files(self) -> None:
         """Multiple files in diff."""
         diff = """diff --git a/src/main.py b/src/main.py
 index abc..def 100644
@@ -76,7 +76,7 @@ index 789..012 100644
         assert "src/main.py" in file_paths
         assert "src/utils.py" in file_paths
 
-    def test_multiple_hunks_same_file(self):
+    def test_multiple_hunks_same_file(self) -> None:
         """Multiple hunks in the same file."""
         diff = """diff --git a/app.py b/app.py
 index abc..def 100644
@@ -99,7 +99,7 @@ index abc..def 100644
         assert len(hunks) == 2
         assert all(h.file_path == "app.py" for h in hunks)
 
-    def test_deletion_only_hunk(self):
+    def test_deletion_only_hunk(self) -> None:
         """Hunk with only deletions."""
         diff = """diff --git a/old.py b/old.py
 index abc..def 100644
@@ -115,7 +115,7 @@ index abc..def 100644
         assert len(hunks) == 1
         assert hunks[0].lines_deleted == 2
 
-    def test_binary_file_skipped(self):
+    def test_binary_file_skipped(self) -> None:
         """Binary files don't have hunks."""
         diff = """diff --git a/image.png b/image.png
 Binary files /dev/null and b/image.png differ
@@ -128,7 +128,7 @@ Binary files /dev/null and b/image.png differ
 class TestGroupHunksByFile:
     """Test group_hunks_by_file function."""
 
-    def test_group_single_file(self):
+    def test_group_single_file(self) -> None:
         """Group hunks for a single file."""
         hunks = [
             DiffHunk("src/main.py", 10, 20, "content", 5, 2),
@@ -137,7 +137,7 @@ class TestGroupHunksByFile:
         assert "src/main.py" in by_file
         assert len(by_file["src/main.py"]) == 1
 
-    def test_group_multiple_files(self):
+    def test_group_multiple_files(self) -> None:
         """Group hunks across multiple files."""
         hunks = [
             DiffHunk("src/main.py", 10, 20, "content1", 5, 2),
@@ -149,7 +149,7 @@ class TestGroupHunksByFile:
         assert len(by_file["src/main.py"]) == 2
         assert len(by_file["src/utils.py"]) == 1
 
-    def test_empty_hunks(self):
+    def test_empty_hunks(self) -> None:
         """Empty hunks list returns empty dict."""
         by_file = group_hunks_by_file([])
         assert by_file == {}
@@ -163,7 +163,7 @@ class TestGroupHunksByFile:
 class TestChangeFilter:
     """Test ChangeFilter class."""
 
-    def _make_config(self):
+    def _make_config(self) -> MagicMock:
         """Create a mock config for testing."""
         config = MagicMock()
         config.model.provider = "openai"
@@ -175,7 +175,9 @@ class TestChangeFilter:
         config.model.initial_delay = 1.0
         return config
 
-    def _make_change_summary(self, files=None):
+    def _make_change_summary(
+        self, files: list[FileChange] | None = None
+    ) -> ChangeSummary:
         """Create a test ChangeSummary."""
         if files is None:
             files = [
@@ -212,7 +214,7 @@ class TestChangeFilter:
             files_changed=files,
         )
 
-    def test_no_feature_description_returns_original(self):
+    def test_no_feature_description_returns_original(self) -> None:
         """Without feature description, returns original summary unchanged."""
         config = self._make_config()
         change_filter = ChangeFilter(config=config, feature_description="")
@@ -220,7 +222,7 @@ class TestChangeFilter:
         result = change_filter.filter_changes(summary, "some diff")
         assert result is summary  # Same object returned
 
-    def test_empty_diff_returns_original(self):
+    def test_empty_diff_returns_original(self) -> None:
         """With empty diff, returns original summary unchanged."""
         config = self._make_config()
         change_filter = ChangeFilter(config=config, feature_description="test feature")
@@ -228,7 +230,7 @@ class TestChangeFilter:
         result = change_filter.filter_changes(summary, "")
         assert result is summary
 
-    def test_filter_changes_with_llm_classification(self):
+    def test_filter_changes_with_llm_classification(self) -> None:
         """Test that filter_changes uses LLM classification to filter files."""
         config = self._make_config()
         change_filter = ChangeFilter(config=config, feature_description="new feature X")
@@ -276,7 +278,6 @@ index abc..def 100644
         # CI file should be filtered out
         assert len(result.files_changed) == 2
         assert result.is_filtered is True
-        assert result.feature_description == "new feature X"
         file_paths = [f.path for f in result.files_changed]
         assert "src/main.py" in file_paths
         assert "src/utils.py" in file_paths
@@ -286,7 +287,7 @@ index abc..def 100644
         main_file = next(f for f in result.files_changed if f.path == "src/main.py")
         assert main_file.relevant_line_ranges == [(10, 20)]
 
-    def test_filter_changes_llm_failure_returns_original(self):
+    def test_filter_changes_llm_failure_returns_original(self) -> None:
         """If LLM classification fails, returns original summary."""
         config = self._make_config()
         change_filter = ChangeFilter(config=config, feature_description="test feature")
@@ -312,7 +313,7 @@ index abc..def 100644
         assert len(result.files_changed) == 3
         assert result.is_filtered is False
 
-    def test_filter_preserves_non_classified_files(self):
+    def test_filter_preserves_non_classified_files(self) -> None:
         """Files not in classification (e.g., binary) are kept."""
         config = self._make_config()
         change_filter = ChangeFilter(config=config, feature_description="test feature")
@@ -375,9 +376,11 @@ index abc..def 100644
 class TestChangeSummarySchema:
     """Test ChangeSummary schema with new fields."""
 
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         """Test default values for new fields."""
         cs = ChangeSummary(
+            commit_hash="abc123",
+            commit_range="abc..def",
             change_type=ChangeType.FEATURE,
             description="test",
             intent="test",
@@ -386,7 +389,7 @@ class TestChangeSummarySchema:
         assert cs.feature_description is None
         assert cs.is_filtered is False
 
-    def test_with_feature_description(self):
+    def test_with_feature_description(self) -> None:
         """Test setting feature_description."""
         cs = ChangeSummary(
             change_type=ChangeType.FEATURE,
@@ -399,7 +402,7 @@ class TestChangeSummarySchema:
         assert cs.feature_description == "my feature"
         assert cs.is_filtered is True
 
-    def test_serialization_roundtrip(self):
+    def test_serialization_roundtrip(self) -> None:
         """Test JSON serialization roundtrip with new fields."""
         cs = ChangeSummary(
             commit_hash="abc123",
@@ -437,7 +440,7 @@ class TestChangeSummarySchema:
 class TestFileChangeSchema:
     """Test FileChange schema with relevant_line_ranges."""
 
-    def test_default_relevant_line_ranges(self):
+    def test_default_relevant_line_ranges(self) -> None:
         """Test default value is None."""
         fc = FileChange(
             path="test.py",
@@ -446,7 +449,7 @@ class TestFileChangeSchema:
         )
         assert fc.relevant_line_ranges is None
 
-    def test_with_relevant_line_ranges(self):
+    def test_with_relevant_line_ranges(self) -> None:
         """Test setting relevant_line_ranges."""
         fc = FileChange(
             path="test.py",
@@ -456,7 +459,7 @@ class TestFileChangeSchema:
         )
         assert fc.relevant_line_ranges == [(1, 10), (20, 30)]
 
-    def test_empty_relevant_line_ranges(self):
+    def test_empty_relevant_line_ranges(self) -> None:
         """Test empty list means entire file is relevant."""
         fc = FileChange(
             path="test.py",

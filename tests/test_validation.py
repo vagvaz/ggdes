@@ -1,5 +1,6 @@
 """Comprehensive tests for the GGDes validation module."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,7 +23,7 @@ from ggdes.validation import (
 
 
 @pytest.fixture
-def temp_repo(tmp_path):
+def temp_repo(tmp_path: Path) -> Path:
     """Create a temporary repository structure."""
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -46,7 +47,7 @@ def helper():
 
 
 @pytest.fixture
-def sample_diff_content():
+def sample_diff_content() -> str:
     """Sample git diff content for testing."""
     return """diff --git a/src/main.py b/src/main.py
 index 1234567..abcdefg 100644
@@ -74,7 +75,7 @@ index 1234567..abcdefg 100644
 
 
 @pytest.fixture
-def sample_code_elements():
+def sample_code_elements() -> dict[str, dict[str, object]]:
     """Sample code elements for testing."""
     return {
         "main": {
@@ -101,7 +102,7 @@ def sample_code_elements():
 
 
 @pytest.fixture
-def sample_code_element_objects():
+def sample_code_element_objects() -> list[CodeElement]:
     """Sample CodeElement objects for ASTValidator testing."""
     return [
         CodeElement(
@@ -140,7 +141,7 @@ def sample_code_element_objects():
 
 
 @pytest.fixture
-def sample_technical_facts():
+def sample_technical_facts() -> list[TechnicalFact]:
     """Sample TechnicalFact objects for testing."""
     return [
         TechnicalFact(
@@ -171,7 +172,7 @@ def sample_technical_facts():
 
 
 @pytest.fixture
-def mock_llm_provider():
+def mock_llm_provider() -> MagicMock:
     """Create a mock LLM provider."""
     mock = MagicMock()
     mock.generate.return_value = "Corrected output with valid references"
@@ -187,8 +188,11 @@ class TestCodeReferenceValidator:
     """Tests for CodeReferenceValidator class."""
 
     def test_initialization_with_all_params(
-        self, temp_repo, sample_code_elements, sample_diff_content
-    ):
+        self,
+        temp_repo: Path,
+        sample_code_elements: dict[str, dict[str, object]],
+        sample_diff_content: str,
+    ) -> None:
         """Test initialization with all parameters."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -204,7 +208,7 @@ class TestCodeReferenceValidator:
         assert "src/main.py" in validator.diff_snippets
         assert "src/utils.py" in validator.diff_snippets
 
-    def test_initialization_with_defaults(self, temp_repo):
+    def test_initialization_with_defaults(self, temp_repo: Path) -> None:
         """Test initialization with default values."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -214,7 +218,7 @@ class TestCodeReferenceValidator:
         assert validator.diff_content == ""
         assert validator.diff_snippets == {}
 
-    def test_initialization_with_none_values(self, temp_repo):
+    def test_initialization_with_none_values(self, temp_repo: Path) -> None:
         """Test initialization with explicit None values."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -227,7 +231,9 @@ class TestCodeReferenceValidator:
         assert validator.code_elements == {}
         assert validator.diff_content == ""
 
-    def test_extract_diff_snippets(self, temp_repo, sample_diff_content):
+    def test_extract_diff_snippets(
+        self, temp_repo: Path, sample_diff_content: str
+    ) -> None:
         """Test extraction of diff snippets."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -241,7 +247,7 @@ class TestCodeReferenceValidator:
         assert any("Hello World" in line for line in snippets["src/main.py"])
         assert any("x = 1" in line for line in snippets["src/utils.py"])
 
-    def test_extract_diff_snippets_empty_diff(self, temp_repo):
+    def test_extract_diff_snippets_empty_diff(self, temp_repo: Path) -> None:
         """Test extraction with empty diff content."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -250,7 +256,7 @@ class TestCodeReferenceValidator:
 
         assert validator.diff_snippets == {}
 
-    def test_normalize_code(self, temp_repo):
+    def test_normalize_code(self, temp_repo: Path) -> None:
         """Test code normalization."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -261,7 +267,9 @@ class TestCodeReferenceValidator:
         # Test multiple spaces
         assert validator._normalize_code("a    b") == "a b"
 
-    def test_snippet_in_diff_found(self, temp_repo, sample_diff_content):
+    def test_snippet_in_diff_found(
+        self, temp_repo: Path, sample_diff_content: str
+    ) -> None:
         """Test finding snippet in diff."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -271,7 +279,9 @@ class TestCodeReferenceValidator:
         assert validator._snippet_in_diff("src/main.py", "Hello World")
         assert validator._snippet_in_diff("src/utils.py", "x = 1")
 
-    def test_snippet_in_diff_not_found(self, temp_repo, sample_diff_content):
+    def test_snippet_in_diff_not_found(
+        self, temp_repo: Path, sample_diff_content: str
+    ) -> None:
         """Test when snippet is not in diff."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -281,7 +291,7 @@ class TestCodeReferenceValidator:
         assert not validator._snippet_in_diff("src/main.py", "NonExistentCode")
         assert not validator._snippet_in_diff("nonexistent.py", "Hello World")
 
-    def test_extract_references_file_paths(self, temp_repo):
+    def test_extract_references_file_paths(self, temp_repo: Path) -> None:
         """Test extracting file path references."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -293,7 +303,7 @@ class TestCodeReferenceValidator:
         assert any(r.file_path == "src/main.py" for r in file_refs)
         assert any(r.file_path == "src/utils.py" for r in file_refs)
 
-    def test_extract_references_with_line_numbers(self, temp_repo):
+    def test_extract_references_with_line_numbers(self, temp_repo: Path) -> None:
         """Test extracting file references with line numbers."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -304,7 +314,7 @@ class TestCodeReferenceValidator:
         assert len(file_refs) == 1
         assert file_refs[0].line_number == 42
 
-    def test_extract_references_function_calls(self, temp_repo):
+    def test_extract_references_function_calls(self, temp_repo: Path) -> None:
         """Test extracting function call references."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -315,7 +325,7 @@ class TestCodeReferenceValidator:
         assert any(r.code_snippet == "main" for r in func_refs)
         assert any(r.code_snippet == "helper" for r in func_refs)
 
-    def test_extract_references_skips_keywords(self, temp_repo):
+    def test_extract_references_skips_keywords(self, temp_repo: Path) -> None:
         """Test that common keywords are not extracted as functions."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -331,7 +341,7 @@ class TestCodeReferenceValidator:
         assert "len" not in func_names
         assert "range" not in func_names
 
-    def test_extract_references_class_names(self, temp_repo):
+    def test_extract_references_class_names(self, temp_repo: Path) -> None:
         """Test extracting class name references."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -343,7 +353,7 @@ class TestCodeReferenceValidator:
         assert any(r.code_snippet == "MyClass" for r in class_refs)
         assert any(r.code_snippet == "SomeClass" for r in class_refs)
 
-    def test_extract_references_skips_common_words(self, temp_repo):
+    def test_extract_references_skips_common_words(self, temp_repo: Path) -> None:
         """Test that common words are not extracted as classes."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -362,8 +372,8 @@ class TestCodeReferenceValidator:
         assert "An" not in class_names
 
     def test_validate_reference_valid_file_in_diff(
-        self, temp_repo, sample_diff_content
-    ):
+        self, temp_repo: Path, sample_diff_content: str
+    ) -> None:
         """Test validating a file reference that exists in diff."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -383,7 +393,7 @@ class TestCodeReferenceValidator:
         assert result.found_in == "diff"
         assert result.error_message is None
 
-    def test_validate_reference_valid_file_in_repo(self, temp_repo):
+    def test_validate_reference_valid_file_in_repo(self, temp_repo: Path) -> None:
         """Test validating a file reference that exists in repo but not in diff."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -401,7 +411,7 @@ class TestCodeReferenceValidator:
         assert result.is_valid
         assert result.found_in == "file"
 
-    def test_validate_reference_invalid_file(self, temp_repo):
+    def test_validate_reference_invalid_file(self, temp_repo: Path) -> None:
         """Test validating a file reference that doesn't exist."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -415,11 +425,11 @@ class TestCodeReferenceValidator:
 
         assert not result.is_valid
         assert result.found_in is None
-        assert "not found" in result.error_message.lower()
+        assert "not found" in (result.error_message or "").lower()
 
     def test_validate_reference_valid_function_in_ast(
-        self, temp_repo, sample_code_elements
-    ):
+        self, temp_repo: Path, sample_code_elements: dict[str, dict[str, object]]
+    ) -> None:
         """Test validating a function reference that exists in AST."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -438,8 +448,8 @@ class TestCodeReferenceValidator:
         assert result.found_in == "ast"
 
     def test_validate_reference_valid_class_in_ast(
-        self, temp_repo, sample_code_elements
-    ):
+        self, temp_repo: Path, sample_code_elements: dict[str, dict[str, object]]
+    ) -> None:
         """Test validating a class reference that exists in AST."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -457,7 +467,9 @@ class TestCodeReferenceValidator:
         assert result.is_valid
         assert result.found_in == "ast"
 
-    def test_validate_reference_invalid_element(self, temp_repo, sample_code_elements):
+    def test_validate_reference_invalid_element(
+        self, temp_repo: Path, sample_code_elements: dict[str, dict[str, object]]
+    ) -> None:
         """Test validating a code element that doesn't exist in AST."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -474,11 +486,14 @@ class TestCodeReferenceValidator:
 
         assert not result.is_valid
         assert result.found_in is None
-        assert "not found" in result.error_message.lower()
+        assert "not found" in (result.error_message or "").lower()
 
     def test_validate_references_in_text(
-        self, temp_repo, sample_code_elements, sample_diff_content
-    ):
+        self,
+        temp_repo: Path,
+        sample_code_elements: dict[str, dict[str, object]],
+        sample_diff_content: str,
+    ) -> None:
         """Test validating all references in a text."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -503,7 +518,9 @@ Also see helper() in `src/utils.py`.
         assert "function" in ref_types
         assert "class" in ref_types
 
-    def test_get_correction_prompt(self, temp_repo, sample_code_elements):
+    def test_get_correction_prompt(
+        self, temp_repo: Path, sample_code_elements: dict[str, dict[str, object]]
+    ) -> None:
         """Test generation of correction prompt."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -544,7 +561,7 @@ Also see helper() in `src/utils.py`.
         assert "main" in prompt  # Available elements
         assert "Original text" in prompt
 
-    def test_get_correction_prompt_empty(self, temp_repo):
+    def test_get_correction_prompt_empty(self, temp_repo: Path) -> None:
         """Test correction prompt with no invalid results."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -553,8 +570,11 @@ Also see helper() in `src/utils.py`.
         assert prompt == ""
 
     def test_validate_and_correct_all_valid(
-        self, temp_repo, sample_code_elements, mock_llm_provider
-    ):
+        self,
+        temp_repo: Path,
+        sample_code_elements: dict[str, dict[str, object]],
+        mock_llm_provider: MagicMock,
+    ) -> None:
         """Test validate_and_correct when all references are valid."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -569,7 +589,9 @@ Also see helper() in `src/utils.py`.
         assert result == text
         mock_llm_provider.generate.assert_not_called()
 
-    def test_validate_and_correct_with_invalid(self, temp_repo, mock_llm_provider):
+    def test_validate_and_correct_with_invalid(
+        self, temp_repo: Path, mock_llm_provider: MagicMock
+    ) -> None:
         """Test validate_and_correct with invalid references."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -587,8 +609,8 @@ Also see helper() in `src/utils.py`.
         assert result == "Corrected output with valid references"
 
     def test_validate_and_correct_max_corrections_reached(
-        self, temp_repo, mock_llm_provider
-    ):
+        self, temp_repo: Path, mock_llm_provider: MagicMock
+    ) -> None:
         """Test validate_and_correct when max corrections is reached."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -609,8 +631,8 @@ Also see helper() in `src/utils.py`.
         assert "BadFunction" in result
 
     def test_validate_and_correct_temperature_increase(
-        self, temp_repo, mock_llm_provider
-    ):
+        self, temp_repo: Path, mock_llm_provider: MagicMock
+    ) -> None:
         """Test that temperature increases with each correction attempt."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -637,7 +659,9 @@ Also see helper() in `src/utils.py`.
 class TestASTValidator:
     """Tests for ASTValidator class."""
 
-    def test_initialization_with_code_elements(self, sample_code_element_objects):
+    def test_initialization_with_code_elements(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test initialization with code elements."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -647,7 +671,7 @@ class TestASTValidator:
         assert "helper" in validator.elements
         assert validator.element_names == {"main", "MyClass", "method", "helper"}
 
-    def test_initialization_empty(self):
+    def test_initialization_empty(self) -> None:
         """Test initialization with empty list."""
         validator = ASTValidator([])
 
@@ -655,8 +679,10 @@ class TestASTValidator:
         assert validator.element_names == set()
 
     def test_validate_fact_valid_elements(
-        self, sample_code_element_objects, sample_technical_facts
-    ):
+        self,
+        sample_code_element_objects: list[CodeElement],
+        sample_technical_facts: list[TechnicalFact],
+    ) -> None:
         """Test validating a fact with valid element references."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -667,8 +693,10 @@ class TestASTValidator:
         assert len(result.errors) == 0
 
     def test_validate_fact_invalid_element(
-        self, sample_code_element_objects, sample_technical_facts
-    ):
+        self,
+        sample_code_element_objects: list[CodeElement],
+        sample_technical_facts: list[TechnicalFact],
+    ) -> None:
         """Test validating a fact with invalid element reference."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -680,8 +708,10 @@ class TestASTValidator:
         assert "nonexistent_function" in result.errors[0]
 
     def test_validate_fact_low_confidence(
-        self, sample_code_element_objects, sample_technical_facts
-    ):
+        self,
+        sample_code_element_objects: list[CodeElement],
+        sample_technical_facts: list[TechnicalFact],
+    ) -> None:
         """Test validating a fact with low confidence generates warning."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -694,8 +724,10 @@ class TestASTValidator:
         assert "0.30" in result.warnings[0]
 
     def test_validate_facts_multiple(
-        self, sample_code_element_objects, sample_technical_facts
-    ):
+        self,
+        sample_code_element_objects: list[CodeElement],
+        sample_technical_facts: list[TechnicalFact],
+    ) -> None:
         """Test validating multiple facts."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -706,7 +738,9 @@ class TestASTValidator:
         assert len(result.errors) == 1  # From fact_3
         assert len(result.warnings) == 1  # From fact_2
 
-    def test_validate_facts_empty_list(self, sample_code_element_objects):
+    def test_validate_facts_empty_list(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test validating empty list of facts."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -716,7 +750,9 @@ class TestASTValidator:
         assert len(result.errors) == 0
         assert len(result.warnings) == 0
 
-    def test_check_hallucination_no_hallucination(self, sample_code_element_objects):
+    def test_check_hallucination_no_hallucination(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test hallucination check with valid references."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -726,7 +762,9 @@ class TestASTValidator:
         assert result.passed
         assert len(result.warnings) == 0
 
-    def test_check_hallucination_with_hallucination(self, sample_code_element_objects):
+    def test_check_hallucination_with_hallucination(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test hallucination check with invalid function references."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -738,7 +776,9 @@ class TestASTValidator:
         assert any("fakeFunction" in w for w in result.warnings)
         assert any("anotherFake" in w for w in result.warnings)
 
-    def test_check_hallucination_skips_keywords(self, sample_code_element_objects):
+    def test_check_hallucination_skips_keywords(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test that common keywords are not flagged as hallucinations."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -756,7 +796,9 @@ class TestASTValidator:
         assert "int" not in warnings_str
         assert "str" not in warnings_str
 
-    def test_check_hallucination_mixed(self, sample_code_element_objects):
+    def test_check_hallucination_mixed(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test hallucination check with mix of valid and invalid references."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -777,7 +819,7 @@ class TestASTValidator:
 class TestValidationPipeline:
     """Tests for ValidationPipeline class."""
 
-    def test_initialization(self, temp_repo):
+    def test_initialization(self, temp_repo: Path) -> None:
         """Test pipeline initialization."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -785,7 +827,7 @@ class TestValidationPipeline:
         assert pipeline.schema_validator is not None
         assert pipeline.results == []
 
-    def test_add_check(self, temp_repo):
+    def test_add_check(self, temp_repo: Path) -> None:
         """Test adding validation check results."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -799,7 +841,7 @@ class TestValidationPipeline:
         assert pipeline.results[0] == ("check1", result1)
         assert pipeline.results[1] == ("check2", result2)
 
-    def test_get_summary_all_passed(self, temp_repo):
+    def test_get_summary_all_passed(self, temp_repo: Path) -> None:
         """Test summary when all checks pass."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -816,7 +858,7 @@ class TestValidationPipeline:
         assert len(summary.errors) == 0
         assert len(summary.warnings) == 0
 
-    def test_get_summary_with_errors(self, temp_repo):
+    def test_get_summary_with_errors(self, temp_repo: Path) -> None:
         """Test summary when some checks have errors."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -834,7 +876,7 @@ class TestValidationPipeline:
         assert "[check2]" in summary.errors[0]
         assert "Error 1" in summary.errors[0]
 
-    def test_get_summary_with_warnings(self, temp_repo):
+    def test_get_summary_with_warnings(self, temp_repo: Path) -> None:
         """Test summary when checks have warnings."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -852,7 +894,7 @@ class TestValidationPipeline:
         assert any("[check1]" in w for w in summary.warnings)
         assert any("[check2]" in w for w in summary.warnings)
 
-    def test_get_summary_mixed(self, temp_repo):
+    def test_get_summary_mixed(self, temp_repo: Path) -> None:
         """Test summary with both errors and warnings."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -872,7 +914,7 @@ class TestValidationPipeline:
         assert len(summary.errors) == 2
         assert len(summary.warnings) == 2
 
-    def test_has_critical_errors_true(self, temp_repo):
+    def test_has_critical_errors_true(self, temp_repo: Path) -> None:
         """Test has_critical_errors when there are errors."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -882,7 +924,7 @@ class TestValidationPipeline:
 
         assert pipeline.has_critical_errors()
 
-    def test_has_critical_errors_false(self, temp_repo):
+    def test_has_critical_errors_false(self, temp_repo: Path) -> None:
         """Test has_critical_errors when there are no errors."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -892,7 +934,7 @@ class TestValidationPipeline:
 
         assert not pipeline.has_critical_errors()
 
-    def test_has_critical_errors_empty(self, temp_repo):
+    def test_has_critical_errors_empty(self, temp_repo: Path) -> None:
         """Test has_critical_errors with no checks."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -907,7 +949,7 @@ class TestValidationPipeline:
 class TestInputValidator:
     """Tests for InputValidator class."""
 
-    def test_initialization(self, temp_repo):
+    def test_initialization(self, temp_repo: Path) -> None:
         """Test input validator initialization."""
         validator = InputValidator(temp_repo)
 
@@ -916,7 +958,7 @@ class TestInputValidator:
         assert InputValidator.MAX_FILE_SIZE_MB == 10
         assert len(InputValidator.SUPPORTED_EXTENSIONS) > 0
 
-    def test_validate_commit_range_valid_format(self, temp_repo):
+    def test_validate_commit_range_valid_format(self, temp_repo: Path) -> None:
         """Test validating commit range with valid format."""
         validator = InputValidator(temp_repo)
 
@@ -927,7 +969,7 @@ class TestInputValidator:
         assert result.passed
         assert len(result.errors) == 0
 
-    def test_validate_commit_range_invalid_format(self, temp_repo):
+    def test_validate_commit_range_invalid_format(self, temp_repo: Path) -> None:
         """Test validating commit range with invalid format."""
         validator = InputValidator(temp_repo)
 
@@ -937,7 +979,7 @@ class TestInputValidator:
         assert len(result.errors) == 1
         assert "Invalid commit range format" in result.errors[0]
 
-    def test_validate_commit_range_nonexistent_commit(self, temp_repo):
+    def test_validate_commit_range_nonexistent_commit(self, temp_repo: Path) -> None:
         """Test validating commit range with non-existent commit."""
         import subprocess
 
@@ -955,7 +997,7 @@ class TestInputValidator:
         assert any("abc123" in e for e in result.errors)
         assert any("def456" in e for e in result.errors)
 
-    def test_validate_commit_range_empty_base(self, temp_repo):
+    def test_validate_commit_range_empty_base(self, temp_repo: Path) -> None:
         """Test validating commit range with empty base (e.g., '..HEAD')."""
         validator = InputValidator(temp_repo)
 
@@ -966,7 +1008,7 @@ class TestInputValidator:
         # Should only validate HEAD, not empty base
         assert mock_run.call_count == 1
 
-    def test_validate_diff_size_small(self, temp_repo):
+    def test_validate_diff_size_small(self, temp_repo: Path) -> None:
         """Test validating small diff."""
         validator = InputValidator(temp_repo)
 
@@ -977,7 +1019,7 @@ class TestInputValidator:
         assert len(result.errors) == 0
         assert len(result.warnings) == 0
 
-    def test_validate_diff_size_at_limit(self, temp_repo):
+    def test_validate_diff_size_at_limit(self, temp_repo: Path) -> None:
         """Test validating diff at the limit."""
         validator = InputValidator(temp_repo)
 
@@ -989,7 +1031,7 @@ class TestInputValidator:
         # At limit, should have warning
         assert len(result.warnings) == 1
 
-    def test_validate_diff_size_over_limit(self, temp_repo):
+    def test_validate_diff_size_over_limit(self, temp_repo: Path) -> None:
         """Test validating diff over the limit."""
         validator = InputValidator(temp_repo)
 
@@ -1000,7 +1042,7 @@ class TestInputValidator:
         assert len(result.errors) == 1
         assert "Diff too large" in result.errors[0]
 
-    def test_validate_diff_size_warning_threshold(self, temp_repo):
+    def test_validate_diff_size_warning_threshold(self, temp_repo: Path) -> None:
         """Test warning for large diffs."""
         validator = InputValidator(temp_repo)
 
@@ -1013,7 +1055,7 @@ class TestInputValidator:
         assert len(result.warnings) == 1
         assert "Large diff" in result.warnings[0]
 
-    def test_validate_file_type_supported(self, temp_repo):
+    def test_validate_file_type_supported(self, temp_repo: Path) -> None:
         """Test validating supported file type."""
         validator = InputValidator(temp_repo)
 
@@ -1025,7 +1067,7 @@ class TestInputValidator:
         assert result.passed
         assert len(result.errors) == 0
 
-    def test_validate_file_type_unsupported(self, temp_repo):
+    def test_validate_file_type_unsupported(self, temp_repo: Path) -> None:
         """Test validating unsupported file type."""
         validator = InputValidator(temp_repo)
 
@@ -1038,7 +1080,7 @@ class TestInputValidator:
         assert len(result.warnings) == 1
         assert "Unsupported file type" in result.warnings[0]
 
-    def test_validate_file_type_binary(self, temp_repo):
+    def test_validate_file_type_binary(self, temp_repo: Path) -> None:
         """Test validating binary file."""
         validator = InputValidator(temp_repo)
 
@@ -1051,7 +1093,7 @@ class TestInputValidator:
         assert len(result.errors) == 1
         assert "Binary file" in result.errors[0]
 
-    def test_validate_file_type_too_large(self, temp_repo):
+    def test_validate_file_type_too_large(self, temp_repo: Path) -> None:
         """Test validating file that is too large."""
         validator = InputValidator(temp_repo)
 
@@ -1067,7 +1109,7 @@ class TestInputValidator:
         assert len(result.errors) == 1
         assert "File too large" in result.errors[0]
 
-    def test_validate_file_type_nonexistent(self, temp_repo):
+    def test_validate_file_type_nonexistent(self, temp_repo: Path) -> None:
         """Test validating non-existent file."""
         validator = InputValidator(temp_repo)
 
@@ -1083,7 +1125,7 @@ class TestInputValidator:
             for keyword in ["cannot access", "binary"]
         )
 
-    def test_is_binary_true(self, temp_repo):
+    def test_is_binary_true(self, temp_repo: Path) -> None:
         """Test binary file detection."""
         validator = InputValidator(temp_repo)
 
@@ -1092,7 +1134,7 @@ class TestInputValidator:
 
         assert validator._is_binary(test_file)
 
-    def test_is_binary_false(self, temp_repo):
+    def test_is_binary_false(self, temp_repo: Path) -> None:
         """Test non-binary file detection."""
         validator = InputValidator(temp_repo)
 
@@ -1101,7 +1143,7 @@ class TestInputValidator:
 
         assert not validator._is_binary(test_file)
 
-    def test_is_binary_error(self, temp_repo):
+    def test_is_binary_error(self, temp_repo: Path) -> None:
         """Test binary detection with file error."""
         validator = InputValidator(temp_repo)
 
@@ -1117,7 +1159,7 @@ class TestInputValidator:
 class TestSchemaValidator:
     """Tests for SchemaValidator class."""
 
-    def test_validate_pydantic_model_valid(self):
+    def test_validate_pydantic_model_valid(self) -> None:
         """Test validating valid pydantic model data."""
         from pydantic import BaseModel
 
@@ -1133,7 +1175,7 @@ class TestSchemaValidator:
         assert result.passed
         assert len(result.errors) == 0
 
-    def test_validate_pydantic_model_invalid(self):
+    def test_validate_pydantic_model_invalid(self) -> None:
         """Test validating invalid pydantic model data."""
         from pydantic import BaseModel
 
@@ -1150,7 +1192,7 @@ class TestSchemaValidator:
         assert len(result.errors) > 0
         assert "age" in result.errors[0]
 
-    def test_validate_pydantic_model_missing_field(self):
+    def test_validate_pydantic_model_missing_field(self) -> None:
         """Test validating data with missing required field."""
         from pydantic import BaseModel, Field
 
@@ -1174,8 +1216,11 @@ class TestValidationIntegration:
     """Integration tests for the validation module."""
 
     def test_full_validation_pipeline(
-        self, temp_repo, sample_code_element_objects, sample_technical_facts
-    ):
+        self,
+        temp_repo: Path,
+        sample_code_element_objects: list[CodeElement],
+        sample_technical_facts: list[TechnicalFact],
+    ) -> None:
         """Test the full validation pipeline with all validators."""
         # Create pipeline
         pipeline = ValidationPipeline(temp_repo)
@@ -1201,8 +1246,8 @@ class TestValidationIntegration:
         assert any("nonexistent_function" in e for e in summary.errors)
 
     def test_code_reference_with_ast_validation(
-        self, temp_repo, sample_code_element_objects
-    ):
+        self, temp_repo: Path, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test code reference validation combined with AST validation."""
         # Create code reference validator with AST elements
         code_elements = {
@@ -1224,8 +1269,8 @@ class TestValidationIntegration:
         assert all(r.is_valid for r in results)
 
     def test_end_to_end_validation_workflow(
-        self, temp_repo, sample_diff_content, mock_llm_provider
-    ):
+        self, temp_repo: Path, sample_diff_content: str, mock_llm_provider: MagicMock
+    ) -> None:
         """Test end-to-end validation workflow."""
         # Setup
         changed_files = ["src/main.py"]
@@ -1267,7 +1312,7 @@ Also see fakeFunction() in `nonexistent.py`.
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
-    def test_code_reference_empty_text(self, temp_repo):
+    def test_code_reference_empty_text(self, temp_repo: Path) -> None:
         """Test validating empty text."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -1275,7 +1320,7 @@ class TestEdgeCases:
 
         assert results == []
 
-    def test_code_reference_special_characters(self, temp_repo):
+    def test_code_reference_special_characters(self, temp_repo: Path) -> None:
         """Test extracting references with special characters."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 
@@ -1285,7 +1330,9 @@ class TestEdgeCases:
         file_refs = [r for r in references if r.reference_type == "file"]
         assert len(file_refs) == 2
 
-    def test_ast_validator_empty_fact(self, sample_code_element_objects):
+    def test_ast_validator_empty_fact(
+        self, sample_code_element_objects: list[CodeElement]
+    ) -> None:
         """Test validating fact with empty source elements."""
         validator = ASTValidator(sample_code_element_objects)
 
@@ -1302,7 +1349,7 @@ class TestEdgeCases:
 
         assert result.passed  # No elements to validate
 
-    def test_input_validator_empty_diff(self, temp_repo):
+    def test_input_validator_empty_diff(self, temp_repo: Path) -> None:
         """Test validating empty diff."""
         validator = InputValidator(temp_repo)
 
@@ -1312,7 +1359,7 @@ class TestEdgeCases:
         assert len(result.errors) == 0
         assert len(result.warnings) == 0
 
-    def test_validation_pipeline_duplicate_checks(self, temp_repo):
+    def test_validation_pipeline_duplicate_checks(self, temp_repo: Path) -> None:
         """Test adding duplicate checks to pipeline."""
         pipeline = ValidationPipeline(temp_repo)
 
@@ -1322,7 +1369,9 @@ class TestEdgeCases:
 
         assert len(pipeline.results) == 2
 
-    def test_code_reference_very_long_snippet(self, temp_repo, sample_diff_content):
+    def test_code_reference_very_long_snippet(
+        self, temp_repo: Path, sample_diff_content: str
+    ) -> None:
         """Test with very long code snippet."""
         validator = CodeReferenceValidator(
             repo_path=temp_repo,
@@ -1336,7 +1385,7 @@ class TestEdgeCases:
         # Should not crash, just return False
         assert result is False
 
-    def test_normalize_code_unicode(self, temp_repo):
+    def test_normalize_code_unicode(self, temp_repo: Path) -> None:
         """Test code normalization with unicode."""
         validator = CodeReferenceValidator(repo_path=temp_repo)
 

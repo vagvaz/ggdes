@@ -151,7 +151,7 @@ class DiagramCache:
             analysis_id: Analysis identifier
         """
         keys_to_remove = [
-            key for key in self._index.keys() if key.startswith(f"{analysis_id}_")
+            key for key in self._index if key.startswith(f"{analysis_id}_")
         ]
 
         for key in keys_to_remove:

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-def check_analysis(analysis_id: str, kb_base: str = None):
+def check_analysis(analysis_id: str, kb_base: str | None = None) -> None:
     """Check the state of an analysis."""
     # Try multiple locations
     possible_paths = [

@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -41,7 +42,7 @@ from ggdes.tools.definitions import (
 class TestToolParameter:
     """Tests for ToolParameter model."""
 
-    def test_create_required_parameter(self):
+    def test_create_required_parameter(self) -> None:
         """Test creating a required parameter."""
         param = ToolParameter(
             name="path",
@@ -55,7 +56,7 @@ class TestToolParameter:
         assert param.required is True
         assert param.enum is None
 
-    def test_create_optional_parameter(self):
+    def test_create_optional_parameter(self) -> None:
         """Test creating an optional parameter."""
         param = ToolParameter(
             name="max_results",
@@ -67,7 +68,7 @@ class TestToolParameter:
         assert param.type == "integer"
         assert param.required is False
 
-    def test_create_enum_parameter(self):
+    def test_create_enum_parameter(self) -> None:
         """Test creating a parameter with enum values."""
         param = ToolParameter(
             name="change_type",
@@ -78,7 +79,7 @@ class TestToolParameter:
         )
         assert param.enum == ["added", "modified", "deleted", "renamed"]
 
-    def test_default_required_is_true(self):
+    def test_default_required_is_true(self) -> None:
         """Test that required defaults to True."""
         param = ToolParameter(
             name="pattern",
@@ -96,7 +97,7 @@ class TestToolParameter:
 class TestToolDefinition:
     """Tests for ToolDefinition model."""
 
-    def test_create_tool_definition(self):
+    def test_create_tool_definition(self) -> None:
         """Test creating a tool definition."""
         tool = ToolDefinition(
             name="test_tool",
@@ -111,7 +112,7 @@ class TestToolDefinition:
         assert len(tool.parameters) == 1
         assert tool.returns == "A string result"
 
-    def test_to_openai_schema_basic(self):
+    def test_to_openai_schema_basic(self) -> None:
         """Test converting to OpenAI schema format."""
         tool = ToolDefinition(
             name="read_file",
@@ -139,7 +140,7 @@ class TestToolDefinition:
         assert "limit" in schema["function"]["parameters"]["properties"]
         assert schema["function"]["parameters"]["required"] == ["path"]
 
-    def test_to_openai_schema_with_enum(self):
+    def test_to_openai_schema_with_enum(self) -> None:
         """Test OpenAI schema with enum parameter."""
         tool = ToolDefinition(
             name="validate",
@@ -160,7 +161,7 @@ class TestToolDefinition:
         prop = schema["function"]["parameters"]["properties"]["ref_type"]
         assert prop["enum"] == ["file", "function", "class"]
 
-    def test_to_anthropic_schema_basic(self):
+    def test_to_anthropic_schema_basic(self) -> None:
         """Test converting to Anthropic schema format."""
         tool = ToolDefinition(
             name="search_code",
@@ -180,7 +181,7 @@ class TestToolDefinition:
         assert "pattern" in schema["input_schema"]["properties"]
         assert schema["input_schema"]["required"] == ["pattern"]
 
-    def test_to_anthropic_schema_with_enum(self):
+    def test_to_anthropic_schema_with_enum(self) -> None:
         """Test Anthropic schema with enum parameter."""
         tool = ToolDefinition(
             name="filter",
@@ -210,7 +211,7 @@ class TestToolDefinition:
 class TestToolCall:
     """Tests for ToolCall model."""
 
-    def test_create_tool_call(self):
+    def test_create_tool_call(self) -> None:
         """Test creating a tool call."""
         call = ToolCall(
             tool_name="read_file",
@@ -221,7 +222,7 @@ class TestToolCall:
         assert call.arguments == {"path": "test.py"}
         assert call.call_id == "call_123"
 
-    def test_create_tool_call_no_call_id(self):
+    def test_create_tool_call_no_call_id(self) -> None:
         """Test creating a tool call without call_id."""
         call = ToolCall(
             tool_name="search_code",
@@ -231,7 +232,7 @@ class TestToolCall:
         assert call.arguments == {"pattern": "def "}
         assert call.call_id is None
 
-    def test_default_arguments_empty_dict(self):
+    def test_default_arguments_empty_dict(self) -> None:
         """Test that arguments defaults to empty dict."""
         call = ToolCall(tool_name="get_changed_files")
         assert call.arguments == {}
@@ -245,7 +246,7 @@ class TestToolCall:
 class TestToolResult:
     """Tests for ToolResult model."""
 
-    def test_create_success_result(self):
+    def test_create_success_result(self) -> None:
         """Test creating a successful result."""
         result = ToolResult(
             tool_name="read_file",
@@ -257,7 +258,7 @@ class TestToolResult:
         assert result.result == "file contents"
         assert result.error is None
 
-    def test_create_error_result(self):
+    def test_create_error_result(self) -> None:
         """Test creating an error result."""
         result = ToolResult(
             tool_name="read_file",
@@ -269,7 +270,7 @@ class TestToolResult:
         assert result.result is None
         assert result.error == "File not found"
 
-    def test_to_message_content_success_string(self):
+    def test_to_message_content_success_string(self) -> None:
         """Test converting successful string result to message."""
         result = ToolResult(
             tool_name="read_file",
@@ -278,7 +279,7 @@ class TestToolResult:
         )
         assert result.to_message_content() == "Hello, world!"
 
-    def test_to_message_content_success_dict(self):
+    def test_to_message_content_success_dict(self) -> None:
         """Test converting successful dict result to message."""
         result = ToolResult(
             tool_name="get_changed_files",
@@ -290,7 +291,7 @@ class TestToolResult:
         assert "contextual" in content
         assert "a.py" in content
 
-    def test_to_message_content_error(self):
+    def test_to_message_content_error(self) -> None:
         """Test converting error result to message."""
         result = ToolResult(
             tool_name="validate_reference",
@@ -312,7 +313,7 @@ class TestToolResult:
 class TestToolDefinitions:
     """Tests for the built-in tool definitions."""
 
-    def test_all_tools_exported(self):
+    def test_all_tools_exported(self) -> None:
         """Test that all 6 tools are in TOOL_DEFINITIONS."""
         tool_names = {tool.name for tool in TOOL_DEFINITIONS}
         expected = {
@@ -325,18 +326,18 @@ class TestToolDefinitions:
         }
         assert tool_names == expected
 
-    def test_get_tool_by_name_found(self):
+    def test_get_tool_by_name_found(self) -> None:
         """Test getting a tool by name."""
         tool = get_tool_by_name("read_file")
         assert tool is not None
         assert tool.name == "read_file"
 
-    def test_get_tool_by_name_not_found(self):
+    def test_get_tool_by_name_not_found(self) -> None:
         """Test getting a non-existent tool."""
         tool = get_tool_by_name("nonexistent_tool")
         assert tool is None
 
-    def test_get_changed_files_tool(self):
+    def test_get_changed_files_tool(self) -> None:
         """Test get_changed_files tool definition."""
         tool = TOOL_GET_CHANGED_FILES
         assert tool.name == "get_changed_files"
@@ -352,7 +353,7 @@ class TestToolDefinitions:
         )
         assert change_type_param.enum == ["added", "modified", "deleted", "renamed"]
 
-    def test_read_file_tool(self):
+    def test_read_file_tool(self) -> None:
         """Test read_file tool definition."""
         tool = TOOL_READ_FILE
         assert tool.name == "read_file"
@@ -369,7 +370,7 @@ class TestToolDefinitions:
         start_param = next(p for p in tool.parameters if p.name == "start_line")
         assert start_param.required is False
 
-    def test_search_code_tool(self):
+    def test_search_code_tool(self) -> None:
         """Test search_code tool definition."""
         tool = TOOL_SEARCH_CODE
         assert tool.name == "search_code"
@@ -383,7 +384,7 @@ class TestToolDefinitions:
         pattern_param = next(p for p in tool.parameters if p.name == "pattern")
         assert pattern_param.required is True
 
-    def test_validate_reference_tool(self):
+    def test_validate_reference_tool(self) -> None:
         """Test validate_reference tool definition."""
         tool = TOOL_VALIDATE_REFERENCE
         assert tool.name == "validate_reference"
@@ -397,7 +398,7 @@ class TestToolDefinitions:
         ref_type_param = next(p for p in tool.parameters if p.name == "reference_type")
         assert ref_type_param.enum == ["file", "function", "class", "variable"]
 
-    def test_get_ast_elements_tool(self):
+    def test_get_ast_elements_tool(self) -> None:
         """Test get_ast_elements tool definition."""
         tool = TOOL_GET_AST_ELEMENTS
         assert tool.name == "get_ast_elements"
@@ -425,7 +426,7 @@ class TestToolDefinitions:
 
 
 @pytest.fixture
-def temp_repo(tmp_path):
+def temp_repo(tmp_path: Path) -> Path:
     """Create a temporary repository with some files."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
@@ -458,7 +459,7 @@ def process_data(data):
 
 
 @pytest.fixture
-def mock_changed_files():
+def mock_changed_files() -> list[dict[str, object]]:
     """Create mock changed files data."""
     return [
         {
@@ -486,7 +487,7 @@ def mock_changed_files():
 
 
 @pytest.fixture
-def mock_ast_elements():
+def mock_ast_elements() -> dict[str, list[dict[str, object]]]:
     """Create mock AST elements data."""
     return {
         "src/main.py": [
@@ -525,7 +526,11 @@ def mock_ast_elements():
 
 
 @pytest.fixture
-def executor(temp_repo, mock_changed_files, mock_ast_elements):
+def executor(
+    temp_repo: Path,
+    mock_changed_files: list[dict[str, object]],
+    mock_ast_elements: dict[str, list[dict[str, object]]],
+) -> ToolExecutor:
     """Create a ToolExecutor with mock data."""
     return ToolExecutor(
         repo_path=temp_repo,
@@ -539,7 +544,7 @@ def executor(temp_repo, mock_changed_files, mock_ast_elements):
 class TestToolExecutorInit:
     """Tests for ToolExecutor initialization."""
 
-    def test_init_with_defaults(self, temp_repo):
+    def test_init_with_defaults(self, temp_repo: Path) -> None:
         """Test initialization with default values."""
         executor = ToolExecutor(repo_path=temp_repo)
         assert executor.repo_path == temp_repo
@@ -548,7 +553,12 @@ class TestToolExecutorInit:
         assert executor.commit_range is None
         assert executor.focus_commits is None
 
-    def test_init_with_data(self, temp_repo, mock_changed_files, mock_ast_elements):
+    def test_init_with_data(
+        self,
+        temp_repo: Path,
+        mock_changed_files: list[dict[str, object]],
+        mock_ast_elements: dict[str, list[dict[str, object]]],
+    ) -> None:
         """Test initialization with provided data."""
         executor = ToolExecutor(
             repo_path=temp_repo,
@@ -562,7 +572,9 @@ class TestToolExecutorInit:
         assert executor.commit_range == "HEAD~3..HEAD"
         assert executor.focus_commits == ["abc123"]
 
-    def test_build_element_index(self, temp_repo, mock_ast_elements):
+    def test_build_element_index(
+        self, temp_repo: Path, mock_ast_elements: dict[str, list[dict[str, object]]]
+    ) -> None:
         """Test that element index is built correctly."""
         executor = ToolExecutor(
             repo_path=temp_repo,
@@ -583,7 +595,7 @@ class TestToolExecutorInit:
 class TestToolExecutorExecute:
     """Tests for ToolExecutor.execute method."""
 
-    def test_execute_unknown_tool(self, executor):
+    def test_execute_unknown_tool(self, executor: ToolExecutor) -> None:
         """Test executing an unknown tool."""
         call = ToolCall(tool_name="unknown_tool", arguments={})
         result = executor.execute(call)
@@ -591,7 +603,7 @@ class TestToolExecutorExecute:
         assert result.success is False
         assert "Unknown tool" in result.error
 
-    def test_execute_with_exception(self, executor):
+    def test_execute_with_exception(self, executor: ToolExecutor) -> None:
         """Test execute handles exceptions gracefully."""
         # Patch _read_file to raise an exception
         with patch.object(executor, "_read_file", side_effect=Exception("Test error")):
@@ -601,7 +613,7 @@ class TestToolExecutorExecute:
             assert result.success is False
             assert "Test error" in result.error
 
-    def test_execute_batch(self, executor):
+    def test_execute_batch(self, executor: ToolExecutor) -> None:
         """Test executing multiple tool calls."""
         calls = [
             ToolCall(tool_name="get_changed_files", arguments={}),
@@ -618,7 +630,7 @@ class TestToolExecutorExecute:
 class TestToolExecutorGetChangedFiles:
     """Tests for _get_changed_files tool."""
 
-    def test_get_all_changed_files(self, executor):
+    def test_get_all_changed_files(self, executor: ToolExecutor) -> None:
         """Test getting all changed files."""
         result = executor._get_changed_files()
 
@@ -628,14 +640,14 @@ class TestToolExecutorGetChangedFiles:
             len(result["focused"]) == 3
         )  # All files are focused when no focus_commits
 
-    def test_exclude_contextual(self, executor):
+    def test_exclude_contextual(self, executor: ToolExecutor) -> None:
         """Test excluding contextual files."""
         result = executor._get_changed_files(include_contextual=False)
 
         assert "focused" in result
         assert "contextual" not in result
 
-    def test_filter_by_change_type(self, executor):
+    def test_filter_by_change_type(self, executor: ToolExecutor) -> None:
         """Test filtering by change type."""
         result = executor._get_changed_files(change_type_filter="added")
 
@@ -644,11 +656,11 @@ class TestToolExecutorGetChangedFiles:
         assert "src/utils.py" in focused_paths
         assert "src/main.py" not in focused_paths
 
-    def test_handles_object_format(self, temp_repo):
+    def test_handles_object_format(self, temp_repo: Path) -> None:
         """Test handling file info as objects with attributes."""
 
         class FileInfo:
-            def __init__(self, **kwargs):
+            def __init__(self, **kwargs: object) -> None:
                 for k, v in kwargs.items():
                     setattr(self, k, v)
 
@@ -662,7 +674,7 @@ class TestToolExecutorGetChangedFiles:
             ),
         ]
 
-        executor = ToolExecutor(repo_path=temp_repo, changed_files=changed_files)
+        executor = ToolExecutor(repo_path=temp_repo, changed_files=changed_files)  # type: ignore[list-item]
         result = executor._get_changed_files()
 
         assert len(result["focused"]) == 1
@@ -672,7 +684,7 @@ class TestToolExecutorGetChangedFiles:
 class TestToolExecutorReadFile:
     """Tests for _read_file tool."""
 
-    def test_read_existing_file(self, executor, temp_repo):
+    def test_read_existing_file(self, executor: ToolExecutor, temp_repo: Path) -> None:
         """Test reading an existing file."""
         result = executor._read_file("src/main.py")
 
@@ -682,7 +694,7 @@ class TestToolExecutorReadFile:
         assert "content" in result
         assert "def main()" in result["content"]
 
-    def test_read_file_with_line_range(self, executor):
+    def test_read_file_with_line_range(self, executor: ToolExecutor) -> None:
         """Test reading specific line range."""
         result = executor._read_file("src/main.py", start_line=2, end_line=3)
 
@@ -691,7 +703,7 @@ class TestToolExecutorReadFile:
         assert "2:" in content  # Line numbers should be present
         assert "def main()" in content
 
-    def test_read_nonexistent_file(self, executor):
+    def test_read_nonexistent_file(self, executor: ToolExecutor) -> None:
         """Test reading a file that doesn't exist."""
         result = executor._read_file("nonexistent.py")
 
@@ -699,21 +711,21 @@ class TestToolExecutorReadFile:
         assert "File not found" in result["error"]
         assert result["content"] is None
 
-    def test_read_directory(self, executor):
+    def test_read_directory(self, executor: ToolExecutor) -> None:
         """Test reading a directory (should fail)."""
         result = executor._read_file("src")
 
         assert result["error"] is not None
         assert "Not a file" in result["error"]
 
-    def test_path_traversal_protection(self, executor):
+    def test_path_traversal_protection(self, executor: ToolExecutor) -> None:
         """Test that path traversal is blocked."""
         result = executor._read_file("../outside.py")
 
         assert result["error"] is not None
         assert "Path traversal" in result["error"]
 
-    def test_read_binary_file(self, executor, temp_repo):
+    def test_read_binary_file(self, executor: ToolExecutor, temp_repo: Path) -> None:
         """Test reading a binary file (should fail gracefully)."""
         # Create a file with invalid UTF-8 bytes
         binary_file = temp_repo / "test_binary.bin"
@@ -731,7 +743,9 @@ class TestToolExecutorSearchCode:
     """Tests for _search_code tool."""
 
     @patch("subprocess.run")
-    def test_search_with_git_grep(self, mock_run, executor, temp_repo):
+    def test_search_with_git_grep(
+        self, mock_run: Mock, executor: ToolExecutor, temp_repo: Path
+    ) -> None:
         """Test searching with git grep."""
         mock_run.return_value = Mock(
             returncode=0,
@@ -746,7 +760,9 @@ class TestToolExecutorSearchCode:
         assert result["matches"][0]["line"] == 2
 
     @patch("subprocess.run")
-    def test_search_with_file_pattern(self, mock_run, executor):
+    def test_search_with_file_pattern(
+        self, mock_run: Mock, executor: ToolExecutor
+    ) -> None:
         """Test searching with file pattern filter."""
         mock_run.return_value = Mock(returncode=0, stdout="")
 
@@ -758,7 +774,7 @@ class TestToolExecutorSearchCode:
         assert "*.py" in call_args
 
     @patch("subprocess.run")
-    def test_search_git_not_found(self, mock_run, executor):
+    def test_search_git_not_found(self, mock_run: Mock, executor: ToolExecutor) -> None:
         """Test fallback when git is not available."""
         mock_run.side_effect = FileNotFoundError()
 
@@ -768,7 +784,7 @@ class TestToolExecutorSearchCode:
         assert "matches" in result
 
     @patch("subprocess.run")
-    def test_search_timeout(self, mock_run, executor):
+    def test_search_timeout(self, mock_run: Mock, executor: ToolExecutor) -> None:
         """Test handling timeout."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
 
@@ -777,14 +793,16 @@ class TestToolExecutorSearchCode:
         # Should still return results via Python fallback
         assert "matches" in result
 
-    def test_search_code_python_fallback(self, executor, temp_repo):
+    def test_search_code_python_fallback(
+        self, executor: ToolExecutor, temp_repo: Path
+    ) -> None:
         """Test the Python fallback search method."""
         matches = executor._search_code_python("def main", "*.py", 10)
 
         assert len(matches) > 0
         assert any(m["content"] and "def main" in m["content"] for m in matches)
 
-    def test_max_results_limit(self, executor):
+    def test_max_results_limit(self, executor: ToolExecutor) -> None:
         """Test that max_results limits the output."""
         with (
             patch.object(
@@ -799,7 +817,9 @@ class TestToolExecutorSearchCode:
 class TestToolExecutorValidateReference:
     """Tests for _validate_reference tool."""
 
-    def test_validate_existing_file(self, executor, temp_repo):
+    def test_validate_existing_file(
+        self, executor: ToolExecutor, temp_repo: Path
+    ) -> None:
         """Test validating an existing file."""
         result = executor._validate_reference("file", "src/main.py")
 
@@ -808,14 +828,14 @@ class TestToolExecutorValidateReference:
         assert result["name"] == "src/main.py"
         assert len(result["locations"]) == 1
 
-    def test_validate_nonexistent_file(self, executor):
+    def test_validate_nonexistent_file(self, executor: ToolExecutor) -> None:
         """Test validating a non-existent file."""
         result = executor._validate_reference("file", "nonexistent.py")
 
         assert result["found"] is False
         assert len(result["locations"]) == 0
 
-    def test_validate_existing_function_from_ast(self, executor):
+    def test_validate_existing_function_from_ast(self, executor: ToolExecutor) -> None:
         """Test validating a function that exists in AST."""
         result = executor._validate_reference("function", "main")
 
@@ -823,7 +843,7 @@ class TestToolExecutorValidateReference:
         assert len(result["locations"]) > 0
         assert any(loc["file"] == "src/main.py" for loc in result["locations"])
 
-    def test_validate_with_file_path_filter(self, executor):
+    def test_validate_with_file_path_filter(self, executor: ToolExecutor) -> None:
         """Test validating with file path filter."""
         result = executor._validate_reference(
             "function", "main", file_path="src/main.py"
@@ -833,7 +853,9 @@ class TestToolExecutorValidateReference:
         # Should only return locations in src/main.py
         assert all(loc["file"] == "src/main.py" for loc in result["locations"])
 
-    def test_validate_nonexistent_element_with_suggestions(self, executor):
+    def test_validate_nonexistent_element_with_suggestions(
+        self, executor: ToolExecutor
+    ) -> None:
         """Test validating non-existent element returns suggestions."""
         result = executor._validate_reference("function", "nonexistent")
 
@@ -842,7 +864,9 @@ class TestToolExecutorValidateReference:
         assert len(result["suggestions"]) > 0 or True  # May or may not have suggestions
 
     @patch("subprocess.run")
-    def test_validate_fallback_to_git_grep(self, mock_run, executor):
+    def test_validate_fallback_to_git_grep(
+        self, mock_run: Mock, executor: ToolExecutor
+    ) -> None:
         """Test fallback to git grep when not in AST."""
         mock_run.return_value = Mock(
             returncode=0,
@@ -859,14 +883,14 @@ class TestToolExecutorValidateReference:
 class TestToolExecutorGetAstElements:
     """Tests for _get_ast_elements tool."""
 
-    def test_get_all_elements(self, executor):
+    def test_get_all_elements(self, executor: ToolExecutor) -> None:
         """Test getting all AST elements."""
         result = executor._get_ast_elements()
 
         assert result["total"] == 4  # main, MyClass, helper, process_data
         assert len(result["elements"]) == 4
 
-    def test_get_elements_for_specific_file(self, executor):
+    def test_get_elements_for_specific_file(self, executor: ToolExecutor) -> None:
         """Test getting elements for a specific file."""
         result = executor._get_ast_elements(file_path="src/main.py")
 
@@ -877,7 +901,7 @@ class TestToolExecutorGetAstElements:
             e.get("element_type") in ["function", "class"] for e in result["elements"]
         )
 
-    def test_filter_by_element_type(self, executor):
+    def test_filter_by_element_type(self, executor: ToolExecutor) -> None:
         """Test filtering elements by type."""
         result = executor._get_ast_elements(element_type="function")
 
@@ -885,14 +909,14 @@ class TestToolExecutorGetAstElements:
         assert all(e["element_type"] == "function" for e in result["elements"])
         assert len(result["elements"]) == 3  # main, helper, process_data
 
-    def test_get_elements_nonexistent_file(self, executor):
+    def test_get_elements_nonexistent_file(self, executor: ToolExecutor) -> None:
         """Test getting elements for non-existent file."""
         result = executor._get_ast_elements(file_path="nonexistent.py")
 
         assert result["total"] == 0
         assert result["elements"] == []
 
-    def test_element_to_dict_with_object(self, executor):
+    def test_element_to_dict_with_object(self, executor: ToolExecutor) -> None:
         """Test converting object-style element to dict."""
 
         class MockElement:
@@ -912,7 +936,7 @@ class TestToolExecutorGetAstElements:
         assert result["element_type"] == "function"
         assert result["signature"] == "def test_func()"
 
-    def test_element_to_dict_with_dict(self, executor):
+    def test_element_to_dict_with_dict(self, executor: ToolExecutor) -> None:
         """Test converting dict-style element."""
         elem = {"name": "test", "element_type": "class"}
         result = executor._element_to_dict(elem)
@@ -928,7 +952,7 @@ class TestToolExecutorGetAstElements:
 class TestFormatToolsPrompt:
     """Tests for _format_tools_prompt function."""
 
-    def test_includes_all_tools(self):
+    def test_includes_all_tools(self) -> None:
         """Test that prompt includes all tool descriptions."""
         from ggdes.tools.chat_with_tools import _format_tools_prompt
 
@@ -938,7 +962,7 @@ class TestFormatToolsPrompt:
             assert tool.name in prompt
             assert tool.description in prompt
 
-    def test_includes_parameters(self):
+    def test_includes_parameters(self) -> None:
         """Test that prompt includes parameter descriptions."""
         from ggdes.tools.chat_with_tools import _format_tools_prompt
 
@@ -948,7 +972,7 @@ class TestFormatToolsPrompt:
         assert "Parameters:" in prompt
         assert "required" in prompt.lower() or "optional" in prompt.lower()
 
-    def test_includes_usage_instructions(self):
+    def test_includes_usage_instructions(self) -> None:
         """Test that prompt includes usage instructions."""
         from ggdes.tools.chat_with_tools import _format_tools_prompt
 
@@ -962,7 +986,7 @@ class TestFormatToolsPrompt:
 class TestParseToolCalls:
     """Tests for _parse_tool_calls function."""
 
-    def test_parse_single_tool_call(self):
+    def test_parse_single_tool_call(self) -> None:
         """Test parsing a single tool call."""
         from ggdes.tools.chat_with_tools import _parse_tool_calls
 
@@ -981,7 +1005,7 @@ Let me analyze this.
         assert calls[0].tool_name == "read_file"
         assert calls[0].arguments == {"path": "test.py"}
 
-    def test_parse_multiple_tool_calls(self):
+    def test_parse_multiple_tool_calls(self) -> None:
         """Test parsing multiple tool calls."""
         from ggdes.tools.chat_with_tools import _parse_tool_calls
 
@@ -1002,7 +1026,7 @@ Some text here.
         assert calls[0].tool_name == "read_file"
         assert calls[1].tool_name == "search_code"
 
-    def test_parse_alternative_keys(self):
+    def test_parse_alternative_keys(self) -> None:
         """Test parsing with alternative JSON keys."""
         from ggdes.tools.chat_with_tools import _parse_tool_calls
 
@@ -1017,7 +1041,7 @@ Some text here.
         assert len(calls) == 1
         assert calls[0].tool_name == "get_changed_files"
 
-    def test_parse_invalid_json(self):
+    def test_parse_invalid_json(self) -> None:
         """Test handling invalid JSON in tool call."""
         from ggdes.tools.chat_with_tools import _parse_tool_calls
 
@@ -1036,7 +1060,7 @@ Some text here.
         assert len(calls) == 1
         assert calls[0].tool_name == "read_file"
 
-    def test_parse_no_tool_calls(self):
+    def test_parse_no_tool_calls(self) -> None:
         """Test parsing response with no tool calls."""
         from ggdes.tools.chat_with_tools import _parse_tool_calls
 
@@ -1049,7 +1073,7 @@ Some text here.
 class TestFormatToolResults:
     """Tests for _format_tool_results function."""
 
-    def test_format_success_results(self):
+    def test_format_success_results(self) -> None:
         """Test formatting successful results."""
         from ggdes.tools.chat_with_tools import _format_tool_results
 
@@ -1063,7 +1087,7 @@ class TestFormatToolResults:
         assert "search_code" in formatted
         assert "content here" in formatted
 
-    def test_format_error_results(self):
+    def test_format_error_results(self) -> None:
         """Test formatting error results."""
         from ggdes.tools.chat_with_tools import _format_tool_results
 
@@ -1080,7 +1104,7 @@ class TestFormatToolResults:
         assert "read_file" in formatted
         assert "error" in formatted.lower() or "File not found" in formatted
 
-    def test_truncate_long_results(self):
+    def test_truncate_long_results(self) -> None:
         """Test that very long results are truncated."""
         from ggdes.tools.chat_with_tools import _format_tool_results
 
@@ -1096,7 +1120,7 @@ class TestFormatToolResults:
 class TestChatWithTools:
     """Tests for chat_with_tools function."""
 
-    def test_no_tool_calls_returns_directly(self):
+    def test_no_tool_calls_returns_directly(self) -> None:
         """Test that response without tool calls is returned directly."""
         mock_llm = MagicMock()
         mock_llm.chat.return_value = "This is the final answer."
@@ -1116,7 +1140,7 @@ class TestChatWithTools:
         assert result == "This is the final answer."
         mock_llm.chat.assert_called_once()
 
-    def test_single_tool_call_round(self):
+    def test_single_tool_call_round(self) -> None:
         """Test a single round of tool calls."""
         mock_llm = MagicMock()
         mock_llm.chat.side_effect = [
@@ -1143,7 +1167,7 @@ class TestChatWithTools:
         assert mock_llm.chat.call_count == 2
         mock_executor.execute_batch.assert_called_once()
 
-    def test_max_rounds_limit(self):
+    def test_max_rounds_limit(self) -> None:
         """Test that max_rounds limits the tool calling loop."""
         mock_llm = MagicMock()
         # Always return a tool call
@@ -1180,7 +1204,7 @@ class TestChatWithTools:
         # Should stop after max_rounds even if there are still tool calls
         assert mock_llm.chat.call_count == 2
 
-    def test_appends_tools_to_existing_system_message(self):
+    def test_appends_tools_to_existing_system_message(self) -> None:
         """Test that tools are appended to existing system message."""
         mock_llm = MagicMock()
         mock_llm.chat.return_value = "Response"
@@ -1206,7 +1230,7 @@ class TestChatWithTools:
         assert "You are a helpful assistant." in system_msg["content"]
         assert "Available Tools" in system_msg["content"]
 
-    def test_inserts_system_message_if_none_exists(self):
+    def test_inserts_system_message_if_none_exists(self) -> None:
         """Test that system message is inserted if none exists."""
         mock_llm = MagicMock()
         mock_llm.chat.return_value = "Response"
@@ -1227,7 +1251,7 @@ class TestChatWithTools:
         assert working_messages[0]["role"] == "system"
         assert "Available Tools" in working_messages[0]["content"]
 
-    def test_custom_system_prompt(self):
+    def test_custom_system_prompt(self) -> None:
         """Test using a custom system prompt."""
         mock_llm = MagicMock()
         mock_llm.chat.return_value = "Response"
@@ -1258,8 +1282,11 @@ class TestToolIntegration:
     """Integration tests for the complete tool system."""
 
     def test_full_tool_execution_flow(
-        self, temp_repo, mock_changed_files, mock_ast_elements
-    ):
+        self,
+        temp_repo: Path,
+        mock_changed_files: list[dict[str, object]],
+        mock_ast_elements: dict[str, list[dict[str, object]]],
+    ) -> None:
         """Test the complete flow from tool call to result."""
         # Create executor
         executor = ToolExecutor(
@@ -1282,7 +1309,9 @@ class TestToolIntegration:
         assert result.tool_name == "read_file"
         assert "content" in result.result
 
-    def test_multiple_tools_in_sequence(self, temp_repo, mock_ast_elements):
+    def test_multiple_tools_in_sequence(
+        self, temp_repo: Path, mock_ast_elements: dict[str, list[dict[str, object]]]
+    ) -> None:
         """Test executing multiple different tools."""
         executor = ToolExecutor(
             repo_path=temp_repo,
@@ -1308,8 +1337,11 @@ class TestToolIntegration:
         assert results[1].tool_name == "validate_reference"
 
     def test_chat_loop_with_real_executor(
-        self, temp_repo, mock_changed_files, mock_ast_elements
-    ):
+        self,
+        temp_repo: Path,
+        mock_changed_files: list[dict[str, object]],
+        mock_ast_elements: dict[str, list[dict[str, object]]],
+    ) -> None:
         """Test chat_with_tools with a real executor."""
         mock_llm = MagicMock()
         mock_llm.chat.side_effect = [

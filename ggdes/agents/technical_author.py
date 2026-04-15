@@ -331,7 +331,7 @@ class TechnicalAuthor:
             patterns.append(name)
 
         examples: list[tuple[int, str]] = []  # (priority, snippet)
-        seen_signatures: set[str] = set()
+        seen_signatures: set[int] = set()
 
         # Walk all source files
         for src_dir in ["src", "lib", "include", "core"]:
@@ -361,9 +361,6 @@ class TechnicalAuthor:
 
                     try:
                         content = file_path.read_text(errors="ignore")
-                    except Exception:
-                        continue
-
                         lines = content.splitlines()
                         for i, line in enumerate(lines):
                             for name in search_names:

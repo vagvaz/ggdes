@@ -27,7 +27,7 @@ from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 
 
-class AnalysisSelected(Message):  # type: ignore[misc]
+class AnalysisSelected(Message):
     """Message sent when an analysis is selected."""
 
     def __init__(self, analysis_id: str) -> None:
@@ -35,7 +35,7 @@ class AnalysisSelected(Message):  # type: ignore[misc]
         self.analysis_id = analysis_id
 
 
-class LiveIndicator(Static):  # type: ignore[misc]
+class LiveIndicator(Static):
     """Indicator showing if analysis is running."""
 
     is_live: reactive[bool] = reactive(False)
@@ -60,7 +60,7 @@ class LiveIndicator(Static):  # type: ignore[misc]
             status.update(f"[blink bold green]● LIVE - {stage}[/blink bold green]")
 
 
-class ConversationMessage(Static):  # type: ignore[misc]
+class ConversationMessage(Static):
     """Widget displaying a single conversation message."""
 
     def __init__(self, role: str, content: str, index: int, **kwargs: Any) -> None:
@@ -84,13 +84,14 @@ class ConversationMessage(Static):  # type: ignore[misc]
                 classes="message-role",
             )
             # Truncate content for preview
-            preview = self.content[:500] if len(self.content) > 500 else self.content
-            if len(self.content) > 500:
+            content_str: str = str(self.content)
+            preview: str = content_str[:500] if len(content_str) > 500 else content_str
+            if len(content_str) > 500:
                 preview += "..."
             yield Label(preview, classes="message-content")
 
 
-class ConversationBrowser(Vertical):  # type: ignore[misc]
+class ConversationBrowser(Vertical):
     """Browser for agent conversations with live monitoring."""
 
     analysis_id: reactive[str | None] = reactive(None)
@@ -286,8 +287,7 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
                 content_preview += "..."
 
             label = f"{i + 1}. [{role}] {content_preview}"
-            list_item = ListItem(Label(label))
-            list_item.index = i
+            list_item = ListItem(Label(label), id=f"msg-{i}")
             message_list.append(list_item)
 
         # Update info label
@@ -385,8 +385,8 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
 
         if list_view.id == "agent-list":
             item = event.item
-            if hasattr(item, "name"):
-                self.load_agent_conversation(item.name)
+            if hasattr(item, "name") and item.name is not None:
+                self.load_agent_conversation(str(item.name))
         elif list_view.id == "message-list":
             # Use the list view's index property to get the selected index
             selected_index = list_view.index
@@ -440,8 +440,7 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
                 content_preview += "..."
 
             label = f"{i + 1}. [{role}] {content_preview}"
-            list_item = ListItem(Label(label))
-            list_item.index = i
+            list_item = ListItem(Label(label), id=f"msg-{i}")
             message_list.append(list_item)
 
         if not messages:
@@ -484,7 +483,7 @@ class ConversationBrowser(Vertical):  # type: ignore[misc]
         detail.mount(content_widget)
 
 
-class OutputsBrowser(Vertical):  # type: ignore[misc]
+class OutputsBrowser(Vertical):
     """Browser for analysis outputs (AST, git analysis, etc.) with live updates."""
 
     analysis_id: reactive[str | None] = reactive(None)
@@ -648,7 +647,7 @@ class OutputsBrowser(Vertical):  # type: ignore[misc]
         except PermissionError:
             pass
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+    def on_tree_node_selected(self, event: Tree.NodeSelected[Any]) -> None:
         """Handle file selection."""
         node = event.node
 
@@ -685,7 +684,7 @@ class OutputsBrowser(Vertical):  # type: ignore[misc]
                 yield Label(f"[red]Error reading file: {e}[/red]")
 
 
-class AnalysisSelector(Vertical):  # type: ignore[misc]
+class AnalysisSelector(Vertical):
     """Widget to select an analysis for debugging with live status."""
 
     selected_analysis: reactive[str | None] = reactive(None)
@@ -780,15 +779,15 @@ class AnalysisSelector(Vertical):  # type: ignore[misc]
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle analysis selection."""
-        if event.value:
-            self.selected_analysis = event.value
+        if event.value and event.value != Select.BLANK:
+            self.selected_analysis = str(event.value)
             # Immediately update live status
             self.update_live_status()
             # Post message to parent
-            self.post_message(AnalysisSelected(event.value))
+            self.post_message(AnalysisSelected(str(event.value)))
 
 
-class DebugView(Vertical):  # type: ignore[misc]
+class DebugView(Vertical):
     """Main debug view with tabs for conversations and outputs."""
 
     analysis_id: reactive[str | None] = reactive(None)

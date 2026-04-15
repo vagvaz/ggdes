@@ -316,10 +316,10 @@ Content 3."""
 
         # Create a proper async context manager mock
         class AsyncContextManagerMock:
-            async def __aenter__(self):
+            async def __aenter__(self) -> MagicMock:
                 return mock_playwright
 
-            async def __aexit__(self, *args):
+            async def __aexit__(self, *args: object) -> None:
                 return None
 
         with patch(

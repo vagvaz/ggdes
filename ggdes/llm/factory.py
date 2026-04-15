@@ -738,11 +738,11 @@ class AnthropicProvider(LLMProvider):
         """Generate text using full conversation context."""
         import anthropic
 
-        client_kwargs = {"api_key": self.api_key}
+        # Explicitly construct Anthropic client with proper types
         if self.base_url:
-            client_kwargs["base_url"] = self.base_url
-
-        client = anthropic.Anthropic(**client_kwargs)
+            client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
+        else:
+            client = anthropic.Anthropic(api_key=self.api_key)
 
         # Extract system message if present
         system = None
@@ -758,15 +758,24 @@ class AnthropicProvider(LLMProvider):
                     }
                 )
 
-        response = client.messages.create(
-            model=self.model_name,
-            max_tokens=max_tokens or 4096,
-            temperature=temperature,
-            system=system,
-            messages=chat_messages,
-        )
+        # Build request parameters with proper typing
+        request_params: dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": max_tokens or 4096,
+            "temperature": temperature,
+            "messages": chat_messages,
+        }
+        if system is not None:
+            request_params["system"] = system
 
-        return response.content[0].text  # type: ignore[no-any-return]
+        response = client.messages.create(**request_params)
+
+        # Only TextBlock has .text attribute, filter appropriately
+        content_blocks = response.content
+        if content_blocks and hasattr(content_blocks[0], "text"):
+            text_value: str = content_blocks[0].text
+            return text_value
+        return ""
 
     @retry_on_failure(  # type: ignore[type-var]
         max_retries=3,
@@ -783,23 +792,32 @@ class AnthropicProvider(LLMProvider):
         """Generate text using Anthropic Claude."""
         import anthropic
 
-        client_kwargs = {"api_key": self.api_key}
+        # Explicitly construct Anthropic client with proper types
         if self.base_url:
-            client_kwargs["base_url"] = self.base_url
-
-        client = anthropic.Anthropic(**client_kwargs)
+            client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
+        else:
+            client = anthropic.Anthropic(api_key=self.api_key)
 
         messages = [{"role": "user", "content": prompt}]
 
-        response = client.messages.create(
-            model=self.model_name,
-            max_tokens=max_tokens or 4096,
-            temperature=temperature,
-            system=system_prompt,
-            messages=messages,
-        )
+        # Build request parameters with proper typing
+        request_params: dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": max_tokens or 4096,
+            "temperature": temperature,
+            "messages": messages,
+        }
+        if system_prompt is not None:
+            request_params["system"] = system_prompt
 
-        return response.content[0].text  # type: ignore[no-any-return]
+        response = client.messages.create(**request_params)
+
+        # Only TextBlock has .text attribute, filter appropriately
+        content_blocks = response.content
+        if content_blocks and hasattr(content_blocks[0], "text"):
+            text_value: str = content_blocks[0].text
+            return text_value
+        return ""
 
 
 class OpenAIProvider(LLMProvider):

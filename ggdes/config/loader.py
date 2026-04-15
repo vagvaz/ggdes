@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -183,11 +183,7 @@ def load_config(
         config.model.api_key = cli_api_key
 
     # Resolve repo path
-    if config.repo.path:
-        repo_path = Path(config.repo.path).resolve()
-    else:
-        # Default to current directory
-        repo_path = Path.cwd()
+    repo_path = Path(config.repo.path).resolve() if config.repo.path else Path.cwd()
 
     config.repo.path = str(repo_path)
 
