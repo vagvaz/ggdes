@@ -7,13 +7,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+import tomli
 import typer
 import yaml
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
-
-import tomli
 
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
