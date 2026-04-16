@@ -33,8 +33,6 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "ruff>=0.5.0",
-    "mypy>=1.10.0",
     # Type stubs for libraries without inline types
     "types-PyYAML>=6.0.0",
     "types-Markdown>=3.5.0",
@@ -82,4 +80,6 @@ exclude = ["ggdes/skills/", "tests/", "check_analysis.py"]
 dev = [
     "basedpyright>=1.39.0",
     "python-lsp-server[all]>=1.14.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
 ]

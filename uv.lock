@@ -582,10 +582,8 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "ruff" },
     { name = "types-defusedxml" },
     { name = "types-markdown" },
     { name = "types-pygments" },
@@ -605,7 +603,9 @@ web = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "mypy" },
     { name = "python-lsp-server", extra = ["all"] },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -615,7 +615,6 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "markdown", marker = "extra == 'render'", specifier = ">=3.5.0" },
     { name = "markitdown", extras = ["pptx"], specifier = ">=0.1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openai", specifier = ">=1.50.0" },
     { name = "pdf2image", specifier = ">=1.17.0" },
     { name = "pdfplumber", specifier = ">=0.10.0" },
@@ -630,7 +629,6 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "reportlab", specifier = ">=4.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.0" },
     { name = "textual", specifier = ">=0.85.0" },
     { name = "tree-sitter", specifier = ">=0.22.0" },
     { name = "tree-sitter-cpp", specifier = ">=0.23.0" },
@@ -649,7 +647,9 @@ provides-extras = ["dev", "web", "render"]
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.39.0" },
+    { name = "mypy", specifier = ">=1.10.0" },
     { name = "python-lsp-server", extras = ["all"], specifier = ">=1.14.0" },
+    { name = "ruff", specifier = ">=0.5.0" },
 ]
 
 [[package]]
