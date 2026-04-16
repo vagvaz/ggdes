@@ -27,14 +27,14 @@ def _get_version() -> str:
     """Read version from pyproject.toml."""
     pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
     with open(pyproject_path, "rb") as f:
-        return tomli.load(f)["project"]["version"]
+        return str(tomli.load(f)["project"]["version"])
 
 
 @app.callback(invoke_without_command=True)
 def version_callback(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", is_flag=True, help="Show version"),
-):
+) -> None:
     """Show version information."""
     if version:
         console.print(f"[bold]ggdes[/bold] version [cyan]{_get_version()}[/cyan]")
