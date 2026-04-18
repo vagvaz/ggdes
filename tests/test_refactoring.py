@@ -1,11 +1,11 @@
 """Tests for refactored components."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ggdes.agents.skill_utils import SystemPromptBuilder
 from ggdes.llm.factory import _strip_markdown_code_blocks
-
 
 # ─── SystemPromptBuilder Tests ───────────────────────────────────────────────
 
@@ -145,8 +145,8 @@ class TestResolveAnalysis:
 
     def test_resolve_by_id(self) -> None:
         """Finds analysis by ID."""
+
         from ggdes.cli import resolve_analysis
-        import typer
 
         mock_metadata = MagicMock()
         mock_metadata.name = "My Analysis"
@@ -177,29 +177,29 @@ class TestResolveAnalysis:
 
     def test_resolve_not_found(self) -> None:
         """Raises typer.Exit(1) for unknown analysis."""
-        from ggdes.cli import resolve_analysis
         import typer
+
+        from ggdes.cli import resolve_analysis
 
         mock_kb = MagicMock()
         mock_kb.list_analyses.return_value = [
             ("abc123", MagicMock(name="Existing")),
         ]
 
-        with patch("ggdes.cli.console"):
-            with pytest.raises(typer.Exit):
-                resolve_analysis(mock_kb, "nonexistent")
+        with patch("ggdes.cli.console"), pytest.raises(typer.Exit):
+            resolve_analysis(mock_kb, "nonexistent")
 
     def test_resolve_empty_list(self) -> None:
         """Handles empty analysis list."""
-        from ggdes.cli import resolve_analysis
         import typer
+
+        from ggdes.cli import resolve_analysis
 
         mock_kb = MagicMock()
         mock_kb.list_analyses.return_value = []
 
-        with patch("ggdes.cli.console"):
-            with pytest.raises(typer.Exit):
-                resolve_analysis(mock_kb, "anything")
+        with patch("ggdes.cli.console"), pytest.raises(typer.Exit):
+            resolve_analysis(mock_kb, "anything")
 
     def test_resolve_name_match_priority(self) -> None:
         """Returns first match when both ID and name could match."""
