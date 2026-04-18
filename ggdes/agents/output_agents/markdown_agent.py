@@ -391,7 +391,11 @@ Requirements:
 - Include specific details from the facts
 - Explain the "why" not just the "what"
 - Keep it concise but comprehensive
+- Use hierarchical headers (## for section title, ### for subsections)
+- Keep paragraphs to 3-5 sentences maximum
+- Use fenced code blocks with language identifiers
 - IMPORTANT: Only include code blocks that match the ACTUAL SOURCE CODE provided above. Do NOT fabricate or hallucinate code. If you reference code, use the exact code shown in the source sections above.
+- IMPORTANT: Only reference files, functions, and classes that are explicitly provided in your context. Never invent function names or file paths.
 
 Write the section content now:"""
 

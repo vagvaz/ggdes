@@ -9,6 +9,7 @@ from rich.console import Console
 
 from ggdes.config import GGDesConfig
 from ggdes.llm import LLMFactory
+from ggdes.prompts import get_prompt
 from ggdes.schemas import ChangeSummary, FileChange
 
 console = Console()
@@ -349,36 +350,12 @@ class ChangeFilter:
 
         diff_content = "\n\n".join(diff_parts)
 
-        prompt = f"""You are analyzing code changes to determine which files are relevant to a specific feature.
-
-FEATURE DESCRIPTION: {self.feature_description}
-
-FILES CHANGED ({len(change_summary.files_changed)} total):
-{chr(10).join(file_summaries)}
-
-DIFF CONTENT (relevant portions):
-```diff
-{diff_content}
-```
-
-For each file in the diff, classify whether its changes are relevant to the feature described above.
-
-A file is RELEVANT if:
-- It directly implements or modifies the feature
-- It contains API changes that are part of the feature
-- It modifies data structures or types used by the feature
-- It changes configuration or setup required by the feature
-
-A file is NOT RELEVANT if:
-- It only contains unrelated changes (e.g., CI/CD, formatting, unrelated bug fixes)
-- It changes test infrastructure not specific to this feature
-- It modifies documentation for unrelated features
-- It contains only dependency version bumps unrelated to the feature
-
-For each relevant file, specify the line ranges that are relevant to the feature.
-If the entire file is relevant, leave relevant_line_ranges as an empty list.
-
-Respond with a JSON object matching the ChangeFilterResult schema."""
+        prompt = get_prompt("change_filter", "classify_changes").format(
+            feature_description=self.feature_description,
+            num_files=len(change_summary.files_changed),
+            file_summaries=chr(10).join(file_summaries),
+            diff_content=diff_content,
+        )
 
         try:
             logger.info(
@@ -389,7 +366,7 @@ Respond with a JSON object matching the ChangeFilterResult schema."""
             result = self.llm.generate_structured(
                 prompt=prompt,
                 response_model=ChangeFilterResult,
-                system_prompt="You are a code analysis expert. Classify code changes by their relevance to a specific feature. Be precise and conservative - only mark files as relevant if they directly relate to the feature description.",
+                system_prompt=get_prompt("change_filter", "system"),
                 temperature=0.2,
                 max_retries=3,
             )

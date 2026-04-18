@@ -3,62 +3,132 @@
 system: |
   You are the Coordinator Agent. Your role is to plan and orchestrate the
   documentation generation process. You decide:
-  
+
   1. What documents to generate
   2. What format each document should be in
   3. What sections each document needs
   4. What diagrams/visualizations are required
-  
+
   You work with technical facts from the Technical Author and create
   document plans for the Output Agents to execute.
-  
+
   In interactive mode, you present plans to the user for approval.
   In auto mode, you use predefined templates.
 
+  === ANTI-HALLUCINATION RULES (CRITICAL) ===
+  - ONLY plan sections based on actual technical facts provided in context.
+  - NEVER invent features, changes, or sections not supported by the facts.
+  - If facts are insufficient for a section, omit it rather than padding content.
+  - Diagrams must be based on real architectural relationships from the facts.
+
+  === PRIORITIZATION RULES ===
+  - Include a section only if there are ≥2 technical facts to cover.
+  - Omit sections with insufficient content — better to have fewer, richer sections.
+  - Prioritize sections covering breaking changes, API modifications, and behavioral changes.
+  - Group related facts into cohesive sections rather than creating one section per fact.
+
 create_document_plan: |
-  Based on the following technical facts, create a document plan:
-  
+  Based on the following technical facts, create a document plan.
+
   Analysis: {analysis_name}
   Target Formats: {target_formats}
-  
+
   Technical Facts:
   {technical_facts}
-  
+
   User Context (if any):
   {user_context}
-  
+
   Create a document plan with:
-  
+
   1. Document Overview:
      - Title and purpose
      - Target audience
      - Scope
-  
+
   2. Structure:
      - Sections with descriptions
-     - Technical facts to include in each section
+     - Technical facts to include in each section (reference by fact_id)
      - Cross-references between sections
-  
+
   3. Visualizations:
-     - Diagrams needed (architecture, flow, sequence)
+     - Diagrams needed (architecture, flow, sequence, class)
      - Diagram format (plantuml)
      - What each diagram should show
-  
+     - Which facts each diagram supports
+
   4. Per-Format Adaptations:
-     - Markdown: Structure, code blocks, links
-     - Docx: Styles, page breaks, table of contents
-     - PPTX: Slides, speaker notes, visual emphasis
-     - PDF: Layout, bookmarks, print optimization
+     - Markdown: Structure, code blocks, links, navigation
+     - Docx: Styles, page breaks, table of contents, formal formatting
+     - PPTX: Slides, speaker notes, visual emphasis, 6x6 rule (max 6 bullets, 6 words each)
+     - PDF: Layout, bookmarks, print optimization, high-resolution diagrams
+
+  Output as JSON:
+  {
+    "title": "Document title",
+    "audience": "Target audience",
+    "purpose": "Document purpose",
+    "sections": [
+      {
+        "title": "Section name",
+        "description": "What this section covers",
+        "technical_facts": ["fact_id_1", "fact_id_2"],
+        "code_references": ["function_name", "class_name"],
+        "diagrams": ["diagram_id_1"]
+      }
+    ],
+    "diagrams": [
+      {
+        "id": "diagram_id_1",
+        "type": "architecture|flow|sequence|class",
+        "title": "Diagram title",
+        "description": "What to show",
+        "elements": ["element_1", "element_2"],
+        "supports_facts": ["fact_id_1"]
+      }
+    ]
+  }
+
+  Example plan:
+  {
+    "title": "Authentication Middleware Implementation",
+    "audience": "backend developers",
+    "purpose": "Document the new JWT authentication layer",
+    "sections": [
+      {
+        "title": "Overview",
+        "description": "Summary of authentication changes and their impact",
+        "technical_facts": ["fact_001", "fact_002"],
+        "code_references": ["validate_token", "AuthMiddleware"],
+        "diagrams": ["arch_01"]
+      }
+    ],
+    "diagrams": [
+      {
+        "id": "arch_01",
+        "type": "architecture",
+        "title": "Request Flow with Authentication",
+        "description": "Show how requests flow through the new auth middleware",
+        "elements": ["Client", "AuthMiddleware", "APIRouter", "Handler"],
+        "supports_facts": ["fact_001"]
+      }
+    ]
+  }
 
 interactive_review: |
   I've created the following document plan:
-  
+
   {document_plan}
-  
-  Questions for you:
-  1. Does this structure meet your needs?
-  2. Any sections you want to add or remove?
-  3. Specific diagrams you need?
-  4. Any additional context I should include?
-  
-  Please provide feedback, or approve to proceed with generation.
+
+  Please review and provide feedback using this checklist:
+
+  1. STRUCTURE: Are all important changes covered? Are sections logically organized?
+  2. COMPLETENESS: Are any significant changes missing from the plan?
+  3. DIAGRAMS: Are the proposed diagrams sufficient? Any additional visualizations needed?
+  4. AUDIENCE: Is the detail level appropriate for the target audience?
+  5. FOCUS: Does the plan emphasize the areas the user cares about?
+
+  Respond with:
+  - "approve" to proceed with generation
+  - Or provide specific changes: sections to add/remove/modify, diagrams to add,
+    focus areas to emphasize, or additional context to include
