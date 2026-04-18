@@ -1,6 +1,5 @@
 """CLI for GGDes."""
 
-import builtins
 import hashlib
 import json
 from datetime import datetime
@@ -72,6 +71,29 @@ def _load_user_context_from_file(context_file: Path) -> dict[str, Any]:
         )
 
     return data
+
+
+def resolve_analysis(
+    kb_manager: KnowledgeBaseManager, analysis: str
+) -> tuple[str, Any]:
+    """Resolve analysis ID or name to (id, metadata).
+
+    Args:
+        kb_manager: KnowledgeBaseManager instance
+        analysis: Analysis ID or name
+
+    Returns:
+        Tuple of (analysis_id, metadata)
+
+    Raises:
+        typer.Exit(1): If analysis not found
+    """
+    for aid, metadata in kb_manager.list_analyses():
+        if aid == analysis or metadata.name == analysis:
+            return aid, metadata
+
+    console.print(f"[red]Analysis not found:[/red] {analysis}")
+    raise typer.Exit(1)
 
 
 def _gather_user_context() -> dict[str, Any]:
@@ -170,6 +192,326 @@ def generate_analysis_id(name: str, repo_path: Path, commit_range: str) -> str:
     return f"{name}-{timestamp}-{short_hash}"
 
 
+def validate_commit_range(commits: str, repo_path: Path) -> int:
+    """Validate a git commit range.
+
+    Args:
+        commits: Commit range string (e.g., 'HEAD~5..HEAD')
+        repo_path: Path to the git repository
+
+    Returns:
+        Number of commits in the range
+
+    Raises:
+        typer.Exit: If the commit range is invalid
+    """
+    import subprocess
+
+    # Validate format
+    if ".." not in commits:
+        console.print(f"[red]Error:[/red] Invalid commit range format: {commits}")
+        console.print(
+            "Commit range must contain '..' (e.g., 'HEAD~5..HEAD' or 'abc123..def456')"
+        )
+        console.print(
+            '\nTip: Use quotes around the commit range to prevent shell interpretation:'
+        )
+        console.print('  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
+        raise typer.Exit(1)
+
+    # Check if base commit exists
+    base_commit = commits.split("..")[0] or "HEAD"
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "--verify", base_commit],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Error:[/red] Base commit not found: '{base_commit}'")
+        console.print(f"Git error: {result.stderr.strip()}")
+        raise typer.Exit(1)
+
+    # Check if head commit exists (if specified)
+    head_part = commits.split("..")[1] if ".." in commits else ""
+    if head_part:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "--verify", head_part],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Error:[/red] Head commit not found: '{head_part}'")
+            console.print(f"Git error: {result.stderr.strip()}")
+            raise typer.Exit(1)
+
+    # Validate the range produces results
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "log", "--oneline", commits],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Error:[/red] Invalid commit range: '{commits}'")
+        console.print(f"Git error: {result.stderr.strip()}")
+        raise typer.Exit(1)
+
+    commit_count = (
+        len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0
+    )
+    if commit_count == 0:
+        console.print(
+            f"[yellow]Warning:[/yellow] No commits found in range: '{commits}'"
+        )
+
+    return commit_count
+
+
+def parse_and_validate_formats(formats: str | None) -> list[str]:
+    """Parse and validate output format strings.
+
+    Args:
+        formats: Comma-separated format string or None
+
+    Returns:
+        List of validated format names
+
+    Raises:
+        typer.Exit: If any format is invalid
+    """
+    target_formats = ["markdown"]  # Default
+    if formats:
+        target_formats = [fmt.strip().lower() for fmt in formats.split(",")]
+        valid_formats = {"markdown", "docx", "pdf", "pptx"}
+        invalid_formats = set(target_formats) - valid_formats
+        if invalid_formats:
+            console.print(
+                f"[red]Error:[/red] Invalid format(s): {', '.join(invalid_formats)}"
+            )
+            console.print(f"Valid formats: {', '.join(sorted(valid_formats))}")
+            raise typer.Exit(1)
+    return target_formats
+
+
+def parse_and_validate_storage(storage: str) -> str:
+    """Validate storage policy string.
+
+    Args:
+        storage: Storage policy string
+
+    Returns:
+        Validated storage policy value
+
+    Raises:
+        typer.Exit: If the storage policy is invalid
+    """
+    from ggdes.schemas import StoragePolicy
+
+    valid_storage_policies = {s.value for s in StoragePolicy}
+    storage_policy = storage.lower().strip()
+    if storage_policy not in valid_storage_policies:
+        console.print(f"[red]Error:[/red] Invalid storage policy: '{storage}'")
+        console.print(f"Valid options: {', '.join(sorted(valid_storage_policies))}")
+        raise typer.Exit(1)
+    return storage_policy
+
+
+def create_analysis_metadata(
+    kb_manager: KnowledgeBaseManager,
+    analysis_id: str,
+    feature: str,
+    repo_path: Path,
+    commits: str,
+    focus_commits: list[str] | None,
+    target_formats: list[str],
+    storage_policy: str,
+    render_png: bool,
+    no_filter: bool,
+) -> Any:
+    """Create analysis metadata in the knowledge base.
+
+    Args:
+        kb_manager: KnowledgeBaseManager instance
+        analysis_id: Unique analysis ID
+        feature: Feature name
+        repo_path: Path to repository
+        commits: Commit range
+        focus_commits: List of focus commit hashes
+        target_formats: List of output formats
+        storage_policy: Storage policy value
+        render_png: Whether to render PNG diagrams
+        no_filter: Whether to disable semantic change filtering
+
+    Returns:
+        Created metadata object
+    """
+    from ggdes.schemas import StoragePolicy
+
+    metadata = kb_manager.create_analysis(
+        analysis_id=analysis_id,
+        name=feature,
+        repo_path=repo_path,
+        commit_range=commits,
+        focus_commits=focus_commits,
+        prompt_version="v1.0.0",
+        target_formats=target_formats,
+        storage_policy=StoragePolicy(storage_policy),
+    )
+
+    metadata.render_png = render_png
+    metadata.feature_description = feature
+    metadata.no_filter = no_filter
+    kb_manager.save_metadata(analysis_id, metadata)
+
+    return metadata
+
+
+def run_analysis_pipeline(
+    config: Any,
+    analysis_id: str,
+    kb_manager: KnowledgeBaseManager,
+    metadata: Any,
+    repo_path: Path,
+    commits: str,
+    target_formats: list[str],
+    storage_policy: str,
+    interactive: bool,
+    setup_only: bool,
+    semantic_diff: bool,
+    no_filter: bool,
+    auto: bool,
+    context_file: str | None,
+) -> None:
+    """Run the analysis pipeline.
+
+    Args:
+        config: GGDesConfig instance
+        analysis_id: Unique analysis ID
+        kb_manager: KnowledgeBaseManager instance
+        metadata: Analysis metadata object
+        repo_path: Path to repository
+        commits: Commit range
+        target_formats: List of output formats
+        storage_policy: Storage policy value
+        interactive: Enable interactive review mode
+        setup_only: Only setup worktrees, don't run analysis
+        semantic_diff: Enable semantic diff analysis
+        no_filter: Disable semantic change filtering
+        auto: Run all stages without prompting
+        context_file: Path to user context file
+
+    Raises:
+        typer.Exit: If the pipeline fails
+    """
+    from ggdes.logging_config import get_logger, setup_file_logging
+    from ggdes.pipeline import AnalysisPipeline
+
+    logger = get_logger(__name__)
+    log_path = kb_manager.get_analysis_path(analysis_id) / "analysis.log"
+    setup_file_logging(log_path)
+
+    logger.info(f"Starting analysis: {analysis_id}")
+    logger.info(f"Repository: {repo_path}")
+    logger.info(f"Commit range: {commits}")
+    logger.info(f"Formats: {target_formats}")
+    logger.info(f"Storage policy: {storage_policy}")
+
+    console.print(
+        f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"
+    )
+
+    pipeline = AnalysisPipeline(config, analysis_id, interactive=interactive)
+
+    # Step 1: Setup worktrees (always needed)
+    logger.info("Setting up worktrees...")
+    success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
+    if not success:
+        logger.error("Worktree setup failed")
+        console.print("\n[red]✗ Setup failed[/red]")
+        raise typer.Exit(1)
+
+    # Determine what to do next
+    if setup_only:
+        logger.info("Setup complete (setup-only mode)")
+        console.print(f"\n[green]✓ Setup complete:[/green] {analysis_id}")
+        console.print(f"Run 'ggdes resume {analysis_id}' to run analysis later")
+        return
+
+    # Gather user context for analysis
+    user_context = {}
+    if not auto:
+        # Interactive mode: ask user for context
+        console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
+        console.print(
+            "This will analyze the commits and generate documentation."
+        )
+        if not typer.confirm("Continue with analysis?"):
+            logger.info("Analysis paused by user")
+            console.print("\n[yellow]Analysis paused.[/yellow]")
+            console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
+            return
+
+        # Gather user context
+        if context_file:
+            user_context = _load_user_context_from_file(Path(context_file))
+            console.print(
+                f"[green]✓[/green] Loaded user context from: {context_file}"
+            )
+        else:
+            user_context = _gather_user_context()
+
+        # Store user context in metadata
+        if user_context:
+            metadata.user_context = user_context
+            kb_manager.save_metadata(analysis_id, metadata)
+            logger.info(f"User context saved: {user_context}")
+
+    # Configure pipeline stages based on semantic_diff flag
+    if not semantic_diff:
+        logger.info(
+            "Semantic diff disabled - skipping base AST parsing and semantic diff stages"
+        )
+        console.print(
+            "[dim]Semantic diff disabled - running faster analysis[/dim]"
+        )
+
+        metadata.stages[
+            kb_manager.STAGE_AST_PARSING_BASE
+        ].status = StageStatus.SKIPPED
+        metadata.stages[
+            kb_manager.STAGE_SEMANTIC_DIFF
+        ].status = StageStatus.SKIPPED
+        kb_manager.save_metadata(analysis_id, metadata)
+
+    # Configure change filter stage
+    if no_filter:
+        logger.info(
+            "Semantic change filtering disabled - skipping change filter stage"
+        )
+        console.print(
+            "[dim]Change filtering disabled - analyzing all changes[/dim]"
+        )
+
+        metadata.stages[
+            kb_manager.STAGE_CHANGE_FILTER
+        ].status = StageStatus.SKIPPED
+        kb_manager.save_metadata(analysis_id, metadata)
+
+    # Step 2: Run full analysis
+    logger.info("Running full analysis pipeline...")
+    console.print("\n[bold]Running analysis...[/bold]")
+    success = pipeline.run_all_pending()
+    if success:
+        logger.info(f"Analysis completed successfully: {analysis_id}")
+        console.print(f"\n[green]✓ Analysis complete:[/green] {analysis_id}")
+    else:
+        logger.error(f"Analysis incomplete: {analysis_id}")
+        console.print(
+            f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
+        )
+        console.print(f"Run 'ggdes resume {analysis_id}' to retry")
+        raise typer.Exit(1)
+
+
 @app.command()
 def analyze(
     feature: Annotated[str, typer.Option(help="Name for this analysis")],
@@ -257,106 +599,15 @@ def analyze(
     )
 
     # Validate and sanitize commit range
-    # Remove any shell escape characters that might have been added
-    original_commits = commits
     commits = commits.strip().strip("'\"")  # Remove surrounding quotes if present
 
-    # Validate commit range format
-    if ".." not in commits:
-        console.print(
-            f"[red]Error:[/red] Invalid commit range format: {original_commits}"
-        )
-        console.print(
-            "Commit range must contain '..' (e.g., 'HEAD~5..HEAD' or 'abc123..def456')"
-        )
-        console.print(
-            "\nTip: Use quotes around the commit range to prevent shell interpretation:"
-        )
-        console.print('  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
-        raise typer.Exit(1)
+    # Validate commit range
+    commit_count = validate_commit_range(commits, repo_path)
 
-    # Validate the commit range against git
-    try:
-        import subprocess
-
-        # Check if base commit exists
-        base_commit = commits.split("..")[0] or "HEAD"
-        result = subprocess.run(
-            ["git", "-C", str(repo_path), "rev-parse", "--verify", base_commit],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Error:[/red] Base commit not found: '{base_commit}'")
-            console.print(f"Git error: {result.stderr.strip()}")
-            raise typer.Exit(1)
-
-        # Check if head commit exists (if specified)
-        head_part = commits.split("..")[1] if ".." in commits else ""
-        if head_part:
-            result = subprocess.run(
-                ["git", "-C", str(repo_path), "rev-parse", "--verify", head_part],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                console.print(f"[red]Error:[/red] Head commit not found: '{head_part}'")
-                console.print(f"Git error: {result.stderr.strip()}")
-                raise typer.Exit(1)
-
-        # Validate the range produces results
-        result = subprocess.run(
-            ["git", "-C", str(repo_path), "log", "--oneline", commits],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Error:[/red] Invalid commit range: '{commits}'")
-            console.print(f"Git error: {result.stderr.strip()}")
-            raise typer.Exit(1)
-
-        commit_count = (
-            len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0
-        )
-        if commit_count == 0:
-            console.print(
-                f"[yellow]Warning:[/yellow] No commits found in range: '{commits}'"
-            )
-
-    except Exception as e:
-        if isinstance(e, typer.Exit):
-            raise
-        console.print(f"[red]Error validating commit range:[/red] {e}")
-        raise typer.Exit(1) from None
-
-    # Parse formats if provided
-    target_formats = ["markdown"]  # Default
-    if formats:
-        target_formats = [fmt.strip().lower() for fmt in formats.split(",")]
-        # Validate formats
-        valid_formats = {"markdown", "docx", "pdf", "pptx"}
-        invalid_formats = set(target_formats) - valid_formats
-        if invalid_formats:
-            console.print(
-                f"[red]Error:[/red] Invalid format(s): {', '.join(invalid_formats)}"
-            )
-            console.print(f"Valid formats: {', '.join(sorted(valid_formats))}")
-            raise typer.Exit(1)
-
-    # Parse focus commits if provided
-    focus_commits = None
-    if focus:
-        focus_commits = [c.strip() for c in focus.split(",") if c.strip()]
-
-    # Validate storage policy
-    from ggdes.schemas import StoragePolicy
-
-    valid_storage_policies = {s.value for s in StoragePolicy}
-    storage_policy = storage.lower().strip()
-    if storage_policy not in valid_storage_policies:
-        console.print(f"[red]Error:[/red] Invalid storage policy: '{storage}'")
-        console.print(f"Valid options: {', '.join(sorted(valid_storage_policies))}")
-        raise typer.Exit(1)
+    # Parse and validate inputs
+    target_formats = parse_and_validate_formats(formats)
+    focus_commits = [c.strip() for c in focus.split(",") if c.strip()] if focus else None
+    storage_policy = parse_and_validate_storage(storage)
 
     # Check if repo is a git repo
     git_dir = repo_path / ".git"
@@ -390,148 +641,43 @@ def analyze(
     console.print(f"  Formats: {', '.join(target_formats)}")
     console.print(f"  Storage: {storage_policy}")
 
-    # Acquire lock
+    # Acquire lock and run pipeline
     try:
         with LockContext(repo_path, analysis_id, force=force):
-            # Create KB structure
-            metadata = kb_manager.create_analysis(
+            metadata = create_analysis_metadata(
+                kb_manager=kb_manager,
                 analysis_id=analysis_id,
-                name=feature,
+                feature=feature,
                 repo_path=repo_path,
-                commit_range=commits,
+                commits=commits,
                 focus_commits=focus_commits,
-                prompt_version="v1.0.0",  # Use current version
                 target_formats=target_formats,
-                storage_policy=StoragePolicy(storage_policy),
+                storage_policy=storage_policy,
+                render_png=render_png,
+                no_filter=no_filter,
             )
 
-            # Store render_png flag in metadata for pipeline use
-            metadata.render_png = render_png
-
-            # Store feature description for semantic filtering
-            metadata.feature_description = feature
-            metadata.no_filter = no_filter
-            kb_manager.save_metadata(analysis_id, metadata)
-
-            # Setup logging
-            from ggdes.logging_config import get_logger, setup_file_logging
-
-            logger = get_logger(__name__)
-            log_path = kb_manager.get_analysis_path(analysis_id) / "analysis.log"
-            setup_file_logging(log_path)
-
-            logger.info(f"Starting analysis: {analysis_id}")
-            logger.info(f"Repository: {repo_path}")
-            logger.info(f"Commit range: {commits}")
-            logger.info(f"Formats: {target_formats}")
-            logger.info(f"Storage policy: {storage_policy}")
-
-            console.print(
-                f"[green]Created knowledge base:[/green] {kb_manager.get_analysis_path(analysis_id)}"
+            run_analysis_pipeline(
+                config=config,
+                analysis_id=analysis_id,
+                kb_manager=kb_manager,
+                metadata=metadata,
+                repo_path=repo_path,
+                commits=commits,
+                target_formats=target_formats,
+                storage_policy=storage_policy,
+                interactive=interactive,
+                setup_only=setup_only,
+                semantic_diff=semantic_diff,
+                no_filter=no_filter,
+                auto=auto,
+                context_file=context_file,
             )
-
-            # Run pipeline
-            from ggdes.pipeline import AnalysisPipeline
-
-            pipeline = AnalysisPipeline(config, analysis_id, interactive=interactive)
-
-            # Step 1: Setup worktrees (always needed)
-            logger.info("Setting up worktrees...")
-            success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
-            if not success:
-                logger.error("Worktree setup failed")
-                console.print("\n[red]✗ Setup failed[/red]")
-                raise typer.Exit(1)
-
-            # Determine what to do next
-            if setup_only:
-                # User only wanted setup
-                logger.info("Setup complete (setup-only mode)")
-                console.print(f"\n[green]✓ Setup complete:[/green] {analysis_id}")
-                console.print(f"Run 'ggdes resume {analysis_id}' to run analysis later")
-                return
-
-            # Gather user context for analysis
-            user_context = {}
-            if not auto:
-                # Interactive mode: ask user for context
-                console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
-                console.print(
-                    "This will analyze the commits and generate documentation."
-                )
-                if not typer.confirm("Continue with analysis?"):
-                    logger.info("Analysis paused by user")
-                    console.print("\n[yellow]Analysis paused.[/yellow]")
-                    console.print(f"Run 'ggdes resume {analysis_id}' to continue later")
-                    return
-
-                # Gather user context
-                if context_file:
-                    user_context = _load_user_context_from_file(Path(context_file))
-                    console.print(
-                        f"[green]✓[/green] Loaded user context from: {context_file}"
-                    )
-                else:
-                    user_context = _gather_user_context()
-
-                # Store user context in metadata
-                if user_context:
-                    metadata.user_context = user_context
-                    kb_manager.save_metadata(analysis_id, metadata)
-                    logger.info(f"User context saved: {user_context}")
-
-            # Configure pipeline stages based on semantic_diff flag
-            if not semantic_diff:
-                logger.info(
-                    "Semantic diff disabled - skipping base AST parsing and semantic diff stages"
-                )
-                console.print(
-                    "[dim]Semantic diff disabled - running faster analysis[/dim]"
-                )
-
-                # Mark base AST parsing and semantic diff as skipped
-                from ggdes.kb import StageStatus
-
-                metadata.stages[
-                    kb_manager.STAGE_AST_PARSING_BASE
-                ].status = StageStatus.SKIPPED
-                metadata.stages[
-                    kb_manager.STAGE_SEMANTIC_DIFF
-                ].status = StageStatus.SKIPPED
-                kb_manager.save_metadata(analysis_id, metadata)
-
-            # Configure change filter stage
-            if no_filter:
-                logger.info(
-                    "Semantic change filtering disabled - skipping change filter stage"
-                )
-                console.print(
-                    "[dim]Change filtering disabled - analyzing all changes[/dim]"
-                )
-
-                from ggdes.kb import StageStatus
-
-                metadata.stages[
-                    kb_manager.STAGE_CHANGE_FILTER
-                ].status = StageStatus.SKIPPED
-                kb_manager.save_metadata(analysis_id, metadata)
-
-            # Step 2: Run full analysis
-            logger.info("Running full analysis pipeline...")
-            console.print("\n[bold]Running analysis...[/bold]")
-            success = pipeline.run_all_pending()
-            if success:
-                logger.info(f"Analysis completed successfully: {analysis_id}")
-                console.print(f"\n[green]✓ Analysis complete:[/green] {analysis_id}")
-            else:
-                logger.error(f"Analysis incomplete: {analysis_id}")
-                console.print(
-                    f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
-                )
-                console.print(f"Run 'ggdes resume {analysis_id}' to retry")
-                raise typer.Exit(1)
 
     except RuntimeError as e:
+        from ggdes.logging_config import get_logger
+
+        logger = get_logger(__name__)
         logger.exception(f"Runtime error during analysis: {e}")
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
@@ -547,19 +693,7 @@ def status(
 
     if analysis:
         # Show specific analysis
-        # Try to find by full ID or by name
-        found_id = None
-        found_metadata = None
-
-        for aid, metadata in kb_manager.list_analyses():
-            if aid == analysis or metadata.name == analysis:
-                found_id = aid
-                found_metadata = metadata
-                break
-
-        if not found_metadata:
-            console.print(f"[red]Analysis not found:[/red] {analysis}")
-            raise typer.Exit(1)
+        found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
         console.print(f"[bold]Analysis:[/bold] {found_metadata.name}")
         console.print(f"  ID: {found_id}")
@@ -686,24 +820,9 @@ def resume(
     kb_manager = KnowledgeBaseManager(config)
 
     # Find analysis
-    found_id = None
-    found_metadata = None
-
-    for aid, metadata in kb_manager.list_analyses():
-        if aid == analysis or metadata.name == analysis:
-            found_id = aid
-            found_metadata = metadata
-            break
-
-    if not found_metadata:
-        logger.error(f"Analysis not found: {analysis}")
-        console.print(f"[red]Analysis not found:[/red] {analysis}")
-        raise typer.Exit(1)
+    found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
     # Setup logging for this analysis
-    if found_id is None:
-        console.print("[red]Error:[/red] Could not determine analysis ID")
-        raise typer.Exit(1)
     log_path = kb_manager.get_analysis_path(found_id) / "analysis.log"
     setup_file_logging(log_path)
 
@@ -725,9 +844,6 @@ def resume(
             raise typer.Exit(1)
         logger.info(f"Updated target formats: {target_formats}")
         found_metadata.target_formats = target_formats
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         kb_manager.save_metadata(found_id, found_metadata)
         console.print(
             f"[green]✓ Target formats updated:[/green] {', '.join(target_formats)}"
@@ -750,9 +866,6 @@ def resume(
             stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
-            if found_id is None:
-                console.print("[red]Error:[/red] Could not determine analysis ID")
-                raise typer.Exit(1)
             kb_manager.save_metadata(found_id, found_metadata)
             logger.info(f"Reset stages for new formats: {', '.join(stages_to_reset)}")
             console.print(
@@ -770,9 +883,6 @@ def resume(
             overwrite_context = True
 
     # Check if can resume
-    if found_id is None:
-        console.print("[red]Error:[/red] Could not determine analysis ID")
-        raise typer.Exit(1)
     can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
     if not can_resume:
         logger.error(f"Cannot resume: {reason}")
@@ -781,9 +891,6 @@ def resume(
 
     # If retry_failed is set, reset all failed stages
     if retry_failed:
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         reset_stages = kb_manager.reset_failed_stages(found_id)
         if reset_stages:
             logger.info(f"Reset failed stages for retry: {', '.join(reset_stages)}")
@@ -791,9 +898,6 @@ def resume(
                 f"[yellow]Reset {len(reset_stages)} failed stage(s) for retry:[/yellow] {', '.join(reset_stages)}"
             )
             # Reload metadata after reset
-            if found_id is None:
-                console.print("[red]Error:[/red] Could not determine analysis ID")
-                raise typer.Exit(1)
             found_metadata = kb_manager.load_metadata(found_id)
             if found_metadata is None:
                 console.print("[red]Error:[/red] Could not load metadata after reset")
@@ -802,9 +906,6 @@ def resume(
             logger.info("No failed stages to reset")
 
     # Handle user context
-    if found_metadata is None:
-        console.print("[red]Error:[/red] Could not load analysis metadata")
-        raise typer.Exit(1)
     user_context = found_metadata.user_context or {}
 
     # Reask user questions if requested
@@ -819,9 +920,6 @@ def resume(
             user_context = _gather_user_context()
 
         # Update metadata with new context
-        if found_metadata is None or found_id is None:
-            console.print("[red]Error:[/red] Could not update metadata")
-            raise typer.Exit(1)
         found_metadata.user_context = user_context
         kb_manager.save_metadata(found_id, found_metadata)
         logger.info(f"Updated user context: {user_context}")
@@ -844,9 +942,6 @@ def resume(
             stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
-            if found_id is None or found_metadata is None:
-                console.print("[red]Error:[/red] Could not update metadata")
-                raise typer.Exit(1)
             kb_manager.save_metadata(found_id, found_metadata)
             logger.info(f"Reset stages for new context: {', '.join(stages_to_reset)}")
             console.print(
@@ -864,9 +959,6 @@ def resume(
             console.print(f"[green]✓[/green] Loaded user context from: {context_file}")
         else:
             user_context = _gather_user_context()
-        if found_metadata is None or found_id is None:
-            console.print("[red]Error:[/red] Could not update metadata")
-            raise typer.Exit(1)
         found_metadata.user_context = user_context
         kb_manager.save_metadata(found_id, found_metadata)
         logger.info(f"User context saved: {user_context}")
@@ -878,9 +970,6 @@ def resume(
     from ggdes.pipeline import AnalysisPipeline
 
     try:
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         pipeline = AnalysisPipeline(config, found_id, interactive=interactive)
 
         if stage:
@@ -891,9 +980,6 @@ def resume(
             success = pipeline.run_stage(stage)
         else:
             # Run all pending stages
-            if found_metadata is None:
-                console.print("[red]Error:[/red] Could not load analysis metadata")
-                raise typer.Exit(1)
             pending = found_metadata.get_pending_stages()
             if not pending:
                 logger.warning("No pending stages to run")
@@ -914,12 +1000,9 @@ def resume(
             # Show helpful message based on retry_failed
             if retry_failed:
                 console.print("Some stages are still failing. Check the logs:")
-                if found_id is None:
-                    console.print("  [red]Error:[/red] Could not determine analysis ID")
-                else:
-                    console.print(
-                        f"  {kb_manager.get_analysis_path(found_id) / 'analysis.log'}"
-                    )
+                console.print(
+                    f"  {kb_manager.get_analysis_path(found_id) / 'analysis.log'}"
+                )
             else:
                 console.print(
                     f"Run 'ggdes resume {found_id} --retry-failed' to retry failed stages"
@@ -944,23 +1027,9 @@ def cleanup(
     kb_manager = KnowledgeBaseManager(config)
 
     # Find analysis
-    found_id = None
-    found_metadata = None
-
-    for aid, metadata in kb_manager.list_analyses():
-        if aid == analysis or metadata.name == analysis:
-            found_id = aid
-            found_metadata = metadata
-            break
-
-    if not found_metadata:
-        console.print(f"[red]Analysis not found:[/red] {analysis}")
-        raise typer.Exit(1)
+    found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
     # Clean worktrees
-    if found_id is None:
-        console.print("[red]Error:[/red] Could not determine analysis ID")
-        raise typer.Exit(1)
     wt_manager = WorktreeManager(config, Path(found_metadata.repo_path))
     wt_manager.cleanup(found_id)
     console.print(f"[green]Cleaned up worktrees for:[/green] {found_id}")
@@ -969,9 +1038,6 @@ def cleanup(
     if remove_kb and typer.confirm(
         f"Remove analysis '{found_metadata.name}' from knowledge base?"
     ):
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         kb_manager.delete_analysis(found_id)
         console.print(f"[green]Removed from knowledge base:[/green] {found_id}")
 
@@ -997,22 +1063,8 @@ def conversations(
     kb_manager = KnowledgeBaseManager(config)
 
     # Find analysis
-    found_id = None
-    found_metadata = None
+    found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
-    for aid, metadata in kb_manager.list_analyses():
-        if aid == analysis or metadata.name == analysis:
-            found_id = aid
-            found_metadata = metadata
-            break
-
-    if not found_metadata:
-        console.print(f"[red]Analysis not found:[/red] {analysis}")
-        raise typer.Exit(1)
-
-    if found_id is None:
-        console.print("[red]Error:[/red] Could not determine analysis ID")
-        raise typer.Exit(1)
     analysis_path = kb_manager.get_analysis_path(found_id)
     conversations_path = analysis_path / "conversations"
 
@@ -1086,8 +1138,8 @@ def conversations(
             console.print()
 
 
-@app.command()
-def list() -> None:
+@app.command(name="list")
+def list_analyses() -> None:
     """List all analyses (alias for status)."""
     status()
 
@@ -1297,16 +1349,7 @@ def debug(
         config, _ = load_config()
         kb_manager = KnowledgeBaseManager(config)
 
-        found_id = None
-        for aid, metadata in kb_manager.list_analyses():
-            if aid == analysis or metadata.name == analysis:
-                found_id = aid
-                break
-
-        if not found_id:
-            console.print(f"[red]Analysis not found:[/red] {analysis}")
-            raise typer.Exit(1)
-
+        found_id, _ = resolve_analysis(kb_manager, analysis)
         analysis = found_id
 
     # Run the debug TUI
@@ -1389,25 +1432,11 @@ def export(
     kb_manager = KnowledgeBaseManager(config)
 
     # Find analysis
-    found_id = None
-    found_metadata = None
-
-    for aid, metadata in kb_manager.list_analyses():
-        if aid == analysis or metadata.name == analysis:
-            found_id = aid
-            found_metadata = metadata
-            break
-
-    if not found_metadata:
-        console.print(f"[red]Analysis not found:[/red] {analysis}")
-        raise typer.Exit(1)
+    found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
     output_path = Path(output)
 
     try:
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         analysis_path = kb_manager.get_analysis_path(found_id)
 
         # Collect all analysis data
@@ -1428,7 +1457,7 @@ def export(
         # Load technical facts
         facts_dir = analysis_path / "technical_facts"
         if facts_dir.exists():
-            facts: builtins.list[Any] = []
+            facts: list[Any] = []
             for fact_file in facts_dir.glob("*.json"):
                 facts.append(json.loads(fact_file.read_text()))
             export_data["data"]["technical_facts"] = facts
@@ -1499,18 +1528,7 @@ def archive(
     kb_manager = KnowledgeBaseManager(config)
 
     # Find analysis
-    found_id = None
-    found_metadata = None
-
-    for aid, metadata in kb_manager.list_analyses():
-        if aid == analysis or metadata.name == analysis:
-            found_id = aid
-            found_metadata = metadata
-            break
-
-    if not found_metadata:
-        console.print(f"[red]Analysis not found:[/red] {analysis}")
-        raise typer.Exit(1)
+    found_id, found_metadata = resolve_analysis(kb_manager, analysis)
 
     # Check if analysis is too recent
     created_at = found_metadata.created_at
@@ -1545,9 +1563,6 @@ def archive(
             console.print(f"[dim]Export command: {export_cmd}[/dim]")
 
         # Remove analysis from KB
-        if found_id is None:
-            console.print("[red]Error:[/red] Could not determine analysis ID")
-            raise typer.Exit(1)
         kb_manager.delete_analysis(found_id)
         console.print(f"[green]✓ Analysis archived:[/green] {found_id}")
 
@@ -1645,7 +1660,7 @@ def doctor(
     kb_path = Path(config.paths.knowledge_base).expanduser()
 
     if kb_path.exists():
-        analyses: builtins.list[Path] = [p for p in kb_path.glob("*/metadata.yaml")]
+        analyses: list[Path] = list(kb_path.glob("*/metadata.yaml"))
         console.print(f"  [green]✓[/green] Knowledge base: {kb_path}")
         console.print(f"    [dim]Found {len(analyses)} analysis(es)[/dim]")
     else:
