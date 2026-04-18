@@ -23,6 +23,14 @@ from ggdes.tools import TOOL_DEFINITIONS, ToolCall, ToolExecutor, chat_with_tool
 
 console = Console()
 
+# Shared anti-hallucination instruction used across all analysis prompts
+ANTI_HALLUCINATION_INSTRUCTION = (
+    "IMPORTANT: You MUST base your descriptions on ACTUAL CODE. "
+    "Use the get_element_source tool to retrieve the real source code for any function or class you reference. "
+    "Do NOT fabricate or hallucinate code, function signatures, or implementation details. "
+    "Only describe what you can verify from the actual source code."
+)
+
 
 class TechnicalAuthor:
     """Synthesize git analysis and AST data into structured technical facts.
@@ -168,6 +176,27 @@ class TechnicalAuthor:
 
         data = json.loads(analysis_path.read_text())
         return ChangeSummary(**data)
+
+    def _load_semantic_diff(self) -> dict[str, Any] | None:
+        """Load semantic diff results from KB.
+
+        Returns:
+            Dict with semantic diff data or None if not available
+        """
+        from ggdes.config import get_kb_path
+
+        semantic_diff_path = (
+            get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
+        )
+
+        if not semantic_diff_path.exists():
+            return None
+
+        try:
+            data = json.loads(semantic_diff_path.read_text())
+            return data
+        except Exception:
+            return None
 
     def _get_worktree_paths(self) -> tuple[Path | None, Path | None]:
         """Get base and head worktree paths from metadata.
@@ -732,10 +761,28 @@ class TechnicalAuthor:
         if self.tool_executor and source_diffs:
             self.tool_executor.set_source_diffs_cache(source_diffs)
 
+        # Load semantic diff results if available
+        semantic_diff_data = self._load_semantic_diff()
+        if semantic_diff_data:
+            console.print(
+                f"  [dim]Loaded semantic diff: {semantic_diff_data.get('summary', {}).get('total_changes', 0)} semantic changes[/dim]"
+            )
+            if semantic_diff_data.get("summary", {}).get("has_breaking_changes", False):
+                console.print(
+                    f"  [yellow]⚠ Semantic diff detected {semantic_diff_data.get('summary', {}).get('breaking_changes', 0)} breaking change(s)[/yellow]"
+                )
+        else:
+            console.print("  [dim]No semantic diff results available[/dim]")
+
         if parallel:
             # Run all three analysis turns in parallel
             all_facts = await self._analyze_parallel(
-                change_summary, changed_base, changed_head, source_diffs, diff_context
+                change_summary,
+                changed_base,
+                changed_head,
+                source_diffs,
+                diff_context,
+                semantic_diff=semantic_diff_data,
             )
         else:
             # Sequential execution
@@ -748,6 +795,7 @@ class TechnicalAuthor:
                 changed_head,
                 source_diffs=source_diffs,
                 diff_context=diff_context,
+                semantic_diff=semantic_diff_data,
             )
             all_facts.extend(api_facts)
 
@@ -804,6 +852,7 @@ class TechnicalAuthor:
         conversation: ConversationContext | None = None,
         source_diffs: dict[str, dict[str, str]] | None = None,
         diff_context: str | None = None,
+        semantic_diff: dict[str, Any] | None = None,
     ) -> list[TechnicalFact]:
         """Analyze API changes (signatures, new/deleted functions)."""
         logger.info(
@@ -858,7 +907,7 @@ class TechnicalAuthor:
             # All at once
             prompt = f"""Analyze the following API changes and describe each factually.
 
-IMPORTANT: You MUST base your descriptions on ACTUAL CODE. Use the get_element_source tool to retrieve the real source code for any function or class you reference. Do NOT fabricate or hallucinate code, function signatures, or implementation details. Only describe what you can verify from the actual source code.
+{ANTI_HALLUCINATION_INSTRUCTION}
 
 Change Summary: {change_summary.description}
 Intent: {change_summary.intent}
@@ -896,6 +945,32 @@ SOURCE CODE DIFFS (before/after comparisons of changed elements):
 {diff_context}
 
 Use the above source code diffs to accurately describe what changed. Reference the actual code in your descriptions.
+"""
+
+            # Include semantic diff results if available
+            if semantic_diff:
+                summary = semantic_diff.get("summary", {})
+                changes = semantic_diff.get("semantic_changes", [])
+                prompt += f"""
+
+SEMANTIC DIFF ANALYSIS (automated detection of semantic changes):
+Total semantic changes detected: {summary.get("total_changes", 0)}
+Breaking changes: {summary.get("breaking_changes", 0)}
+Total impact score: {summary.get("total_impact_score", 0):.1f}/10
+
+Key semantic changes:
+"""
+                for change in changes[:15]:  # Limit to top 15 changes
+                    prompt += f"- [{change.get('change_type', 'unknown')}] {change.get('description', '')} in {change.get('file_path', '')}"
+                    if change.get("confidence"):
+                        prompt += f" (confidence: {change['confidence']:.2f})"
+                    if change.get("impact_score"):
+                        prompt += f" (impact: {change['impact_score']:.2f})"
+                    prompt += "\n"
+
+                prompt += """
+
+Use the semantic diff analysis to identify breaking changes, API modifications, and behavioral changes. Prioritize high-impact changes in your documentation.
 """
 
             prompt += """
@@ -990,6 +1065,7 @@ Format as JSON array of TechnicalFact objects."""
         conversation: ConversationContext | None = None,
         source_diffs: dict[str, dict[str, str]] | None = None,
         diff_context: str | None = None,
+        semantic_diff: dict[str, Any] | None = None,
     ) -> list[TechnicalFact]:
         """Analyze behavioral changes (what code does differently)."""
         logger.info(
@@ -1011,7 +1087,7 @@ Breaking Changes: {change_summary.breaking_changes}
 
 IMPORTANT: You should ONLY generate facts about behavioral changes in files that were actually changed. Do not generate facts about files that were not in the git diff.
 
-IMPORTANT: Use the get_element_source tool to retrieve the actual source code for any functions or classes you reference. Do NOT fabricate code, function signatures, or implementation details. Only describe what you can verify from the actual source code.
+{ANTI_HALLUCINATION_INSTRUCTION}
 
 Files Changed ({len(change_summary.files_changed)}):
 """
@@ -1026,6 +1102,44 @@ SOURCE CODE DIFFS (before/after comparisons of changed elements):
 {diff_context}
 
 Use the above source code diffs to accurately describe what changed. When describing behavioral changes, reference the actual before/after code. Do NOT fabricate code — use the diffs provided above.
+"""
+
+        # Include semantic diff results if available
+        if semantic_diff:
+            summary = semantic_diff.get("summary", {})
+            changes = semantic_diff.get("semantic_changes", [])
+            # Filter for behavioral and breaking changes
+            behavioral_changes = [
+                c
+                for c in changes
+                if c.get("change_type")
+                in [
+                    "behavior_change",
+                    "logic_change",
+                    "algorithm_change",
+                    "control_flow_change",
+                    "error_handling_change",
+                ]
+            ]
+            prompt += f"""
+
+SEMANTIC DIFF ANALYSIS (automated detection of semantic changes):
+Total semantic changes: {summary.get("total_changes", 0)}
+Behavioral changes detected: {len(behavioral_changes)}
+Breaking changes: {summary.get("breaking_changes", 0)}
+Total impact score: {summary.get("total_impact_score", 0):.1f}/10
+
+Detected behavioral changes:
+"""
+            for change in behavioral_changes[:10]:
+                prompt += f"- [{change.get('change_type', 'unknown')}] {change.get('description', '')} in {change.get('file_path', '')}"
+                if change.get("impact_score"):
+                    prompt += f" (impact: {change['impact_score']:.2f})"
+                prompt += "\n"
+
+            prompt += """
+
+Use the semantic diff analysis to identify and describe behavioral changes. Focus on high-impact changes that affect system behavior.
 """
 
         prompt += f"""
@@ -1132,6 +1246,7 @@ Format as JSON array."""
         changed_head: list[CodeElement],
         source_diffs: dict[str, dict[str, str]] | None = None,
         diff_context: str | None = None,
+        semantic_diff: dict[str, Any] | None = None,
     ) -> list[TechnicalFact]:
         """Run all three analysis turns in parallel using separate conversation contexts."""
         from ggdes.llm import ConversationContext
@@ -1159,6 +1274,7 @@ Format as JSON array."""
                 conversation=api_conv,
                 source_diffs=source_diffs,
                 diff_context=diff_context,
+                semantic_diff=semantic_diff,
             ),
             self._analyze_behavioral_changes(
                 change_summary,
@@ -1167,6 +1283,7 @@ Format as JSON array."""
                 conversation=behavior_conv,
                 source_diffs=source_diffs,
                 diff_context=diff_context,
+                semantic_diff=semantic_diff,
             ),
             self._analyze_architecture_changes(
                 change_summary, changed_base, changed_head

@@ -516,7 +516,14 @@ class GitAnalyzer:
         if not self.conversation:
             raise RuntimeError("Conversation not initialized")
 
-        # Turn 1: Initial analysis with full context
+        # Truncation warning for the LLM
+        diff_truncated = len(diff) > 40000
+        truncation_note = (
+            f"\n\nNOTE: The diff has been truncated to 40,000 characters. "
+            f"{'The full diff is larger than this — focus your analysis on the visible changes above.' if diff_truncated else ''}"
+        )
+
+        # Turn 1: Combined analysis + structured output
         self.conversation.add_user_message(
             f"""You are analyzing a git commit range with the following context:
 
@@ -532,43 +539,15 @@ GIT DIFF (code changes):
 ```
 
 IMPORTANT: You should only analyze code changes in the files listed above. Do not reference code that was not changed.
+{truncation_note}
 
-Analyze the git diff above and identify the key changes. Focus on:
-1. What functionality changed
-2. What files/modules were affected
-3. The overall purpose of these changes"""
-        )
+Analyze the git diff and provide a comprehensive structured summary covering:
 
-        context = self.conversation.get_context_for_llm()
-        response1 = await self._chat_with_context(context)
-        self.conversation.add_assistant_message(response1)
+1. KEY CHANGES: What functionality changed, what files/modules were affected, and the overall purpose
+2. BREAKING CHANGES: Identify any breaking changes, API modifications, or significant behavioral changes. Be specific about what changed and why. If there are no breaking changes, explicitly state 'No breaking changes detected.'
+3. IMPACT ASSESSMENT: Assess the impact on the system — what are the risks? Who is affected? What needs to be tested?
 
-        # Turn 2: Deep dive on breaking changes
-        self.conversation.add_user_message(
-            "Based on your analysis above, identify any breaking changes, API modifications, "
-            "or significant behavioral changes. Be specific about what changed and why. "
-            "If there are no breaking changes, explicitly state 'No breaking changes detected.'"
-        )
-
-        context = self.conversation.get_context_for_llm()
-        response2 = await self._chat_with_context(context)
-        self.conversation.add_assistant_message(response2)
-
-        # Turn 3: Impact assessment
-        self.conversation.add_user_message(
-            "Assess the impact of these changes on the system. "
-            "What are the risks? Who is affected? What needs to be tested?"
-        )
-
-        context = self.conversation.get_context_for_llm()
-        response3 = await self._chat_with_context(context)
-        self.conversation.add_assistant_message(response3)
-
-        # Turn 4: Structured output
-        self.conversation.add_user_message(
-            f"""Now provide a structured summary as a JSON object.
-
-Based on the {len(files)} files and {len(commits)} commits analyzed, output a ChangeSummary with:
+Then provide a structured ChangeSummary as a JSON object with:
 - change_type: The primary type (feature, bugfix, refactor, docs, test, chore, performance, security)
 - description: A clear description of what changed (2-3 sentences)
 - intent: Why this change was made
@@ -624,7 +603,12 @@ Files in this chunk: {chunk["files"]}
 
 {chunk["content"]}
 
-Provide a brief analysis of these specific changes.
+Provide a brief analysis of these specific changes. Focus on:
+1. What functionality changed in this chunk
+2. Any breaking changes or API modifications
+3. Impact on the files in this chunk
+
+IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
             self.conversation.add_user_message(chunk_context)
 
@@ -655,7 +639,16 @@ Now synthesize these into a cohesive overall analysis. Identify:
 3. System-wide impact
 4. Overall change type (feature, bugfix, refactor, etc.)
 
-Then provide a structured ChangeSummary.
+Then provide a structured ChangeSummary as a JSON object with:
+- change_type: The primary type (feature, bugfix, refactor, docs, test, chore, performance, security)
+- description: A clear description of what changed (2-3 sentences)
+- intent: Why this change was made
+- impact: What systems/behaviors are affected
+- impact_level: none, low, medium, high, or critical
+- breaking_changes: List any breaking changes (empty list if none)
+- dependencies_changed: List any dependency changes (empty list if none)
+
+IMPORTANT: Base your summary only on the chunk analyses above. Do not invent changes not mentioned in the summaries.
 """
 
         self.conversation.add_user_message(synthesis_prompt)

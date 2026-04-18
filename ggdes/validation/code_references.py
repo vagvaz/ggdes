@@ -902,7 +902,7 @@ Please provide a corrected response that ONLY makes claims verifiable from the a
 
         available_files = "\n".join(f"  - {f}" for f in sorted(self.changed_files))
         available_elements = "\n".join(
-            f"  - {name}" for name in sorted(self.code_elements.keys())[:20]
+            f"  - {name}" for name in sorted(self.code_elements.keys())[:50]
         )
 
         return f"""Your previous response contains code references that could not be verified:
@@ -1066,7 +1066,7 @@ Please provide a corrected response with valid code references:"""
 
         available_files = "\n".join(f"  - {f}" for f in sorted(self.changed_files))
         available_elements = "\n".join(
-            f"  - {name}" for name in sorted(self.code_elements.keys())[:20]
+            f"  - {name}" for name in sorted(self.code_elements.keys())[:50]
         )
 
         # Include available source code snippets for reference

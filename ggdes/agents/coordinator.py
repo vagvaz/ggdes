@@ -109,6 +109,27 @@ class Coordinator:
         data = json.loads(facts_file.read_text())
         return [TechnicalFact(**fact_data) for fact_data in data]
 
+    def _load_semantic_diff(self) -> dict[str, Any] | None:
+        """Load semantic diff results from KB.
+
+        Returns:
+            Dict with semantic diff data or None if not available
+        """
+        from ggdes.config import get_kb_path
+
+        semantic_diff_path = (
+            get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
+        )
+
+        if not semantic_diff_path.exists():
+            return None
+
+        try:
+            data = json.loads(semantic_diff_path.read_text())
+            return data
+        except Exception:
+            return None
+
     async def create_plan(
         self,
         target_formats: list[str],
@@ -147,6 +168,21 @@ class Coordinator:
         # Categorize facts for planning
         facts_by_category = self._categorize_facts(facts)
 
+        # Load semantic diff results if available
+        semantic_diff_data = self._load_semantic_diff()
+        if semantic_diff_data:
+            summary = semantic_diff_data.get("summary", {})
+            console.print(
+                f"  [dim]Loaded semantic diff: {summary.get('total_changes', 0)} semantic changes, "
+                f"impact score {summary.get('total_impact_score', 0):.1f}/10[/dim]"
+            )
+            if summary.get("has_breaking_changes", False):
+                console.print(
+                    f"  [yellow]⚠ {summary.get('breaking_changes', 0)} breaking change(s) detected[/yellow]"
+                )
+        else:
+            console.print("  [dim]No semantic diff results available[/dim]")
+
         # Get user context - use pre-populated context from CLI if available
         user_context = dict(self.user_context)  # Copy to avoid modifying original
         if interactive and not user_context:
@@ -157,7 +193,9 @@ class Coordinator:
         if parallel and len(target_formats) > 1:
             # Run format plans in parallel
             tasks = [
-                self._create_format_plan(fmt, facts, facts_by_category, user_context)
+                self._create_format_plan(
+                    fmt, facts, facts_by_category, user_context, semantic_diff_data
+                )
                 for fmt in target_formats
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -175,7 +213,7 @@ class Coordinator:
             plans = []
             for fmt in target_formats:
                 plan = await self._create_format_plan(
-                    fmt, facts, facts_by_category, user_context
+                    fmt, facts, facts_by_category, user_context, semantic_diff_data
                 )
                 plans.append(plan)
 
@@ -292,6 +330,7 @@ class Coordinator:
         facts: list[TechnicalFact],
         facts_by_category: dict[str, list[TechnicalFact]],
         user_context: dict[str, Any],
+        semantic_diff: dict[str, Any] | None = None,
     ) -> DocumentPlan:
         """Create a document plan for a specific format with its own conversation context."""
         from ggdes.llm import ConversationContext
@@ -315,7 +354,7 @@ class Coordinator:
 
         # Build prompt for LLM
         prompt = self._build_planning_prompt(
-            fmt, facts, facts_by_category, user_context
+            fmt, facts, facts_by_category, user_context, semantic_diff
         )
 
         conv.add_user_message(prompt)
@@ -399,6 +438,7 @@ class Coordinator:
         facts: list[TechnicalFact],
         facts_by_category: dict[str, list[TechnicalFact]],
         user_context: dict[str, Any],
+        semantic_diff: dict[str, Any] | None = None,
     ) -> str:
         """Build prompt for document planning."""
         prompt = f"""Create a document plan for a {fmt.upper()} format design document.
@@ -410,28 +450,45 @@ Technical Facts Available ({len(facts)} total):
         for category, cat_facts in facts_by_category.items():
             prompt += f"\n{category.upper()} ({len(cat_facts)} facts):\n"
             for fact in cat_facts[:5]:  # Limit to first 5 per category
-                prompt += f"  - {fact.fact_id}: {fact.description[:100]}...\n"
+                # Truncate descriptions with warning
+                desc = fact.description[:100]
+                desc_truncated = len(fact.description) > 100
+                prompt += (
+                    f"  - {fact.fact_id}: {desc}{'...' if desc_truncated else ''}\n"
+                )
+                if desc_truncated:
+                    prompt += f"    (description truncated, full: {len(fact.description)} chars)\n"
                 # Include source code snippets if available
                 if fact.code_snippets:
                     for elem_name, code in list(fact.code_snippets.items())[:2]:
-                        # Truncate long snippets
-                        truncated_code = code[:300] + "..." if len(code) > 300 else code
+                        # Truncate long snippets with warning
+                        snippet_truncated = len(code) > 300
+                        truncated_code = (
+                            code[:300] + "..." if snippet_truncated else code
+                        )
                         prompt += (
                             f"    Source ({elem_name}):\n```\n{truncated_code}\n```\n"
                         )
+                        if snippet_truncated:
+                            prompt += (
+                                f"    (snippet truncated, full: {len(code)} chars)\n"
+                            )
                 # Include before/after code if available
                 if fact.before_after_code:
                     for elem_name, ba in list(fact.before_after_code.items())[:2]:
                         before = ba.get("before", "")
                         after = ba.get("after", "")
                         if before and after:
+                            before_truncated = len(before) > 150
+                            after_truncated = len(after) > 150
                             prompt += (
                                 f"    Changed ({elem_name}):\n"
-                                f"      Before: {before[:150]}{'...' if len(before) > 150 else ''}\n"
-                                f"      After: {after[:150]}{'...' if len(after) > 150 else ''}\n"
+                                f"      Before: {before[:150]}{'...' if before_truncated else ''}\n"
+                                f"      After: {after[:150]}{'...' if after_truncated else ''}\n"
                             )
                         elif after and not before:
-                            prompt += f"    New ({elem_name}): {after[:200]}{'...' if len(after) > 200 else ''}\n"
+                            after_truncated = len(after) > 200
+                            prompt += f"    New ({elem_name}): {after[:200]}{'...' if after_truncated else ''}\n"
             if len(cat_facts) > 5:
                 prompt += f"  ... and {len(cat_facts) - 5} more\n"
 
@@ -457,6 +514,50 @@ User Requirements:
 
         if user_context.get("additional_context"):
             prompt += f"\nAdditional Context: {user_context['additional_context']}\n"
+
+        # Include semantic diff analysis if available
+        if semantic_diff:
+            summary = semantic_diff.get("summary", {})
+            changes = semantic_diff.get("semantic_changes", [])
+            prompt += f"""
+
+Semantic Diff Analysis (automated code change detection):
+- Total semantic changes: {summary.get("total_changes", 0)}
+- Breaking changes: {summary.get("breaking_changes", 0)}
+- Behavioral changes: {summary.get("behavioral_changes", 0)}
+- Refactoring changes: {summary.get("refactoring_changes", 0)}
+- Documentation changes: {summary.get("documentation_changes", 0)}
+- Performance changes: {summary.get("performance_changes", 0)}
+- Total impact score: {summary.get("total_impact_score", 0):.1f}/10
+
+Key semantic changes:
+"""
+            # Group changes by type for better presentation
+            changes_by_type: dict[str, list] = {}
+            for change in changes:
+                change_type = change.get("change_type", "unknown")
+                if change_type not in changes_by_type:
+                    changes_by_type[change_type] = []
+                changes_by_type[change_type].append(change)
+
+            for change_type, type_changes in changes_by_type.items():
+                prompt += f"\n{change_type.replace('_', ' ').title()} ({len(type_changes)}):\n"
+                for change in type_changes[:5]:  # Limit to 5 per type
+                    prompt += f"  - {change.get('description', '')} in {change.get('file_path', '')}"
+                    if change.get("impact_score"):
+                        prompt += f" (impact: {change['impact_score']:.2f})"
+                    prompt += "\n"
+                if len(type_changes) > 5:
+                    prompt += f"  ... and {len(type_changes) - 5} more\n"
+
+            prompt += """
+
+Use the semantic diff analysis to:
+1. Prioritize sections for high-impact and breaking changes
+2. Create dedicated sections for breaking changes with migration guidance
+3. Include diagrams showing architectural changes
+4. Ensure every significant semantic change is covered in the document
+"""
 
         # Format-specific guidance
         if fmt == "markdown":

@@ -334,6 +334,7 @@ Please provide a corrected response in valid XML format. Remember:
 4. Escape special characters: & becomes &amp;, < becomes &lt;, > becomes &gt;
 5. Ensure all fields are present with proper values
 
+The expected XML structure must match the original schema you were given.
 Provide only the corrected XML response:"""
     else:
         return f"""Your previous response could not be parsed as valid JSON.
@@ -349,6 +350,7 @@ Please provide a corrected response in valid JSON format. Remember:
 3. Properly escape special characters in strings
 4. Ensure all fields are present with proper values
 
+The expected JSON structure must match the original schema you were given.
 Provide only the corrected JSON response:"""
 
 
