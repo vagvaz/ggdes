@@ -7,15 +7,16 @@ app = typer.Typer(help="GGDes: Git-based Design Documentation Generator")
 console = Console()
 
 # Import commands (they register themselves with app via @app.command())
-from ggdes.cli.commands.analyze import *  # noqa: F401, F403
-from ggdes.cli.commands.config_cmd import *  # noqa: F401, F403
-from ggdes.cli.commands.compare import *  # noqa: F401, F403
-from ggdes.cli.commands.doctor import *  # noqa: F401, F403
-from ggdes.cli.commands.export_cmd import *  # noqa: F401, F403
-from ggdes.cli.commands.manage import *  # noqa: F401, F403
-from ggdes.cli.commands.resume import *  # noqa: F401, F403
-from ggdes.cli.commands.server import *  # noqa: F401, F403
-from ggdes.cli.commands.status import *  # noqa: F401, F403
+# ruff: noqa: E402, F401, F403
+from ggdes.cli.commands.analyze import *
+from ggdes.cli.commands.compare import *
+from ggdes.cli.commands.config_cmd import *
+from ggdes.cli.commands.doctor import *
+from ggdes.cli.commands.export_cmd import *
+from ggdes.cli.commands.manage import *
+from ggdes.cli.commands.resume import *
+from ggdes.cli.commands.server import *
+from ggdes.cli.commands.status import *
 
 
 @app.callback(invoke_without_command=True)
