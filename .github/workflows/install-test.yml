@@ -77,12 +77,21 @@ jobs:
 
       # PIP Installation Method
       - name: Install with pip
-        if: matrix.install-method == 'pip'
+        if: matrix.install-method == 'pip' && runner.os != 'Windows'
         run: |
           python -m pip install --upgrade pip
           pip install build
           python -m build
           pip install dist/*.whl
+
+      - name: Install with pip - Windows
+        if: matrix.install-method == 'pip' && runner.os == 'Windows'
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+          pip install (Get-Item dist/*.whl).FullName
+        shell: pwsh
 
       # PIPX Installation Method
       - name: Install pipx
@@ -101,15 +110,18 @@ jobs:
         run: |
           which ggdes || where ggdes || echo "ggdes location check"
           ggdes --version
+        shell: bash
 
       - name: Test basic CLI functionality
         run: |
           echo "Testing ggdes --help"
           ggdes --help
+        shell: bash
 
       - name: Test config commands
         run: |
           ggdes config show || echo "Config show requires setup"
+        shell: bash
 
       - name: Test with temporary repo
         run: |
