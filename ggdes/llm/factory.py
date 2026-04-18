@@ -354,6 +354,26 @@ The expected JSON structure must match the original schema you were given.
 Provide only the corrected JSON response:"""
 
 
+def _strip_markdown_code_blocks(text: str) -> str:
+    """Remove markdown code block fences from response text.
+
+    Args:
+        text: Raw response text, potentially wrapped in ``` fences
+
+    Returns:
+        Text with code block fences removed
+    """
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1:]
+        if text.endswith("```"):
+            text = text[:-3].strip()
+        elif "```" in text:
+            text = text[: text.rfind("```")].strip()
+    return text
+
+
 def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
     """Parse and validate XML response into Pydantic model.
 
@@ -370,14 +390,7 @@ def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
     text = response_text.strip()
 
     # Remove markdown code blocks if present
-    if text.startswith("```"):
-        first_newline = text.find("\n")
-        if first_newline != -1:
-            text = text[first_newline + 1 :]
-        if text.endswith("```"):
-            text = text[:-3].strip()
-        elif "```" in text:
-            text = text[: text.rfind("```")].strip()
+    text = _strip_markdown_code_blocks(text)
 
     # Remove XML declaration if present
     text = re.sub(r"<\?xml[^?]*\?>\s*", "", text, flags=re.IGNORECASE)
@@ -430,14 +443,7 @@ def _parse_json_response(response_text: str, response_model: type[T]) -> T:
     text = response_text.strip()
 
     # Remove markdown code blocks if present
-    if text.startswith("```"):
-        first_newline = text.find("\n")
-        if first_newline != -1:
-            text = text[first_newline + 1 :]
-        if text.endswith("```"):
-            text = text[:-3].strip()
-        elif "```" in text:
-            text = text[: text.rfind("```")].strip()
+    text = _strip_markdown_code_blocks(text)
 
     # Try to find JSON object/array in the text
     try:
@@ -567,7 +573,7 @@ class LLMProvider(ABC):
         Returns:
             Generated text
         """
-        pass
+        ...
 
     @abstractmethod
     def generate(
@@ -588,7 +594,7 @@ class LLMProvider(ABC):
         Returns:
             Generated text
         """
-        pass
+        ...
 
     def generate_structured(
         self,
@@ -822,22 +828,77 @@ class AnthropicProvider(LLMProvider):
         return ""
 
 
-class OpenAIProvider(LLMProvider):
+class BaseOpenAICompatibleProvider(LLMProvider):
+    """Base class for OpenAI-compatible providers.
+
+    Provides shared chat() and generate() implementations for providers
+    that use the OpenAI chat.completions API (OpenAI, Ollama, Custom, OpencodeZen).
+    Subclasses only need to implement _get_client() and optionally _get_default_format().
+    """
+
+    def _get_client(self) -> Any:
+        """Get OpenAI-compatible client. Must be implemented by subclasses."""
+        raise NotImplementedError
+
+    @retry_on_failure(  # type: ignore[type-var]
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(Exception,),
+    )
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        client = self._get_client()
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        return response.choices[0].message.content  # type: ignore[no-any-return]
+
+    @retry_on_failure(  # type: ignore[type-var]
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(Exception,),
+    )
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate text from prompt."""
+        client = self._get_client()
+
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        return response.choices[0].message.content  # type: ignore[no-any-return]
+
+
+class OpenAIProvider(BaseOpenAICompatibleProvider):
     """OpenAI provider with JSON structured outputs."""
 
     def _get_default_format(self) -> str:
         """OpenAI models work best with JSON."""
         return "json"
-
-    def __init__(
-        self,
-        api_key: str,
-        model_name: str,
-        base_url: str | None = None,
-        structured_format: str = "auto",
-        **kwargs: Any,
-    ):
-        super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
     def _get_client(self) -> Any:
         """Get OpenAI client."""
@@ -849,75 +910,13 @@ class OpenAIProvider(LLMProvider):
 
         return openai.OpenAI(**client_kwargs)  # type: ignore[arg-type]
 
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def chat(
-        self,
-        messages: list[dict[str, Any]],
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using full conversation context."""
-        client = self._get_client()
 
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def generate(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using OpenAI."""
-        client = self._get_client()
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-
-class OllamaProvider(LLMProvider):
+class OllamaProvider(BaseOpenAICompatibleProvider):
     """Ollama local model provider using OpenAI-compatible endpoint."""
 
     def _get_default_format(self) -> str:
         """Ollama models typically work best with JSON."""
         return "json"
-
-    def __init__(
-        self,
-        api_key: str,
-        model_name: str,
-        base_url: str | None = None,
-        structured_format: str = "auto",
-        **kwargs: Any,
-    ):
-        super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
 
     def _get_client(self) -> Any:
         """Get OpenAI-compatible client for Ollama."""
@@ -928,60 +927,8 @@ class OllamaProvider(LLMProvider):
             base_url=self.base_url,
         )
 
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def chat(
-        self,
-        messages: list[dict[str, Any]],
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using full conversation context."""
-        client = self._get_client()
 
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def generate(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using Ollama."""
-        client = self._get_client()
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-
-class CustomOpenAIProvider(LLMProvider):
+class CustomOpenAIProvider(BaseOpenAICompatibleProvider):
     """Custom OpenAI-compatible API provider using XML structured outputs.
 
     This provider allows connecting to any OpenAI-compatible endpoint
@@ -1030,60 +977,8 @@ class CustomOpenAIProvider(LLMProvider):
             base_url=self.base_url,
         )
 
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def chat(
-        self,
-        messages: list[dict[str, Any]],
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using full conversation context."""
-        client = self._get_client()
 
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def generate(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using custom OpenAI-compatible API."""
-        client = self._get_client()
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-
-class OpencodeZenProvider(LLMProvider):
+class OpencodeZenProvider(BaseOpenAICompatibleProvider):
     """OpencodeZen gateway provider with JSON structured outputs."""
 
     def _get_default_format(self) -> str:
@@ -1126,58 +1021,6 @@ class OpencodeZenProvider(LLMProvider):
             api_key=self.api_key,
             base_url=self.base_url,
         )
-
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def chat(
-        self,
-        messages: list[dict[str, Any]],
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using full conversation context."""
-        client = self._get_client()
-
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
-
-    @retry_on_failure(  # type: ignore[type-var]
-        max_retries=3,
-        initial_delay=1.0,
-        retryable_exceptions=(Exception,),
-    )
-    def generate(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> str:
-        """Generate text using OpencodeZen."""
-        client = self._get_client()
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class LLMFactory:
