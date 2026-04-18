@@ -4,10 +4,10 @@ import hashlib
 import json
 import subprocess
 from datetime import datetime
+from importlib.metadata import version as get_package_version
 from pathlib import Path
 from typing import Any
 
-import tomli
 import typer
 import yaml
 from rich.prompt import Prompt
@@ -24,10 +24,8 @@ def _get_console():
 
 
 def _get_version() -> str:
-    """Read version from pyproject.toml."""
-    pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-    with open(pyproject_path, "rb") as f:
-        return str(tomli.load(f)["project"]["version"])
+    """Read version from installed package metadata."""
+    return get_package_version("ggdes")
 
 
 def _load_user_context_from_file(context_file: Path) -> dict[str, Any]:
