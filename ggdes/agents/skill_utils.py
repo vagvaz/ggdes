@@ -155,3 +155,93 @@ def build_user_context_guidance(user_context: dict[str, Any] | None) -> str:
         )
 
     return "\n".join(guidance_parts)
+
+
+class SystemPromptBuilder:
+    """Build system prompts with consistent structure.
+
+    Order of priority:
+    1. Skills first (language expertise, domain expertise)
+    2. Base system prompt (core instructions)
+    3. User guidance (marked as VERY IMPORTANT)
+    """
+
+    USER_GUIDANCE_BOX = (
+        "\n\n"
+        "╔══════════════════════════════════════════════════════════════════╗\n"
+        "║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
+        "║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
+        "╚══════════════════════════════════════════════════════════════════╝\n"
+        "\n{user_guidance}\n"
+        "\n═══════════════════════════════════════════════════════════════════\n"
+        "YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
+        "THESE OVERRIDE ANY DEFAULT BEHAVIORS."
+    )
+
+    def __init__(self) -> None:
+        self._skills: list[tuple[str, str]] = []  # (title, content)
+        self._base_prompt: str | None = None
+        self._user_guidance: str | None = None
+
+    def add_skill(self, title: str, content: str) -> "SystemPromptBuilder":
+        """Add a skill section.
+
+        Args:
+            title: Section title (e.g., "LANGUAGE EXPERTISE")
+            content: Skill content
+
+        Returns:
+            Self for chaining
+        """
+        self._skills.append((title, content))
+        return self
+
+    def set_base_prompt(self, prompt: str) -> "SystemPromptBuilder":
+        """Set the base system prompt.
+
+        Args:
+            prompt: Base system prompt content
+
+        Returns:
+            Self for chaining
+        """
+        self._base_prompt = prompt
+        return self
+
+    def set_user_guidance(self, guidance: str) -> "SystemPromptBuilder":
+        """Set user guidance (will be wrapped in VERY IMPORTANT box).
+
+        Args:
+            guidance: User guidance content
+
+        Returns:
+            Self for chaining
+        """
+        self._user_guidance = guidance
+        return self
+
+    def build(self) -> str:
+        """Build the complete system prompt.
+
+        Returns:
+            Combined system prompt with skills, base prompt, and user guidance
+        """
+        parts = []
+
+        # 1. Skills first
+        for title, content in self._skills:
+            parts.append(
+                f"=== {title} ===\n"
+                f"{content}\n"
+                f"=== END {title} ==="
+            )
+
+        # 2. Base system prompt
+        if self._base_prompt:
+            parts.append(self._base_prompt)
+
+        # 3. User guidance with VERY IMPORTANT box
+        if self._user_guidance:
+            parts.append(self.USER_GUIDANCE_BOX.format(user_guidance=self._user_guidance))
+
+        return "\n\n".join(parts)

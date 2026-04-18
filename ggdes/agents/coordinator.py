@@ -9,7 +9,7 @@ from loguru import logger
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -51,35 +51,18 @@ class Coordinator:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context.
+        """Initialize conversation context."""
+        from ggdes.agents.skill_utils import SystemPromptBuilder
 
-        System prompt structure (in order of priority):
-        1. Base system prompt - core instructions
-        2. User guidance - marked as VERY IMPORTANT
-        """
-        system_prompt_parts = []
+        builder = SystemPromptBuilder()
 
-        # 1. BASE SYSTEM PROMPT - Core instructions
-        base_prompt = get_prompt("coordinator", "system")
-        system_prompt_parts.append(base_prompt)
+        builder.set_base_prompt(get_prompt("coordinator", "system"))
 
-        # 2. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt_parts.append(
-                f"\n\n"
-                f"╔══════════════════════════════════════════════════════════════════╗\n"
-                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
-                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
-                f"╚══════════════════════════════════════════════════════════════════╝\n"
-                f"\n{user_guidance}\n"
-                f"\n═══════════════════════════════════════════════════════════════════\n"
-                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
-                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
-            )
+            builder.set_user_guidance(user_guidance)
 
-        # Combine all parts
-        system_prompt = "\n\n".join(system_prompt_parts)
+        system_prompt = builder.build()
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,
@@ -95,7 +78,6 @@ class Coordinator:
 
     def _load_facts(self) -> list[TechnicalFact]:
         """Load technical facts from KB."""
-        from ggdes.config import get_kb_path
 
         facts_file = (
             get_kb_path(self.config, self.analysis_id)
@@ -115,7 +97,6 @@ class Coordinator:
         Returns:
             Dict with semantic diff data or None if not available
         """
-        from ggdes.config import get_kb_path
 
         semantic_diff_path = (
             get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
@@ -218,7 +199,6 @@ class Coordinator:
                 plans.append(plan)
 
         # Save conversation
-        from ggdes.config import get_kb_path
 
         kb_path = (
             get_kb_path(self.config, self.analysis_id) / "conversations" / "coordinator"
@@ -417,7 +397,6 @@ class Coordinator:
 
         # Save per-format conversation for debugging
         if self.analysis_id and conv.messages:
-            from ggdes.config import get_kb_path
 
             conv_path = (
                 get_kb_path(self.config, self.analysis_id)
@@ -651,7 +630,6 @@ Provide a document plan as JSON:
 
     def _save_plans(self, plans: list[DocumentPlan]) -> None:
         """Save document plans to knowledge base."""
-        from ggdes.config import get_kb_path
 
         plans_dir = get_kb_path(self.config, self.analysis_id) / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)

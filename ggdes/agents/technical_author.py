@@ -10,7 +10,7 @@ from loguru import logger
 from rich.console import Console
 
 from ggdes.agents.skill_utils import load_skill
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -105,51 +105,24 @@ class TechnicalAuthor:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context.
+        """Initialize conversation context."""
+        from ggdes.agents.skill_utils import SystemPromptBuilder
 
-        System prompt structure (in order of priority):
-        1. Skills first (coauthor + language expertise) - foundational knowledge
-        2. Base system prompt - core instructions
-        3. User guidance - marked as VERY IMPORTANT
-        """
-        system_prompt_parts = []
+        builder = SystemPromptBuilder()
 
-        # 1. SKILLS FIRST - Documentation and language expertise
         if self._coauthor_skill:
-            system_prompt_parts.append(
-                f"=== DOCUMENTATION EXPERTISE ===\n"
-                f"{self._coauthor_skill}\n"
-                f"=== END DOCUMENTATION EXPERTISE ==="
-            )
+            builder.add_skill("DOCUMENTATION EXPERTISE", self._coauthor_skill)
 
         if self._language_expert_skill:
-            system_prompt_parts.append(
-                f"=== LANGUAGE EXPERTISE ===\n"
-                f"{self._language_expert_skill}\n"
-                f"=== END LANGUAGE EXPERTISE ==="
-            )
+            builder.add_skill("LANGUAGE EXPERTISE", self._language_expert_skill)
 
-        # 2. BASE SYSTEM PROMPT - Core instructions
-        base_prompt = get_prompt("technical_author", "system")
-        system_prompt_parts.append(base_prompt)
+        builder.set_base_prompt(get_prompt("technical_author", "system"))
 
-        # 3. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt_parts.append(
-                f"\n\n"
-                f"╔══════════════════════════════════════════════════════════════════╗\n"
-                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
-                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
-                f"╚══════════════════════════════════════════════════════════════════╝\n"
-                f"\n{user_guidance}\n"
-                f"\n═══════════════════════════════════════════════════════════════════\n"
-                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
-                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
-            )
+            builder.set_user_guidance(user_guidance)
 
-        # Combine all parts
-        system_prompt = "\n\n".join(system_prompt_parts)
+        system_prompt = builder.build()
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,
@@ -165,7 +138,6 @@ class TechnicalAuthor:
 
     def _load_git_analysis(self) -> ChangeSummary | None:
         """Load git analysis results from KB."""
-        from ggdes.config import get_kb_path
 
         analysis_path = (
             get_kb_path(self.config, self.analysis_id) / "git_analysis" / "summary.json"
@@ -183,7 +155,6 @@ class TechnicalAuthor:
         Returns:
             Dict with semantic diff data or None if not available
         """
-        from ggdes.config import get_kb_path
 
         semantic_diff_path = (
             get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
@@ -198,36 +169,6 @@ class TechnicalAuthor:
         except Exception:
             return None
 
-    def _get_worktree_paths(self) -> tuple[Path | None, Path | None]:
-        """Get base and head worktree paths from metadata.
-
-        Returns:
-            Tuple of (base_worktree_path, head_worktree_path) or (None, None) if not available
-        """
-        from ggdes.config import get_kb_path
-
-        try:
-            kb_path = get_kb_path(self.config, self.analysis_id)
-            metadata_file = kb_path / "metadata.json"
-            if metadata_file.exists():
-                data = json.loads(metadata_file.read_text())
-                worktrees = data.get("worktrees")
-                if worktrees:
-                    base = (
-                        Path(worktrees.get("base", ""))
-                        if worktrees.get("base")
-                        else None
-                    )
-                    head = (
-                        Path(worktrees.get("head", ""))
-                        if worktrees.get("head")
-                        else None
-                    )
-                    return base, head
-        except Exception:
-            pass
-        return None, None
-
     def _load_ast_data(self, which: str = "head") -> list[CodeElement]:
         """Load AST data from KB.
 
@@ -237,7 +178,6 @@ class TechnicalAuthor:
         Returns:
             List of code elements
         """
-        from ggdes.config import get_kb_path
 
         ast_dir = get_kb_path(self.config, self.analysis_id) / f"ast_{which}"
 
@@ -816,7 +756,6 @@ class TechnicalAuthor:
             all_facts.extend(arch_facts)
 
         # Save conversation to KB
-        from ggdes.config import get_kb_path
 
         kb_path = (
             get_kb_path(self.config, self.analysis_id)
@@ -1297,7 +1236,6 @@ Format as JSON array."""
 
         # Save parallel conversation contexts for debugging
         if self.analysis_id:
-            from ggdes.config import get_kb_path
 
             kb_base = get_kb_path(self.config, self.analysis_id) / "conversations"
             if api_conv and api_conv.messages:
@@ -1498,8 +1436,8 @@ Format as JSON array."""
             # Only for API-change facts where we can find real call sites
             if fact.category in ("api", "api_change"):
                 usages: dict[str, dict[str, list[str]]] = {}
-                # Get worktree paths from metadata
-                base_worktree, head_worktree = self._get_worktree_paths()
+                # Get worktree paths (disabled: metadata format mismatch)
+                base_worktree, head_worktree = None, None
                 for elem_name in fact.source_elements:
                     before_usages: list[str] = []
                     after_usages: list[str] = []
@@ -1525,7 +1463,6 @@ Format as JSON array."""
 
     def _save_facts(self, facts: list[TechnicalFact]) -> None:
         """Save facts to knowledge base."""
-        from ggdes.config import get_kb_path
 
         facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
         facts_dir.mkdir(parents=True, exist_ok=True)

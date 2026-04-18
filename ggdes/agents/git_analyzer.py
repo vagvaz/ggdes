@@ -12,7 +12,7 @@ from ggdes.agents.skill_utils import (
     get_expert_skill_for_language,
     load_skill,
 )
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
 from ggdes.prompts import get_prompt
@@ -77,44 +77,21 @@ class GitAnalyzer:
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
     ) -> None:
-        """Initialize conversation context.
+        """Initialize conversation context."""
+        from ggdes.agents.skill_utils import SystemPromptBuilder
 
-        System prompt structure (in order of priority):
-        1. Skills first (language expertise) - foundational knowledge
-        2. Base system prompt - core instructions
-        3. User guidance - marked as VERY IMPORTANT
-        """
-        system_prompt_parts = []
+        builder = SystemPromptBuilder()
 
-        # 1. SKILLS FIRST - Language expertise (if available)
         if self._language_expert_skill:
-            system_prompt_parts.append(
-                f"=== LANGUAGE EXPERTISE ===\n"
-                f"{self._language_expert_skill}\n"
-                f"=== END LANGUAGE EXPERTISE ==="
-            )
+            builder.add_skill("LANGUAGE EXPERTISE", self._language_expert_skill)
 
-        # 2. BASE SYSTEM PROMPT - Core instructions
-        base_prompt = get_prompt("git_analyzer", "system")
-        system_prompt_parts.append(base_prompt)
+        builder.set_base_prompt(get_prompt("git_analyzer", "system"))
 
-        # 3. USER GUIDANCE - Marked as VERY IMPORTANT
         user_guidance = self._build_user_context_guidance()
         if user_guidance:
-            system_prompt_parts.append(
-                f"\n\n"
-                f"╔══════════════════════════════════════════════════════════════════╗\n"
-                f"║                    ⚠️  VERY IMPORTANT  ⚠️                        ║\n"
-                f"║              USER REQUIREMENTS (MUST FOLLOW)                   ║\n"
-                f"╚══════════════════════════════════════════════════════════════════╝\n"
-                f"\n{user_guidance}\n"
-                f"\n═══════════════════════════════════════════════════════════════════\n"
-                f"YOU MUST ADHERE TO ALL USER REQUIREMENTS ABOVE. "
-                f"THESE OVERRIDE ANY DEFAULT BEHAVIORS."
-            )
+            builder.set_user_guidance(user_guidance)
 
-        # Combine all parts
-        system_prompt = "\n\n".join(system_prompt_parts)
+        system_prompt = builder.build()
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,
@@ -474,7 +451,6 @@ class GitAnalyzer:
 
         # Save conversation to KB
         if self.analysis_id and self.conversation:
-            from ggdes.config import get_kb_path
 
             kb_path = (
                 get_kb_path(self.config, self.analysis_id)
