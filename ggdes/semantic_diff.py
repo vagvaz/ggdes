@@ -245,8 +245,22 @@ class SemanticDiffAnalyzer:
             base_file = base_path / file_path
             head_file = head_path / file_path
 
+            # Handle newly added files
+            if not base_file.exists() and head_file.exists():
+                console.print(f"  [dim]Analyzing new file: {file_path}[/dim]")
+                new_changes = self._analyze_new_file(head_file, file_path)
+                semantic_changes.extend(new_changes)
+                continue
+
+            # Handle deleted files
+            if base_file.exists() and not head_file.exists():
+                console.print(f"  [dim]Analyzing deleted file: {file_path}[/dim]")
+                deleted_changes = self._analyze_deleted_file(base_file, file_path)
+                semantic_changes.extend(deleted_changes)
+                continue
+
+            # Skip files that don't exist in either location
             if not base_file.exists() or not head_file.exists():
-                # File was added or removed - handled by git analysis
                 continue
 
             # Analyze this file's changes
@@ -265,6 +279,242 @@ class SemanticDiffAnalyzer:
             performance_changes=[],
             dependency_changes=[],
         )
+
+    def _analyze_new_file(
+        self,
+        head_file: Path,
+        file_path: str,
+    ) -> list[SemanticChange]:
+        """Analyze a newly added file.
+
+        Args:
+            head_file: Path to new file version
+            file_path: Relative file path
+
+        Returns:
+            List of semantic changes detected
+        """
+        changes: list[SemanticChange] = []
+
+        try:
+            head_content = head_file.read_text()
+        except Exception as e:
+            console.print(f"    [yellow]Warning: Could not read file: {e}[/yellow]")
+            return changes
+
+        # Parse AST elements to find what was added
+        elements = self._parse_ast_elements(head_content, file_path)
+
+        if elements:
+            for elem in elements:
+                impact = self._calculate_impact_score(
+                    change_type=SemanticChangeType.API_ADDED,
+                    element_type=elem.get("type", "function"),
+                    num_params=len(elem.get("parameters", [])),
+                )
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.API_ADDED
+                )
+                changes.append(
+                    SemanticChange(
+                        change_type=SemanticChangeType.API_ADDED,
+                        description=f"New file '{file_path}' added with {elem['type']} '{elem['name']}'",
+                        file_path=file_path,
+                        line_start=elem["line_start"],
+                        line_end=elem["line_end"],
+                        confidence=confidence,
+                        impact_score=impact,
+                        related_symbols=[elem["name"]],
+                        after_snippet=self._extract_snippet(
+                            head_content, elem["line_start"], elem["line_end"]
+                        ),
+                    )
+                )
+        else:
+            # File added but no parseable elements (e.g., config, data file)
+            changes.append(
+                SemanticChange(
+                    change_type=SemanticChangeType.API_ADDED,
+                    description=f"New file '{file_path}' added",
+                    file_path=file_path,
+                    line_start=1,
+                    line_end=1,
+                    confidence=0.95,
+                    impact_score=0.3,
+                )
+            )
+
+        return changes
+
+    def _analyze_deleted_file(
+        self,
+        base_file: Path,
+        file_path: str,
+    ) -> list[SemanticChange]:
+        """Analyze a deleted file.
+
+        Args:
+            base_file: Path to deleted file version
+            file_path: Relative file path
+
+        Returns:
+            List of semantic changes detected
+        """
+        changes: list[SemanticChange] = []
+
+        try:
+            base_content = base_file.read_text()
+        except Exception as e:
+            console.print(f"    [yellow]Warning: Could not read file: {e}[/yellow]")
+            return changes
+
+        # Parse AST elements to find what was removed
+        elements = self._parse_ast_elements(base_content, file_path)
+
+        if elements:
+            for elem in elements:
+                impact = self._calculate_impact_score(
+                    change_type=SemanticChangeType.API_REMOVED,
+                    element_type=elem.get("type", "function"),
+                    num_params=len(elem.get("parameters", [])),
+                )
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.API_REMOVED
+                )
+                changes.append(
+                    SemanticChange(
+                        change_type=SemanticChangeType.API_REMOVED,
+                        description=f"File '{file_path}' deleted, removing {elem['type']} '{elem['name']}' (BREAKING CHANGE)",
+                        file_path=file_path,
+                        line_start=elem["line_start"],
+                        line_end=elem["line_end"],
+                        confidence=confidence,
+                        impact_score=impact,
+                        related_symbols=[elem["name"]],
+                        before_snippet=self._extract_snippet(
+                            base_content, elem["line_start"], elem["line_end"]
+                        ),
+                    )
+                )
+        else:
+            # File deleted but no parseable elements
+            changes.append(
+                SemanticChange(
+                    change_type=SemanticChangeType.API_REMOVED,
+                    description=f"File '{file_path}' deleted (BREAKING CHANGE)",
+                    file_path=file_path,
+                    line_start=1,
+                    line_end=1,
+                    confidence=0.95,
+                    impact_score=0.8,
+                )
+            )
+
+        return changes
+
+    def _extract_snippet(
+        self, content: str, line_start: int, line_end: int, max_lines: int = 10
+    ) -> str:
+        """Extract a code snippet from content at given line range.
+
+        Args:
+            content: Full file content
+            line_start: Starting line number (1-indexed)
+            line_end: Ending line number (1-indexed)
+            max_lines: Maximum number of lines to include
+
+        Returns:
+            Extracted snippet string
+        """
+        lines = content.splitlines()
+        start_idx = max(0, line_start - 1)
+        end_idx = min(len(lines), line_end)
+
+        # Limit to max_lines
+        if end_idx - start_idx > max_lines:
+            end_idx = start_idx + max_lines
+
+        snippet = "\n".join(lines[start_idx:end_idx])
+        return snippet
+
+    def _calculate_impact_score(
+        self,
+        change_type: SemanticChangeType,
+        element_type: str = "function",
+        num_params: int = 0,
+        num_methods: int = 0,
+    ) -> float:
+        """Calculate dynamic impact score based on change context.
+
+        Args:
+            change_type: Type of semantic change
+            element_type: 'function', 'class', or 'module'
+            num_params: Number of parameters (for functions)
+            num_methods: Number of methods (for classes)
+
+        Returns:
+            Impact score between 0.0 and 1.0
+        """
+        base_scores = {
+            SemanticChangeType.API_ADDED: 0.3,
+            SemanticChangeType.API_REMOVED: 0.8,
+            SemanticChangeType.API_MODIFIED: 0.5,
+            SemanticChangeType.BEHAVIOR_CHANGE: 0.6,
+            SemanticChangeType.DOCUMENTATION_ADDED: 0.1,
+            SemanticChangeType.DOCUMENTATION_IMPROVED: 0.15,
+            SemanticChangeType.CONTROL_FLOW_CHANGE: 0.4,
+            SemanticChangeType.ERROR_HANDLING_CHANGE: 0.3,
+        }
+
+        score = base_scores.get(change_type, 0.5)
+
+        # Adjust for element type
+        if element_type == "class":
+            if change_type == SemanticChangeType.API_REMOVED:
+                score = min(1.0, score + 0.2)  # Removing a class is more impactful
+            elif change_type == SemanticChangeType.API_ADDED:
+                score = min(1.0, score + 0.1)
+
+        # Adjust for parameter changes
+        if change_type == SemanticChangeType.API_MODIFIED and num_params > 5:
+            score = min(1.0, score + 0.1)  # More params = more impact
+
+        return round(min(1.0, max(0.0, score)), 2)
+
+    def _calculate_confidence(
+        self,
+        has_source: bool = True,
+        change_type: SemanticChangeType | None = None,
+    ) -> float:
+        """Calculate confidence score based on available information.
+
+        Args:
+            has_source: Whether source code is available for verification
+            change_type: Type of change (affects base confidence)
+
+        Returns:
+            Confidence score between 0.0 and 1.0
+        """
+        base_confidence = 0.8 if has_source else 0.5
+
+        # Some change types are more certain than others
+        type_confidence = {
+            SemanticChangeType.API_ADDED: 0.95,
+            SemanticChangeType.API_REMOVED: 0.95,
+            SemanticChangeType.API_MODIFIED: 0.85,
+            SemanticChangeType.DOCUMENTATION_ADDED: 0.8,
+            SemanticChangeType.DOCUMENTATION_IMPROVED: 0.75,
+            SemanticChangeType.CONTROL_FLOW_CHANGE: 0.7,
+            SemanticChangeType.ERROR_HANDLING_CHANGE: 0.75,
+        }
+
+        if change_type and change_type in type_confidence:
+            base_confidence = type_confidence[change_type]
+
+        if not has_source:
+            base_confidence *= 0.7  # Reduce confidence without source
+
+        return round(min(1.0, max(0.0, base_confidence)), 2)
 
     def _analyze_file_changes(
         self,
@@ -361,6 +611,14 @@ class SemanticDiffAnalyzer:
         # Find added functions
         for name, element in head_by_name.items():
             if name not in base_by_name:
+                impact = self._calculate_impact_score(
+                    change_type=SemanticChangeType.API_ADDED,
+                    element_type=element.get("type", "function"),
+                    num_params=len(element.get("parameters", [])),
+                )
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.API_ADDED
+                )
                 changes.append(
                     SemanticChange(
                         change_type=SemanticChangeType.API_ADDED,
@@ -368,15 +626,26 @@ class SemanticDiffAnalyzer:
                         file_path=file_path,
                         line_start=element["line_start"],
                         line_end=element["line_end"],
-                        confidence=0.95,
-                        impact_score=0.5,
+                        confidence=confidence,
+                        impact_score=impact,
                         related_symbols=[name],
+                        after_snippet=self._extract_snippet(
+                            head_content, element["line_start"], element["line_end"]
+                        ),
                     )
                 )
 
         # Find removed functions
         for name, element in base_by_name.items():
             if name not in head_by_name:
+                impact = self._calculate_impact_score(
+                    change_type=SemanticChangeType.API_REMOVED,
+                    element_type=element.get("type", "function"),
+                    num_params=len(element.get("parameters", [])),
+                )
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.API_REMOVED
+                )
                 changes.append(
                     SemanticChange(
                         change_type=SemanticChangeType.API_REMOVED,
@@ -384,9 +653,12 @@ class SemanticDiffAnalyzer:
                         file_path=file_path,
                         line_start=element["line_start"],
                         line_end=element["line_end"],
-                        confidence=0.95,
-                        impact_score=1.0,  # High impact
+                        confidence=confidence,
+                        impact_score=impact,
                         related_symbols=[name],
+                        before_snippet=self._extract_snippet(
+                            base_content, element["line_start"], element["line_end"]
+                        ),
                     )
                 )
 
@@ -412,7 +684,14 @@ class SemanticDiffAnalyzer:
                     change_desc += f", removed params: {', '.join(removed)}"
 
                 # Calculate impact based on parameter changes
-                impact = 0.7 if removed else 0.4  # Removing params is more breaking
+                impact = self._calculate_impact_score(
+                    change_type=SemanticChangeType.API_MODIFIED,
+                    element_type=head_el.get("type", "function"),
+                    num_params=len(head_el.get("parameters", [])),
+                )
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.API_MODIFIED
+                )
 
                 changes.append(
                     SemanticChange(
@@ -421,9 +700,15 @@ class SemanticDiffAnalyzer:
                         file_path=file_path,
                         line_start=head_el["line_start"],
                         line_end=head_el["line_end"],
-                        confidence=0.85,
+                        confidence=confidence,
                         impact_score=impact,
                         related_symbols=[name],
+                        before_snippet=self._extract_snippet(
+                            base_content, base_el["line_start"], base_el["line_end"]
+                        ),
+                        after_snippet=self._extract_snippet(
+                            head_content, head_el["line_start"], head_el["line_end"]
+                        ),
                     )
                 )
 
@@ -442,11 +727,12 @@ class SemanticDiffAnalyzer:
         base_docstrings = self._count_docstrings(base_content)
         head_docstrings = self._count_docstrings(head_content)
 
-        if head_docstrings > base_docstrings:
+        # DOCUMENTATION_ADDED: when going from 0 to >0 docstrings
+        if base_docstrings == 0 and head_docstrings > 0:
             changes.append(
                 SemanticChange(
                     change_type=SemanticChangeType.DOCUMENTATION_ADDED,
-                    description=f"Added {head_docstrings - base_docstrings} new docstring(s)",
+                    description=f"Added documentation ({head_docstrings} docstring(s) added)",
                     file_path=file_path,
                     line_start=1,
                     line_end=1,
@@ -454,7 +740,8 @@ class SemanticDiffAnalyzer:
                     impact_score=0.2,
                 )
             )
-        elif head_docstrings > base_docstrings * 1.2:  # 20% improvement
+        # DOCUMENTATION_IMPROVED: when base > 0 and head increased by 20%+
+        elif base_docstrings > 0 and head_docstrings > base_docstrings * 1.2:
             changes.append(
                 SemanticChange(
                     change_type=SemanticChangeType.DOCUMENTATION_IMPROVED,
@@ -482,9 +769,19 @@ class SemanticDiffAnalyzer:
         base_control = self._count_control_structures(base_content)
         head_control = self._count_control_structures(head_content)
 
+        # Get threshold from config if available, default to 2
+        config_sd = getattr(self.config, "semantic_diff", None)
+        threshold = getattr(config_sd, "control_flow_threshold", 2) if config_sd else 2
+        # Handle MagicMock (in tests)
+        if not isinstance(threshold, (int, float)):
+            threshold = 2
+
         if base_control != head_control:
             diff = head_control - base_control
-            if abs(diff) >= 2:  # Significant change
+            if abs(diff) >= threshold:  # Significant change
+                confidence = self._calculate_confidence(
+                    has_source=True, change_type=SemanticChangeType.CONTROL_FLOW_CHANGE
+                )
                 changes.append(
                     SemanticChange(
                         change_type=SemanticChangeType.CONTROL_FLOW_CHANGE,
@@ -492,7 +789,7 @@ class SemanticDiffAnalyzer:
                         file_path=file_path,
                         line_start=1,
                         line_end=1,
-                        confidence=0.7,
+                        confidence=confidence,
                         impact_score=0.5,
                     )
                 )
@@ -508,26 +805,55 @@ class SemanticDiffAnalyzer:
         """Detect changes in error handling (try/except, error returns)."""
         changes = []
 
-        # Count try-except blocks
-        base_try = base_content.count("try:")
-        head_try = head_content.count("try:")
-        base_except = base_content.count("except")
-        head_except = head_content.count("except")
+        # Count try-except blocks using AST
+        base_try = self._count_try_blocks(base_content)
+        head_try = self._count_try_blocks(head_content)
 
-        if head_try > base_try or head_except > base_except:
+        if head_try > base_try:
+            confidence = self._calculate_confidence(
+                has_source=True, change_type=SemanticChangeType.ERROR_HANDLING_CHANGE
+            )
             changes.append(
                 SemanticChange(
                     change_type=SemanticChangeType.ERROR_HANDLING_CHANGE,
-                    description=f"Improved error handling ({base_try}→{head_try} try blocks, {base_except}→{head_except} except blocks)",
+                    description=f"Improved error handling ({base_try}→{head_try} try/except blocks)",
+                    file_path=file_path,
+                    line_start=1,
+                    line_end=1,
+                    confidence=confidence,
+                    impact_score=0.4,
+                )
+            )
+        elif base_try > head_try:
+            changes.append(
+                SemanticChange(
+                    change_type=SemanticChangeType.ERROR_HANDLING_CHANGE,
+                    description=f"Reduced error handling ({base_try}→{head_try} try/except blocks)",
                     file_path=file_path,
                     line_start=1,
                     line_end=1,
                     confidence=0.75,
-                    impact_score=0.4,
+                    impact_score=0.5,  # Removing error handling is more impactful
                 )
             )
 
         return changes
+
+    def _count_try_blocks(self, content: str) -> int:
+        """Count try/except blocks using AST parsing."""
+        try:
+            import ast
+
+            tree = ast.parse(content)
+            count = 0
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Try):
+                    count += 1
+
+            return count
+        except SyntaxError:
+            return 0
 
     def _parse_ast_elements(self, content: str, file_path: str) -> list[dict[str, Any]]:
         """Parse AST elements from code content.
@@ -635,6 +961,8 @@ def save_semantic_diff(
                 "confidence": c.confidence,
                 "impact_score": c.impact_score,
                 "related_symbols": c.related_symbols,
+                "before_snippet": c.before_snippet,
+                "after_snippet": c.after_snippet,
             }
             for c in result.semantic_changes
         ],
