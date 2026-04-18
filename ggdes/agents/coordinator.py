@@ -397,7 +397,6 @@ class Coordinator:
 
         # Save per-format conversation for debugging
         if self.analysis_id and conv.messages:
-
             conv_path = (
                 get_kb_path(self.config, self.analysis_id)
                 / "conversations"

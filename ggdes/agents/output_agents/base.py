@@ -171,8 +171,8 @@ class OutputAgent(ABC):
                             # Extract attributes from source code if available
                             source = elem_data.get("source_code")
                             if source:
-                                class_info["attributes"] = self._extract_attributes_from_source(
-                                    source
+                                class_info["attributes"] = (
+                                    self._extract_attributes_from_source(source)
                                 )
 
                             # Try to extract base classes from decorators or source

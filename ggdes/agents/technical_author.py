@@ -1236,7 +1236,6 @@ Format as JSON array."""
 
         # Save parallel conversation contexts for debugging
         if self.analysis_id:
-
             kb_base = get_kb_path(self.config, self.analysis_id) / "conversations"
             if api_conv and api_conv.messages:
                 api_conv.save(kb_base / "technical_author_api")

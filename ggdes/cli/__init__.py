@@ -27,6 +27,7 @@ def version_callback(
     """Show version information."""
     if version:
         from ggdes.cli.utils import _get_version
+
         console.print(f"[bold]ggdes[/bold] version [cyan]{_get_version()}[/cyan]")
         raise typer.Exit()
 

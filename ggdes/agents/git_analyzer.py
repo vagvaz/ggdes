@@ -451,7 +451,6 @@ class GitAnalyzer:
 
         # Save conversation to KB
         if self.analysis_id and self.conversation:
-
             kb_path = (
                 get_kb_path(self.config, self.analysis_id)
                 / "conversations"

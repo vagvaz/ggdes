@@ -19,6 +19,7 @@ from ggdes.kb import KnowledgeBaseManager, StageStatus
 # We use a late import to avoid circular dependency
 def _get_console():
     from ggdes.cli import console
+
     return console
 
 
@@ -205,7 +206,7 @@ def validate_commit_range(commits: str, repo_path: Path) -> int:
             "Commit range must contain '..' (e.g., 'HEAD~5..HEAD' or 'abc123..def456')"
         )
         console.print(
-            '\nTip: Use quotes around the commit range to prevent shell interpretation:'
+            "\nTip: Use quotes around the commit range to prevent shell interpretation:"
         )
         console.print('  ggdes analyze --feature test --commits "HEAD~5..HEAD"')
         raise typer.Exit(1)
@@ -435,9 +436,7 @@ def run_analysis_pipeline(
     if not auto:
         # Interactive mode: ask user for context
         console.print("\n[bold]Setup complete. Ready to run analysis.[/bold]")
-        console.print(
-            "This will analyze the commits and generate documentation."
-        )
+        console.print("This will analyze the commits and generate documentation.")
         if not typer.confirm("Continue with analysis?"):
             logger.info("Analysis paused by user")
             console.print("\n[yellow]Analysis paused.[/yellow]")
@@ -447,9 +446,7 @@ def run_analysis_pipeline(
         # Gather user context
         if context_file:
             user_context = _load_user_context_from_file(Path(context_file))
-            console.print(
-                f"[green]✓[/green] Loaded user context from: {context_file}"
-            )
+            console.print(f"[green]✓[/green] Loaded user context from: {context_file}")
         else:
             user_context = _gather_user_context()
 
@@ -464,30 +461,18 @@ def run_analysis_pipeline(
         logger.info(
             "Semantic diff disabled - skipping base AST parsing and semantic diff stages"
         )
-        console.print(
-            "[dim]Semantic diff disabled - running faster analysis[/dim]"
-        )
+        console.print("[dim]Semantic diff disabled - running faster analysis[/dim]")
 
-        metadata.stages[
-            kb_manager.STAGE_AST_PARSING_BASE
-        ].status = StageStatus.SKIPPED
-        metadata.stages[
-            kb_manager.STAGE_SEMANTIC_DIFF
-        ].status = StageStatus.SKIPPED
+        metadata.stages[kb_manager.STAGE_AST_PARSING_BASE].status = StageStatus.SKIPPED
+        metadata.stages[kb_manager.STAGE_SEMANTIC_DIFF].status = StageStatus.SKIPPED
         kb_manager.save_metadata(analysis_id, metadata)
 
     # Configure change filter stage
     if no_filter:
-        logger.info(
-            "Semantic change filtering disabled - skipping change filter stage"
-        )
-        console.print(
-            "[dim]Change filtering disabled - analyzing all changes[/dim]"
-        )
+        logger.info("Semantic change filtering disabled - skipping change filter stage")
+        console.print("[dim]Change filtering disabled - analyzing all changes[/dim]")
 
-        metadata.stages[
-            kb_manager.STAGE_CHANGE_FILTER
-        ].status = StageStatus.SKIPPED
+        metadata.stages[kb_manager.STAGE_CHANGE_FILTER].status = StageStatus.SKIPPED
         kb_manager.save_metadata(analysis_id, metadata)
 
     # Step 2: Run full analysis
@@ -499,8 +484,6 @@ def run_analysis_pipeline(
         console.print(f"\n[green]✓ Analysis complete:[/green] {analysis_id}")
     else:
         logger.error(f"Analysis incomplete: {analysis_id}")
-        console.print(
-            f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}"
-        )
+        console.print(f"\n[yellow]⚠ Analysis incomplete:[/yellow] {analysis_id}")
         console.print(f"Run 'ggdes resume {analysis_id}' to retry")
         raise typer.Exit(1)

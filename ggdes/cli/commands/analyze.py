@@ -112,7 +112,9 @@ def analyze(
 
     # Parse and validate inputs
     target_formats = parse_and_validate_formats(formats)
-    focus_commits = [c.strip() for c in focus.split(",") if c.strip()] if focus else None
+    focus_commits = (
+        [c.strip() for c in focus.split(",") if c.strip()] if focus else None
+    )
     storage_policy = parse_and_validate_storage(storage)
 
     # Check if repo is a git repo

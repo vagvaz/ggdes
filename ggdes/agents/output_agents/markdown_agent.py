@@ -72,7 +72,6 @@ class MarkdownAgent(OutputAgent):
         """Load specific technical facts from KB."""
         import json
 
-
         facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
         facts = []
 
@@ -87,7 +86,6 @@ class MarkdownAgent(OutputAgent):
     def _load_plan(self) -> DocumentPlan | None:
         """Load document plan from KB."""
         import json
-
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_markdown.json"

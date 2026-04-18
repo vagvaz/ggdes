@@ -366,7 +366,7 @@ def _strip_markdown_code_blocks(text: str) -> str:
     if text.startswith("```"):
         first_newline = text.find("\n")
         if first_newline != -1:
-            text = text[first_newline + 1:]
+            text = text[first_newline + 1 :]
         if text.endswith("```"):
             text = text[:-3].strip()
         elif "```" in text:

@@ -230,11 +230,7 @@ class SystemPromptBuilder:
 
         # 1. Skills first
         for title, content in self._skills:
-            parts.append(
-                f"=== {title} ===\n"
-                f"{content}\n"
-                f"=== END {title} ==="
-            )
+            parts.append(f"=== {title} ===\n{content}\n=== END {title} ===")
 
         # 2. Base system prompt
         if self._base_prompt:
@@ -242,6 +238,8 @@ class SystemPromptBuilder:
 
         # 3. User guidance with VERY IMPORTANT box
         if self._user_guidance:
-            parts.append(self.USER_GUIDANCE_BOX.format(user_guidance=self._user_guidance))
+            parts.append(
+                self.USER_GUIDANCE_BOX.format(user_guidance=self._user_guidance)
+            )
 
         return "\n\n".join(parts)
