@@ -3,9 +3,16 @@
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
+
+from ggdes.config import GGDesConfig, get_kb_path
+
+if TYPE_CHECKING:
+    from ggdes.diagrams import PlantUMLGenerator
+    from ggdes.diagrams.cache import DiagramCache
+    from ggdes.schemas import TechnicalFact
 
 console = Console()
 
@@ -13,7 +20,7 @@ console = Console()
 class OutputAgent(ABC):
     """Abstract base class for document output agents."""
 
-    def __init__(self, repo_path: Path, config: Any, analysis_id: str) -> None:
+    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
         """Initialize output agent.
 
         Args:
@@ -25,14 +32,15 @@ class OutputAgent(ABC):
         self.config = config
         self.analysis_id = analysis_id
         self.user_context: dict[str, Any] | None = None
-        self._diagram_generator: Any | None = None
-        self._diagram_cache: Any | None = None
+        self._diagram_generator: PlantUMLGenerator | None = None
+        self._diagram_cache: DiagramCache | None = None
         self._validated_elements: set[str] | None = None
+        self._cached_facts: list[TechnicalFact] | None = None
+        self._ast_classes: list[dict[str, Any]] | None = None
 
     def _get_diagram_cache(self) -> Any:
         """Get or create diagram cache instance."""
         if self._diagram_cache is None:
-            from ggdes.config import get_kb_path
             from ggdes.diagrams.cache import DiagramCache
 
             cache_dir = get_kb_path(self.config, self.analysis_id) / "diagram_cache"
@@ -57,7 +65,6 @@ class OutputAgent(ABC):
         """Load user context from document plan or metadata."""
         try:
             from ggdes.agents.coordinator import Coordinator
-            from ggdes.config import get_kb_path
 
             kb_path = get_kb_path(self.config, self.analysis_id)
 
@@ -90,8 +97,6 @@ class OutputAgent(ABC):
         if self._validated_elements is not None:
             return self._validated_elements
 
-        from ggdes.config import get_kb_path
-
         valid_names: set[str] = set()
 
         ast_head_dir = get_kb_path(self.config, self.analysis_id) / "ast_head"
@@ -109,6 +114,119 @@ class OutputAgent(ABC):
 
         self._validated_elements = valid_names
         return valid_names
+
+    def _load_technical_facts(self) -> list["TechnicalFact"]:
+        """Load and cache technical facts from the knowledge base.
+
+        Returns:
+            List of TechnicalFact objects loaded from technical_facts/*.json
+        """
+        if self._cached_facts is not None:
+            return self._cached_facts
+
+        from ggdes.schemas import TechnicalFact
+
+        facts: list[TechnicalFact] = []
+        facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
+
+        if facts_dir.exists():
+            for fact_file in facts_dir.glob("*.json"):
+                try:
+                    data = json.loads(fact_file.read_text())
+                    facts.append(TechnicalFact(**data))
+                except Exception:
+                    continue
+
+        self._cached_facts = facts
+        return facts
+
+    def _load_ast_classes(self) -> list[dict[str, Any]]:
+        """Load class metadata from AST head data.
+
+        Returns:
+            List of dicts with keys: name, attributes, methods, bases, file_path
+        """
+        if self._ast_classes is not None:
+            return self._ast_classes
+
+        classes: list[dict[str, Any]] = []
+        ast_head_dir = get_kb_path(self.config, self.analysis_id) / "ast_head"
+
+        if ast_head_dir.exists():
+            for json_file in ast_head_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    for elem_data in data.get("elements", []):
+                        if elem_data.get("element_type") == "class":
+                            class_info: dict[str, Any] = {
+                                "name": elem_data.get("name", ""),
+                                "methods": elem_data.get("children", []),
+                                "attributes": [],
+                                "bases": [],
+                                "file_path": elem_data.get("file_path", ""),
+                                "docstring": elem_data.get("docstring"),
+                                "decorators": elem_data.get("decorators", []),
+                            }
+
+                            # Extract attributes from source code if available
+                            source = elem_data.get("source_code")
+                            if source:
+                                class_info["attributes"] = self._extract_attributes_from_source(
+                                    source
+                                )
+
+                            # Try to extract base classes from decorators or source
+                            decorators = elem_data.get("decorators", [])
+                            for dec in decorators:
+                                if dec.startswith("@"):
+                                    class_info["bases"].append(dec[1:])
+
+                            classes.append(class_info)
+                except Exception:
+                    continue
+
+        self._ast_classes = classes
+        return classes
+
+    def _extract_attributes_from_source(self, source: str) -> list[str]:
+        """Extract class-level attribute assignments from source code.
+
+        Looks for patterns like `self.attr = ...` in __init__ and
+        class-level assignments like `attr = ...`.
+        """
+        import re
+
+        attributes: list[str] = []
+        for line in source.splitlines():
+            stripped = line.strip()
+            # Skip comments, empty lines, docstrings, def/class statements
+            if (
+                not stripped
+                or stripped.startswith("#")
+                or stripped.startswith('"""')
+                or stripped.startswith("'''")
+                or stripped.startswith("def ")
+                or stripped.startswith("class ")
+                or stripped.startswith("@")
+                or stripped.startswith("pass")
+                or stripped.startswith("return")
+            ):
+                continue
+            # Match self.attr = ... patterns
+            match = re.match(r"self\.(\w+)\s*=", stripped)
+            if match:
+                attr_name = match.group(1)
+                if attr_name not in attributes:
+                    attributes.append(attr_name)
+            # Match class-level attr = ... (but not inside methods)
+            elif re.match(r"(\w+)\s*=", stripped) and not stripped.startswith("self."):
+                # Only top-level assignments (no indentation or minimal)
+                if not line.startswith("        "):  # Not inside a method
+                    attr_name = stripped.split("=")[0].strip()
+                    if attr_name and attr_name not in attributes:
+                        attributes.append(attr_name)
+
+        return attributes
 
     def _validate_element_name(self, elem: str) -> str:
         """Validate and correct a source element name against AST data.
@@ -168,7 +286,7 @@ class OutputAgent(ABC):
 
     def _generate_diagrams_for_facts(
         self,
-        facts: list[Any],
+        facts: list["TechnicalFact"],
         output_dir: Path,
         diagram_types: list[str] | None = None,
         use_cache: bool = True,
@@ -228,12 +346,12 @@ class OutputAgent(ABC):
 
     def _generate_architecture_diagram(
         self,
-        architecture_facts: list[Any],
-        api_facts: list[Any],
-        all_facts: list[Any],
-        generator: Any,
+        architecture_facts: list["TechnicalFact"],
+        api_facts: list["TechnicalFact"],
+        all_facts: list["TechnicalFact"],
+        generator: "PlantUMLGenerator",
         output_dir: Path,
-        cache: Any,
+        cache: "DiagramCache | None",
     ) -> tuple[str, Path, str] | None:
         """Generate architecture diagram from facts.
 
@@ -322,12 +440,12 @@ class OutputAgent(ABC):
 
     def _generate_flow_diagram(
         self,
-        behavior_facts: list[Any],
-        data_flow_facts: list[Any],
-        all_facts: list[Any],
-        generator: Any,
+        behavior_facts: list["TechnicalFact"],
+        data_flow_facts: list["TechnicalFact"],
+        all_facts: list["TechnicalFact"],
+        generator: "PlantUMLGenerator",
         output_dir: Path,
-        cache: Any,
+        cache: "DiagramCache | None",
     ) -> tuple[str, Path, str] | None:
         """Generate flow diagram from facts.
 
@@ -387,15 +505,15 @@ class OutputAgent(ABC):
 
     def _generate_class_diagram(
         self,
-        facts: list[Any],
-        generator: Any,
+        facts: list["TechnicalFact"],
+        generator: "PlantUMLGenerator",
         output_dir: Path,
-        cache: Any,
+        cache: "DiagramCache | None",
     ) -> tuple[str, Path, str] | None:
-        """Generate class diagram from facts.
+        """Generate class diagram from facts and AST metadata.
 
-        Returns:
-            Tuple of (title, path, type) or None if generation failed/skipped
+        Uses AST data as the primary source for class structure (methods, attributes),
+        with facts providing context for which classes are relevant to the changes.
         """
         from ggdes.diagrams import generate_class_diagram
 
@@ -407,29 +525,51 @@ class OutputAgent(ABC):
                 return ("Class Structure", cached_path, "class")
 
         try:
-            # Try to find class definitions in facts
-            class_facts = [f for f in facts if "class" in f.description.lower()]
-
-            if not class_facts:
+            # Load AST class metadata
+            ast_classes = self._load_ast_classes()
+            if not ast_classes:
                 return None
 
-            classes = []
-            for fact in class_facts[:5]:
-                for elem in fact.source_elements[:2]:
-                    validated = self._validate_element_name(elem)
-                    classes.append(
-                        {
-                            "name": validated,
-                            "attributes": [],
-                            "methods": [],
-                        }
-                    )
+            # Build a set of relevant element names from facts
+            relevant_names: set[str] = set()
+            for fact in facts:
+                for elem in fact.source_elements:
+                    relevant_names.add(elem)
+                    # Also add lowercase match
+                    relevant_names.add(elem.lower())
 
-            if not classes:
+            # Filter AST classes to those relevant to the changes
+            classes_for_diagram = []
+            for cls in ast_classes[:10]:  # Limit to avoid huge diagrams
+                cls_name = cls["name"]
+                if cls_name in relevant_names or cls_name.lower() in relevant_names:
+                    classes_for_diagram.append(cls)
+                else:
+                    # Also include if any of its methods are referenced
+                    for method in cls.get("methods", []):
+                        if method in relevant_names or method.lower() in relevant_names:
+                            classes_for_diagram.append(cls)
+                            break
+
+            if not classes_for_diagram:
                 return None
+
+            # Build PlantUML-compatible class structures
+            plantuml_classes = []
+            for cls in classes_for_diagram:
+                attributes = [f"+ {attr}" for attr in cls.get("attributes", [])]
+                methods = [f"+ {m}()" for m in cls.get("methods", [])]
+
+                plantuml_classes.append(
+                    {
+                        "name": cls["name"],
+                        "attributes": attributes,
+                        "methods": methods,
+                    }
+                )
 
             plantuml_code = generate_class_diagram(
-                classes=classes,
+                classes=plantuml_classes,
                 title="Class Structure",
             )
 

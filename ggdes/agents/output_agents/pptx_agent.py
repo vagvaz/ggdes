@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ggdes.agents.output_agents.base import OutputAgent
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 
 
 class PptxAgent(OutputAgent):
@@ -27,7 +27,6 @@ class PptxAgent(OutputAgent):
 
     def _load_plan(self) -> dict[str, Any] | None:
         """Load document plan from KB."""
-        from ggdes.config import get_kb_path
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_pptx.json"
@@ -109,7 +108,6 @@ class PptxAgent(OutputAgent):
             try:
                 import json
 
-                from ggdes.config import get_kb_path
                 from ggdes.schemas import TechnicalFact
 
                 facts_dir = (

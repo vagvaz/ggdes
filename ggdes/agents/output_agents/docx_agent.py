@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ggdes.agents.output_agents.base import OutputAgent
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 
 
 class DocxAgent(OutputAgent):
@@ -28,7 +28,6 @@ class DocxAgent(OutputAgent):
 
     def _load_plan(self) -> dict[str, Any] | None:
         """Load document plan from KB."""
-        from ggdes.config import get_kb_path
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_docx.json"
@@ -101,23 +100,7 @@ class DocxAgent(OutputAgent):
         plan = self._load_plan()
         if plan and auto_generate_diagrams:
             console.print("  [dim]Generating diagrams...[/dim]")
-            from ggdes.schemas import TechnicalFact
-
-            # Try to load technical facts from KB
-            try:
-                import json
-
-                from ggdes.config import get_kb_path
-
-                facts_dir = (
-                    get_kb_path(self.config, self.analysis_id) / "technical_facts"
-                )
-                if facts_dir.exists():
-                    for fact_file in facts_dir.glob("*.json"):
-                        data = json.loads(fact_file.read_text())
-                        all_facts.append(TechnicalFact(**data))
-            except Exception as e:
-                console.print(f"  [dim]Could not load facts for diagrams: {e}[/dim]")
+            all_facts = self._load_technical_facts()
 
             # Generate diagrams
             if all_facts:

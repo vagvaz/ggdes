@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ggdes.agents.output_agents.base import OutputAgent
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 
 
 class PdfAgent(OutputAgent):
@@ -27,7 +27,6 @@ class PdfAgent(OutputAgent):
 
     def _load_plan(self) -> dict[str, Any] | None:
         """Load document plan from KB."""
-        from ggdes.config import get_kb_path
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_pdf.json"
@@ -96,37 +95,20 @@ class PdfAgent(OutputAgent):
         diagrams_dir.mkdir(parents=True, exist_ok=True)
 
         # Load facts for diagram generation
-        if auto_generate_diagrams:
+        all_facts = []
+        plan = self._load_plan()
+        if plan and auto_generate_diagrams:
             console.print("  [dim]Generating diagrams...[/dim]")
-            all_facts = []
-            plan = self._load_plan()
+            all_facts = self._load_technical_facts()
 
-            if plan:
-                # Try to load technical facts from KB
-                try:
-                    import json
-
-                    from ggdes.config import get_kb_path
-                    from ggdes.schemas import TechnicalFact
-
-                    facts_dir = (
-                        get_kb_path(self.config, self.analysis_id) / "technical_facts"
-                    )
-                    if facts_dir.exists():
-                        for fact_file in facts_dir.glob("*.json"):
-                            data = json.loads(fact_file.read_text())
-                            all_facts.append(TechnicalFact(**data))
-                except Exception as e:
-                    console.print(f"  [dim]Could not load facts: {e}[/dim]")
-
-                # Generate diagrams
-                if all_facts:
-                    diagram_list = self._generate_diagrams_for_facts(
-                        all_facts, diagrams_dir, ["architecture", "flow", "class"]
-                    )
-                    console.print(
-                        f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
-                    )
+            # Generate diagrams
+            if all_facts:
+                diagram_list = self._generate_diagrams_for_facts(
+                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
+                )
+                console.print(
+                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
+                )
 
         try:
             # Try reportlab first with diagram integration

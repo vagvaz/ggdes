@@ -6,7 +6,7 @@ from typing import Any
 from loguru import logger
 
 from ggdes.agents.output_agents.base import OutputAgent
-from ggdes.config import GGDesConfig
+from ggdes.config import GGDesConfig, get_kb_path
 from ggdes.llm import ConversationContext, LLMFactory
 from ggdes.prompts import get_prompt
 from ggdes.schemas import (
@@ -72,7 +72,6 @@ class MarkdownAgent(OutputAgent):
         """Load specific technical facts from KB."""
         import json
 
-        from ggdes.config import get_kb_path
 
         facts_dir = get_kb_path(self.config, self.analysis_id) / "technical_facts"
         facts = []
@@ -89,7 +88,6 @@ class MarkdownAgent(OutputAgent):
         """Load document plan from KB."""
         import json
 
-        from ggdes.config import get_kb_path
 
         plan_file = (
             get_kb_path(self.config, self.analysis_id) / "plans" / "plan_markdown.json"
@@ -274,7 +272,6 @@ title {diagram.title}
                 console.print(f"  [yellow]⚠ PNG rendering failed: {e}[/yellow]")
 
         # Save conversation
-        from ggdes.config import get_kb_path
 
         kb_path = (
             get_kb_path(self.config, self.analysis_id)

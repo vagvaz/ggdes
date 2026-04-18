@@ -375,7 +375,7 @@ class AnalysisPipeline:
                 base_commit=base_commit or "HEAD",
                 head_commit=head_commit or "HEAD",
             )
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             console.print(f"[red]Failed to create worktrees:[/red] {e}")
             return False
 
@@ -407,7 +407,7 @@ class AnalysisPipeline:
 
             console.print(f"  [dim]Base worktree items: {len(base_contents)}[/dim]")
             console.print(f"  [dim]Head worktree items: {len(head_contents)}[/dim]")
-        except Exception as e:
+        except OSError as e:
             console.print(
                 f"[yellow]Warning: Could not read worktree contents:[/yellow] {e}"
             )
@@ -489,31 +489,6 @@ class AnalysisPipeline:
         console.print(f"  [dim]Impact: {change_summary.impact}[/dim]")
         console.print(f"  [dim]Results saved to: {output_path}[/dim]")
 
-        # Validate code references in the summary
-        from ggdes.validation.code_references import CodeReferenceValidator
-
-        changed_file_paths = [f.path for f in change_summary.files_changed]
-        # Collect element data from AST (including source_code for validation)
-        code_elements_dict: dict[str, dict[str, Any]] = {}
-        ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
-        if ast_head_dir.exists():
-            for json_file in ast_head_dir.glob("*.json"):
-                try:
-                    data = json.loads(json_file.read_text())
-                    for elem_data in data.get("elements", []):
-                        name = elem_data.get("name", "")
-                        if name:
-                            code_elements_dict[name] = elem_data
-                except Exception:
-                    continue
-
-        CodeReferenceValidator(
-            repo_path=self.repo_path,
-            changed_files=changed_file_paths,
-            code_elements=code_elements_dict,
-            diff_content="",  # We don't have the raw diff here
-        )
-
         return True
 
     def _run_change_filter(self) -> bool:
@@ -554,7 +529,7 @@ class AnalysisPipeline:
         try:
             data = json.loads(summary_path.read_text())
             change_summary = ChangeSummary(**data)
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError) as e:
             console.print(f"  [red]Error loading change summary:[/red] {e}")
             return False
 
@@ -736,7 +711,7 @@ class AnalysisPipeline:
             files_changed = data.get("files_changed", [])
             # Extract just the path from each FileChange object
             return [f["path"] for f in files_changed if "path" in f]
-        except Exception:
+        except (json.JSONDecodeError, ValueError, OSError):
             return []
 
     def _run_ast_parsing_head(self) -> bool:
@@ -804,7 +779,7 @@ class AnalysisPipeline:
                         }
                     )
             return result
-        except Exception:
+        except (json.JSONDecodeError, ValueError, OSError):
             return []
 
     def _load_ast_elements_for_tools(self) -> dict[str, list[Any]]:
@@ -826,7 +801,7 @@ class AnalysisPipeline:
                         # Use the file_path from the data, or derive from filename
                         file_path = data.get("file_path", json_file.stem)
                         ast_elements[file_path] = elements
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     continue
 
         return ast_elements
@@ -890,7 +865,7 @@ class AnalysisPipeline:
                     data = json.loads(json_file.read_text())
                     for elem_data in data.get("elements", []):
                         head_elements.append(CodeElement(**elem_data))
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     continue
 
         if head_elements:
@@ -939,7 +914,7 @@ class AnalysisPipeline:
 
         # Check if we should run interactively
         # In auto mode, use defaults. Otherwise, ask user (handled in Coordinator)
-        auto_mode = self.config.features.auto_cleanup  # Use as proxy for auto mode
+        auto_mode = not self.interactive
 
         if auto_mode:
             console.print("  [dim]Running in auto mode (no user prompts)[/dim]")

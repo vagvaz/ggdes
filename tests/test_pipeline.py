@@ -808,7 +808,7 @@ class TestRunWorktreeSetup:
 
             with patch("ggdes.pipeline.WorktreeManager") as mock_wt_class:
                 mock_wt_manager = MagicMock()
-                mock_wt_manager.create_for_analysis.side_effect = Exception(
+                mock_wt_manager.create_for_analysis.side_effect = RuntimeError(
                     "Creation failed"
                 )
                 mock_wt_class.return_value = mock_wt_manager
