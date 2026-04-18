@@ -38,6 +38,16 @@ class OutputAgent(ABC):
         self._cached_facts: list[TechnicalFact] | None = None
         self._ast_classes: list[dict[str, Any]] | None = None
 
+    @property
+    def output_dir(self) -> Path:
+        """Output directory for generated documents.
+
+        Uses config-based path: ~/ggdes-output/<analysis_id>/
+        alongside ggdes-kb and ggdes-worktrees.
+        """
+        from ggdes.config import get_output_path
+        return get_output_path(self.config, self.analysis_id)
+
     def _get_diagram_cache(self) -> Any:
         """Get or create diagram cache instance."""
         if self._diagram_cache is None:
@@ -187,6 +197,32 @@ class OutputAgent(ABC):
 
         self._ast_classes = classes
         return classes
+
+    def _load_changed_classes(self) -> set[str]:
+        """Load set of changed class names from semantic diff data.
+
+        Returns:
+            Set of class names that were added, modified, or had behavioral changes.
+        """
+        semantic_diff_dir = get_kb_path(self.config, self.analysis_id) / "semantic_diff"
+        changed_classes: set[str] = set()
+
+        if semantic_diff_dir.exists():
+            for json_file in semantic_diff_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text())
+                    for change in data.get("changes", []):
+                        element = change.get("element", {})
+                        if element.get("element_type") == "class":
+                            changed_classes.add(element.get("name", ""))
+                        # Also check if a method's parent class changed
+                        parent = element.get("parent")
+                        if parent and change.get("change_category") in ("added", "modified", "deleted"):
+                            changed_classes.add(parent)
+                except Exception:
+                    continue
+
+        return changed_classes - {""}
 
     def _extract_attributes_from_source(self, source: str) -> list[str]:
         """Extract class-level attribute assignments from source code.
@@ -449,8 +485,8 @@ class OutputAgent(ABC):
     ) -> tuple[str, Path, str] | None:
         """Generate flow diagram from facts.
 
-        Returns:
-            Tuple of (title, path, type) or None if generation failed/skipped
+        Extracts meaningful process flows from behavior and data flow facts,
+        using before/after context to show how flows have changed.
         """
         from ggdes.diagrams import generate_flow_diagram
 
@@ -462,18 +498,35 @@ class OutputAgent(ABC):
                 return ("Process Flow", cached_path, "flow")
 
         try:
-            steps = []
-            all_facts_list = behavior_facts + data_flow_facts
+            # Combine behavior and data flow facts, prioritizing behavior
+            flow_facts = behavior_facts[:5] + data_flow_facts[:3]
 
-            for i, fact in enumerate(all_facts_list[:8]):
+            if not flow_facts:
+                return None
+
+            # Build steps with meaningful labels and flow types
+            steps = []
+            for i, fact in enumerate(flow_facts):
+                # Determine step type based on fact category
+                step_type = "process"
+                if fact.category == "data_flow":
+                    step_type = "database"
+                elif "if" in fact.description.lower() or "check" in fact.description.lower():
+                    step_type = "decision"
+                elif "error" in fact.description.lower() or "exception" in fact.description.lower():
+                    step_type = "boundary"
+
+                # Truncate label to reasonable length
+                label = fact.description[:60]
+                if len(fact.description) > 60:
+                    label += "..."
+
                 steps.append(
                     {
                         "id": f"step_{i}",
-                        "label": fact.description[:50],
-                        "type": "process" if i % 3 != 2 else "decision",
-                        "next": [f"step_{i + 1}"]
-                        if i < len(all_facts_list) - 1
-                        else [],
+                        "label": label,
+                        "type": step_type,
+                        "next": [f"step_{i + 1}"] if i < len(flow_facts) - 1 else [],
                     }
                 )
 
@@ -514,6 +567,7 @@ class OutputAgent(ABC):
 
         Uses AST data as the primary source for class structure (methods, attributes),
         with facts providing context for which classes are relevant to the changes.
+        Only includes changed classes and their direct dependencies to keep diagrams focused.
         """
         from ggdes.diagrams import generate_class_diagram
 
@@ -530,46 +584,84 @@ class OutputAgent(ABC):
             if not ast_classes:
                 return None
 
+            # Get changed classes from semantic diff
+            changed_classes = self._load_changed_classes()
+
             # Build a set of relevant element names from facts
             relevant_names: set[str] = set()
             for fact in facts:
                 for elem in fact.source_elements:
                     relevant_names.add(elem)
-                    # Also add lowercase match
                     relevant_names.add(elem.lower())
 
             # Filter AST classes to those relevant to the changes
+            # Priority: 1) Changed classes, 2) Fact-referenced classes, 3) Classes with changed methods
             classes_for_diagram = []
-            for cls in ast_classes[:10]:  # Limit to avoid huge diagrams
+            for cls in ast_classes:
                 cls_name = cls["name"]
-                if cls_name in relevant_names or cls_name.lower() in relevant_names:
+                is_changed = cls_name in changed_classes
+                is_relevant = cls_name in relevant_names or cls_name.lower() in relevant_names
+
+                # Check if any methods are referenced in facts
+                has_relevant_method = False
+                for method in cls.get("methods", []):
+                    if method in relevant_names or method.lower() in relevant_names:
+                        has_relevant_method = True
+                        break
+
+                # Include if: changed, relevant to facts, or has relevant methods
+                if is_changed or is_relevant or has_relevant_method:
                     classes_for_diagram.append(cls)
-                else:
-                    # Also include if any of its methods are referenced
-                    for method in cls.get("methods", []):
-                        if method in relevant_names or method.lower() in relevant_names:
-                            classes_for_diagram.append(cls)
-                            break
 
             if not classes_for_diagram:
                 return None
 
-            # Build PlantUML-compatible class structures
+            # Build PlantUML-compatible class structures with change annotations
             plantuml_classes = []
             for cls in classes_for_diagram:
-                attributes = [f"+ {attr}" for attr in cls.get("attributes", [])]
-                methods = [f"+ {m}()" for m in cls.get("methods", [])]
+                cls_name = cls["name"]
+                is_changed = cls_name in changed_classes
+
+                # Format attributes as dicts for PlantUML generator
+                attributes = []
+                for attr in cls.get("attributes", [])[:10]:  # Limit to avoid clutter
+                    attributes.append({
+                        "name": attr,
+                        "type": "",
+                        "visibility": "public",
+                    })
+
+                # Format methods as dicts, limit to first 15
+                methods = []
+                for m in cls.get("methods", [])[:15]:
+                    methods.append({
+                        "name": m,
+                        "signature": f"{m}()",
+                        "visibility": "public",
+                    })
 
                 plantuml_classes.append(
                     {
-                        "name": cls["name"],
+                        "name": cls_name,
                         "attributes": attributes,
                         "methods": methods,
+                        "is_changed": is_changed,
                     }
                 )
 
+            # Build relationships between classes (inheritance, composition)
+            relationships = []
+            class_names = {c["name"] for c in plantuml_classes}
+            for cls in classes_for_diagram:
+                cls_name = cls["name"]
+                # Check for inheritance (base classes)
+                for base in cls.get("bases", []):
+                    if base in class_names:
+                        relationships.append((cls_name, base, "extends"))
+
             plantuml_code = generate_class_diagram(
                 classes=plantuml_classes,
+                relationships=relationships,
                 title="Class Structure",
             )
 

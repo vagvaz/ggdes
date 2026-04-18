@@ -327,11 +327,13 @@ async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
 
     documents = []
 
-    # Look for generated documents in common locations
-    docs_base = Path(metadata.repo_path) / "docs"
-    if docs_base.exists():
+    # Look for generated documents in the output directory
+    from ggdes.config import get_output_path
+
+    output_base = get_output_path(get_config(), analysis_id)
+    if output_base.exists():
         for fmt in metadata.target_formats or ["markdown"]:
-            fmt_dir = docs_base / fmt
+            fmt_dir = output_base / fmt
             if fmt_dir.exists():
                 for doc_file in fmt_dir.glob(f"*{analysis_id}*"):
                     if doc_file.is_file():
@@ -359,12 +361,14 @@ async def download_document(analysis_id: str, format: str) -> FileResponse:
     if not metadata:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
-    # Find the document
-    docs_base = Path(metadata.repo_path) / "docs" / format
-    if not docs_base.exists():
+    # Find the document in the output directory
+    from ggdes.config import get_output_path
+
+    output_base = get_output_path(get_config(), analysis_id) / format
+    if not output_base.exists():
         raise HTTPException(status_code=404, detail="Format not found")
 
-    for doc_file in docs_base.glob(f"*{analysis_id}*"):
+    for doc_file in output_base.glob(f"*{analysis_id}*"):
         if doc_file.is_file():
             return FileResponse(
                 path=doc_file,
@@ -385,7 +389,9 @@ async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
     diagrams = []
-    diagrams_dir = Path(metadata.repo_path) / "docs" / "diagrams"
+    from ggdes.config import get_output_path
+
+    diagrams_dir = get_output_path(get_config(), analysis_id) / "diagrams"
 
     if diagrams_dir.exists():
         for diag_file in diagrams_dir.glob(f"*{analysis_id}*"):

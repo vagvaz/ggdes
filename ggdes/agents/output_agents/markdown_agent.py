@@ -217,7 +217,7 @@ title {diagram.title}
             sections_content.append((section.title, content))
 
         # Generate diagrams directory
-        output_dir = self.repo_path / "docs" / "diagrams"
+        output_dir = self.output_dir / "diagrams"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Collect all facts for diagram generation
@@ -256,7 +256,7 @@ title {diagram.title}
                 from ggdes.rendering import MarkdownToPngRenderer
 
                 renderer = MarkdownToPngRenderer(
-                    output_dir=self.repo_path / "docs" / "diagrams"
+                    output_dir=self.output_dir / "diagrams"
                 )
                 png_paths = renderer.render(output_path, sections=True)
                 console.print(
@@ -522,7 +522,7 @@ Write the section content now:"""
     def _save_markdown(self, content: str, plan: DocumentPlan) -> Path:
         """Save markdown to output directory."""
         # Determine output path
-        output_dir = self.repo_path / "docs"
+        output_dir = self.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Clean filename from plan title

@@ -43,7 +43,7 @@ class PdfAgent(OutputAgent):
         import glob
 
         # Try to find markdown file
-        md_path = self.repo_path / "docs" / f"{self.analysis_id}-*.md"
+        md_path = self.output_dir / f"{self.analysis_id}-*.md"
         md_files = glob.glob(str(md_path))
 
         if md_files:
@@ -81,7 +81,7 @@ class PdfAgent(OutputAgent):
         console = Console()
 
         # Setup output path
-        output_dir = self.repo_path / "docs"
+        output_dir = self.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-document.pdf"
 

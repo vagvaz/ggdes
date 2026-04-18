@@ -81,7 +81,7 @@ class PptxAgent(OutputAgent):
         console = Console()
 
         # Setup output path
-        output_dir = self.repo_path / "docs"
+        output_dir = self.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.analysis_id}-presentation.pptx"
 
@@ -94,7 +94,7 @@ class PptxAgent(OutputAgent):
         slides = self._parse_content_to_slides(content)
 
         # Generate diagrams
-        diagrams_dir = output_dir / "diagrams"
+        diagrams_dir = self.output_dir / "diagrams"
         diagrams_dir.mkdir(parents=True, exist_ok=True)
 
         # Load facts for diagram generation

@@ -47,8 +47,9 @@ class PathsConfig(BaseModel):
 
     knowledge_base: str = "~/ggdes-kb"
     worktrees: str = "~/ggdes-worktrees"
+    output: str = "~/ggdes-output"
 
-    @field_validator("knowledge_base", "worktrees")
+    @field_validator("knowledge_base", "worktrees", "output")
     @classmethod
     def expand_user(cls, v: str) -> str:
         """Expand ~ to home directory."""
@@ -222,3 +223,13 @@ def get_worktrees_path(config: GGDesConfig, analysis_id: str) -> Path:
     """Get worktrees path for an analysis."""
     wt_base = Path(config.paths.worktrees).expanduser()
     return wt_base / analysis_id
+
+
+def get_output_path(config: GGDesConfig, analysis_id: str) -> Path:
+    """Get output directory for an analysis.
+
+    Returns a path like ~/ggdes-output/<analysis_id>/
+    alongside ggdes-kb and ggdes-worktrees.
+    """
+    output_base = Path(config.paths.output).expanduser()
+    return output_base / analysis_id
