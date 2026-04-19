@@ -484,7 +484,8 @@ Write the section content now:"""
 
             # Add auto-generated diagrams with image links
             for title, diagram_path, diagram_type in auto_diagrams:
-                relative_path = diagram_path.relative_to(self.repo_path / "docs")
+                # Use just the filename since diagrams are in a sibling directory
+                relative_path = f"diagrams/{diagram_path.name}"
                 md_parts.append(f"### {title}")
                 md_parts.append("")
                 md_parts.append(f"![{title}]({relative_path})")
