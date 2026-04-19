@@ -1,0 +1,99 @@
+INFO  2026-04-19 07:16:12,235 serena.cli:health_check:1146 - Starting health check for project: /home/vagvaz/Projects/ai/ggdes
+INFO  2026-04-19 07:16:12,235 serena.cli:health_check:1150 - Creating SerenaAgent with disabled dashboard...
+INFO  2026-04-19 07:16:12,236 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.ruff_cache/.gitignore
+INFO  2026-04-19 07:16:12,236 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.serena/.gitignore
+INFO  2026-04-19 07:16:12,236 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.pytest_cache/.gitignore
+INFO  2026-04-19 07:16:12,237 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.mypy_cache/.gitignore
+INFO  2026-04-19 07:16:12,239 serena.util.file_system:stop:336 - Loading of .gitignore files completed in 0.004 seconds
+INFO  2026-04-19 07:16:12,239 serena.project:stop:336 - Gathering ignore spec for project ggdes completed in 0.005 seconds
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:345 - Will record tool usage statistics with token count estimator: CHAR_COUNT.
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:349 - Starting Serena server (version=1.1.2-9646abc5-dirty, process id=1219399, parent process id=1192675; language backend=LSP); Python version=3.14.4, platform=Linux-6.19.12-1-cachyos-x86_64-with-glibc2.43
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:353 - Configuration file: /home/vagvaz/.serena/serena_config.yml
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:354 - Available projects: duckdb, ggdes, golumvest, serena
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:355 - Loaded tools (48): read_file, create_text_file, list_dir, find_file, replace_content, delete_lines, replace_lines, insert_at_line, search_for_pattern, restart_language_server, get_symbols_overview, find_symbol, find_referencing_symbols, replace_symbol_body, insert_after_symbol, insert_before_symbol, rename_symbol, safe_delete_symbol, write_memory, read_memory, list_memories, delete_memory, rename_memory, edit_memory, execute_shell_command, open_dashboard, restart_dashboard, activate_project, deactivate_project, list_active_projects, get_project_status, remove_project, get_current_config, check_onboarding_performed, onboarding, initial_instructions, jet_brains_find_symbol, jet_brains_move, jet_brains_safe_delete, jet_brains_inline_symbol, jet_brains_find_referencing_symbols, jet_brains_get_symbols_overview, jet_brains_type_hierarchy, jet_brains_find_declaration, jet_brains_find_implementations, jet_brains_rename, list_queryable_projects, query_project
+INFO  2026-04-19 07:16:12,245 serena.agent:__init__:367 - Using language backend from global configuration: LSP
+INFO  2026-04-19 07:16:12,251 serena.config.serena_config:start:329 - Loading project instance for RegisteredProject[project_root=/home/vagvaz/Projects/ai/ggdes, project_config=ProjectConfig[project_name=ggdes]] starting ...
+INFO  2026-04-19 07:16:12,251 serena.project:__init__:278 - Serena project data folder: /home/vagvaz/Projects/ai/ggdes/.serena
+INFO  2026-04-19 07:16:12,251 serena.project:start:329 - Gathering ignore spec for project ggdes starting ...
+INFO  2026-04-19 07:16:12,251 serena.config.serena_config:stop:336 - Loading project instance for RegisteredProject[project_root=/home/vagvaz/Projects/ai/ggdes, project_config=ProjectConfig[project_name=ggdes]] completed in 0.000 seconds
+INFO  2026-04-19 07:16:12,251 serena.util.file_system:start:329 - Loading of .gitignore files starting ...
+INFO  2026-04-19 07:16:12,251 serena.agent:activate_project_from_path_or_name:1138 - Found registered project 'ggdes' at path /home/vagvaz/Projects/ai/ggdes
+INFO  2026-04-19 07:16:12,251 serena.agent:_add_active_project:1057 - Adding ggdes at /home/vagvaz/Projects/ai/ggdes to active projects
+INFO  2026-04-19 07:16:12,251 serena.task_executor:issue_task:192 - Scheduling Task-1:init_language_server_manager
+INFO  2026-04-19 07:16:12,252 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.gitignore
+INFO  2026-04-19 07:16:12,253 serena.agent:_create_base_toolset:556 - Number of exposed tools: 27
+INFO  2026-04-19 07:16:12,254 serena.agent:__init__:394 - Number of exposed tools: 27. Exposed tools: ['activate_project', 'check_onboarding_performed', 'create_text_file', 'delete_memory', 'edit_memory', 'execute_shell_command', 'find_file', 'find_referencing_symbols', 'find_symbol', 'get_current_config', 'get_symbols_overview', 'initial_instructions', 'insert_after_symbol', 'insert_before_symbol', 'list_dir', 'list_memories', 'onboarding', 'read_file', 'read_memory', 'rename_memory', 'rename_symbol', 'replace_content', 'replace_symbol_body', 'restart_dashboard', 'safe_delete_symbol', 'search_for_pattern', 'write_memory']
+INFO  2026-04-19 07:16:12,254 serena.agent:get_mode_names:233 - Active modes: ['editing', 'interactive']
+INFO  2026-04-19 07:16:12,254 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.ruff_cache/.gitignore
+INFO  2026-04-19 07:16:12,255 serena.agent:_update_active_tools:1002 - Active tools (27): activate_project, check_onboarding_performed, create_text_file, delete_memory, edit_memory, execute_shell_command, find_file, find_referencing_symbols, find_symbol, get_current_config, get_symbols_overview, initial_instructions, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, read_file, read_memory, rename_memory, rename_symbol, replace_content, replace_symbol_body, restart_dashboard, safe_delete_symbol, search_for_pattern, write_memory
+WARNING 2026-04-19 07:16:12,256 serena.agent:_restore_projects_from_disk:887 - Failed to restore project 'ggdes' from disk: 'RegisteredProject' object has no attribute 'get_project'
+WARNING 2026-04-19 07:16:12,256 serena.agent:_restore_projects_from_disk:887 - Failed to restore project 'serena' from disk: 'RegisteredProject' object has no attribute 'get_project'
+WARNING 2026-04-19 07:16:12,256 serena.agent:_restore_projects_from_disk:887 - Failed to restore project 'duckdb' from disk: 'RegisteredProject' object has no attribute 'get_project'
+INFO  2026-04-19 07:16:12,256 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.serena/.gitignore
+INFO  2026-04-19 07:16:12,257 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.pytest_cache/.gitignore
+INFO  2026-04-19 07:16:12,257 serena.util.file_system:_load_gitignore_files:152 - Processing .gitignore file: /home/vagvaz/Projects/ai/ggdes/.mypy_cache/.gitignore
+INFO  2026-04-19 07:16:12,259 serena.util.file_system:stop:336 - Loading of .gitignore files completed in 0.008 seconds
+INFO  2026-04-19 07:16:12,259 serena.project:stop:336 - Gathering ignore spec for project ggdes completed in 0.008 seconds
+INFO  2026-04-19 07:16:12,346 serena.task_executor:_process_task_queue:123 - Starting execution of Task-1:init_language_server_manager
+INFO  2026-04-19 07:16:12,346 serena.task_executor:start:329 - Task-1:init_language_server_manager starting ...
+INFO  2026-04-19 07:16:12,346 serena.agent:start:329 - Language server initialization starting ...
+INFO  2026-04-19 07:16:12,346 serena.project:create_language_server_manager:642 - Creating language server manager for /home/vagvaz/Projects/ai/ggdes
+INFO  2026-04-19 07:16:12,346 sensai.util.logging:start:329 - Language server startup (language=python) starting ...
+INFO  2026-04-19 07:16:12,346 serena.ls_manager:create_language_server:48 - Creating language server instance for /home/vagvaz/Projects/ai/ggdes, language=python.
+INFO  2026-04-19 07:16:12,351 solidlsp.ls:_load_raw_document_symbols_cache:2483 - Loading document symbols cache from /home/vagvaz/Projects/ai/ggdes/.serena/cache/python/raw_document_symbols.pkl
+INFO  2026-04-19 07:16:12,380 solidlsp.ls:_load_raw_document_symbols_cache:2488 - Loaded 118 entries from raw document symbols cache.
+INFO  2026-04-19 07:16:12,380 solidlsp.ls:_load_document_symbols_cache:2572 - Loading document symbols cache from /home/vagvaz/Projects/ai/ggdes/.serena/cache/python/document_symbols.pkl
+INFO  2026-04-19 07:16:12,384 serena.cli:health_check:1153 - SerenaAgent created successfully
+INFO  2026-04-19 07:16:12,385 serena.cli:health_check:1156 - Searching for analyzable files...
+INFO  2026-04-19 07:16:12,439 solidlsp.ls:_load_document_symbols_cache:2577 - Loaded 119 entries from document symbols cache.
+INFO  2026-04-19 07:16:12,439 solidlsp.ls:start:2696 - Starting language server with language python for /home/vagvaz/Projects/ai/ggdes
+INFO  2026-04-19 07:16:12,439 solidlsp.language_servers.pyright_server:_start_server:177 - Starting pyright-langserver server process
+INFO  2026-04-19 07:16:12,439 solidlsp.ls_process:start:192 - Starting language server process via command: ['/usr/bin/python', '-m', 'pyright.langserver', '--stdio']
+INFO  2026-04-19 07:16:12,440 solidlsp.language_servers.pyright_server:_start_server:183 - Sending initialize request from LSP client to pyright server and awaiting response
+INFO  2026-04-19 07:16:12,448 serena.cli:health_check:1165 - Found analyzable file: check_analysis.py
+INFO  2026-04-19 07:16:12,448 serena.cli:health_check:1183 - Testing GetSymbolsOverviewTool on file: check_analysis.py
+INFO  2026-04-19 07:16:12,448 serena.task_executor:issue_task:192 - Scheduling Task-2:<lambda>
+INFO  2026-04-19 07:16:12,579 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Pyright language server 1.1.403 starting
+INFO  2026-04-19 07:16:12,579 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Server root directory: file:///home/vagvaz/.local/lib/python3.14/site-packages/pyright/dist/dist
+INFO  2026-04-19 07:16:12,581 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Starting service instance "ggdes"
+INFO  2026-04-19 07:16:12,581 solidlsp.language_servers.pyright_server:_start_server:185 - Received initialize response from pyright server: {'capabilities': {'textDocumentSync': 2, 'definitionProvider': {'workDoneProgress': True}, 'declarationProvider': {'workDoneProgress': True}, 'typeDefinitionProvider': {'workDoneProgress': True}, 'referencesProvider': {'workDoneProgress': True}, 'documentSymbolProvider': {'workDoneProgress': True}, 'workspaceSymbolProvider': {'workDoneProgress': True}, 'hoverProvider': {'workDoneProgress': True}, 'documentHighlightProvider': {'workDoneProgress': True}, 'renameProvider': {'prepareProvider': True, 'workDoneProgress': True}, 'completionProvider': {'triggerCharacters': ['.', '[', '"', "'"], 'resolveProvider': True, 'workDoneProgress': True, 'completionItem': {'labelDetailsSupport': True}}, 'signatureHelpProvider': {'triggerCharacters': ['(', ',', ')'], 'workDoneProgress': True}, 'codeActionProvider': {'codeActionKinds': ['quickfix', 'source.organizeImports'], 'workDoneProgress': True}, 'executeCommandProvider': {'commands': [], 'workDoneProgress': True}, 'callHierarchyProvider': True, 'workspace': {'workspaceFolders': {'supported': True, 'changeNotifications': True}}}}
+INFO  2026-04-19 07:16:12,581 solidlsp.language_servers.pyright_server:_start_server:197 - Waiting for Pyright to complete initial workspace analysis...
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Loading pyproject.toml file at /home/vagvaz/Projects/ai/ggdes/pyproject.toml
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: No include entries specified; assuming /home/vagvaz/Projects/ai/ggdes
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Auto-excluding **/node_modules
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Auto-excluding **/__pycache__
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Auto-excluding **/.*
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Assuming Python version 3.14.4.final.0
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:149 - LSP: window/logMessage: Found 118 source files
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:window_log_message:154 - Pyright workspace scanning complete
+INFO  2026-04-19 07:16:12,656 solidlsp.language_servers.pyright_server:_start_server:199 - Pyright initial analysis complete, server ready
+INFO  2026-04-19 07:16:12,656 sensai.util.logging:stop:336 - Language server startup (language=python) completed in 0.310 seconds
+INFO  2026-04-19 07:16:12,657 serena.agent:stop:336 - Language server initialization completed in 0.311 seconds
+INFO  2026-04-19 07:16:12,657 serena.task_executor:stop:336 - Task-1:init_language_server_manager completed in 0.311 seconds
+INFO  2026-04-19 07:16:12,657 serena.task_executor:_process_task_queue:123 - Starting execution of Task-2:<lambda>
+INFO  2026-04-19 07:16:12,657 serena.task_executor:start:329 - Task-2:<lambda> starting ...
+INFO  2026-04-19 07:16:12,657 serena.task_executor:stop:336 - Task-2:<lambda> completed in 0.000 seconds
+INFO  2026-04-19 07:16:12,657 serena.cli:health_check:1185 - GetSymbolsOverviewTool returned: [{'name': 'check_analysis', 'kind': 'Function'}, {'name': 'analysis_id', 'kind': 'Variable'}]
+INFO  2026-04-19 07:16:12,657 serena.cli:health_check:1208 - Using symbol for testing: check_analysis (kind: Function)
+INFO  2026-04-19 07:16:12,657 serena.cli:health_check:1211 - Testing FindSymbolTool for symbol: check_analysis
+INFO  2026-04-19 07:16:12,657 serena.task_executor:issue_task:192 - Scheduling Task-3:<lambda>
+INFO  2026-04-19 07:16:12,757 serena.task_executor:_process_task_queue:123 - Starting execution of Task-3:<lambda>
+INFO  2026-04-19 07:16:12,758 serena.task_executor:start:329 - Task-3:<lambda> starting ...
+INFO  2026-04-19 07:16:12,758 serena.task_executor:stop:336 - Task-3:<lambda> completed in 0.000 seconds
+INFO  2026-04-19 07:16:12,758 serena.cli:health_check:1216 - FindSymbolTool found 1 matches for symbol check_analysis
+INFO  2026-04-19 07:16:12,758 serena.cli:health_check:1219 - Testing FindReferencingSymbolsTool for symbol: check_analysis
+INFO  2026-04-19 07:16:12,758 serena.task_executor:issue_task:192 - Scheduling Task-4:<lambda>
+INFO  2026-04-19 07:16:12,858 serena.task_executor:_process_task_queue:123 - Starting execution of Task-4:<lambda>
+INFO  2026-04-19 07:16:12,858 serena.task_executor:start:329 - Task-4:<lambda> starting ...
+WARNING 2026-04-19 07:16:14,867 solidlsp.ls:request_referencing_symbols:1909 - Could not find containing symbol for check_analysis.py:175:4. Returning file symbol instead
+INFO  2026-04-19 07:16:14,867 serena.task_executor:stop:336 - Task-4:<lambda> completed in 2.009 seconds
+INFO  2026-04-19 07:16:14,867 serena.cli:health_check:1223 - FindReferencingSymbolsTool found 1 references for symbol check_analysis
+INFO  2026-04-19 07:16:14,867 serena.cli:health_check:1229 - Testing SearchForPatternTool for pattern: check_analysis
+INFO  2026-04-19 07:16:14,867 serena.task_executor:issue_task:192 - Scheduling Task-5:<lambda>
+INFO  2026-04-19 07:16:14,967 serena.task_executor:_process_task_queue:123 - Starting execution of Task-5:<lambda>
+INFO  2026-04-19 07:16:14,967 serena.task_executor:start:329 - Task-5:<lambda> starting ...
+INFO  2026-04-19 07:16:14,976 serena.util.text_utils:search_files:367 - Processing 118 files.
+INFO  2026-04-19 07:16:14,989 serena.util.text_utils:search_files:408 - Found 4 total matches across 118 files
+INFO  2026-04-19 07:16:14,990 serena.task_executor:stop:336 - Task-5:<lambda> completed in 0.022 seconds
+INFO  2026-04-19 07:16:14,990 serena.cli:health_check:1236 - SearchForPatternTool found 4 pattern matches for check_analysis
+INFO  2026-04-19 07:16:14,990 serena.cli:health_check:1250 - Health check completed successfully

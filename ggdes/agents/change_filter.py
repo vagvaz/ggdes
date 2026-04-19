@@ -280,6 +280,17 @@ class ChangeFilter:
             if len(removed_files) > 5:
                 console.print(f"    [dim]... and {len(removed_files) - 5} more[/dim]")
 
+        # Safety valve: never filter out ALL files — if LLM marks everything
+        # as irrelevant, the feature description was likely too vague or the
+        # LLM was over-aggressive. Keep all changes as a fallback.
+        if not filtered_files and change_summary.files_changed:
+            console.print(
+                "  [yellow]Warning: LLM filtered out all files — keeping all changes "
+                "(feature description may be too vague)[/yellow]"
+            )
+            filtered_files = list(change_summary.files_changed)
+            removed_files = []
+
         # Create filtered change summary
         filtered_summary = ChangeSummary(
             commit_hash=change_summary.commit_hash,

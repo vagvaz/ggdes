@@ -694,20 +694,27 @@ class AnalysisPipeline:
     def _get_changed_files_from_analysis(self) -> list[str]:
         """Get list of changed files from git analysis results.
 
+        Reads from the unfiltered summary when available, since semantic diff
+        needs to see ALL changed files regardless of feature relevance filtering.
+
         Returns:
             List of file paths that changed (relative to repo root)
         """
         analysis_path = (
             self.kb_manager.get_analysis_path(self.analysis_id)
             / "git_analysis"
-            / "summary.json"
         )
 
-        if not analysis_path.exists():
+        # Prefer unfiltered summary — semantic diff needs all changed files
+        summary_path = analysis_path / "summary_unfiltered.json"
+        if not summary_path.exists():
+            summary_path = analysis_path / "summary.json"
+
+        if not summary_path.exists():
             return []
 
         try:
-            data = json.loads(analysis_path.read_text())
+            data = json.loads(summary_path.read_text())
             files_changed = data.get("files_changed", [])
             # Extract just the path from each FileChange object
             return [f["path"] for f in files_changed if "path" in f]
@@ -1058,6 +1065,7 @@ class AnalysisPipeline:
                 generated_files.append(("markdown", path))
                 console.print(f"    [green]✓[/green] Markdown: {path}")
             except Exception as e:
+                logger.exception("Markdown generation failed: %s", e)
                 console.print(f"    [red]✗[/red] Markdown generation failed: {e}")
                 console.print(f"    [dim]{traceback.format_exc()}[/dim]")
 
@@ -1093,6 +1101,7 @@ class AnalysisPipeline:
 
                     return fmt, fmt_path, None
                 except Exception as e:
+                    logger.exception("%s generation failed: %s", fmt, e)
                     return fmt, None, str(e)
 
             # Run format generation in parallel
@@ -1119,6 +1128,7 @@ class AnalysisPipeline:
                         )
 
         if generated_files:
+            logger.info("Generated %d document(s) successfully", len(generated_files))
             console.print(
                 f"\n  [green]Successfully generated {len(generated_files)} document(s)[/green]"
             )
@@ -1126,5 +1136,6 @@ class AnalysisPipeline:
                 console.print(f"    [dim]{fmt}: {path}[/dim]")
             return True
         else:
+            logger.error("No documents were generated successfully")
             console.print("\n  [red]No documents were generated successfully[/red]")
             return False
