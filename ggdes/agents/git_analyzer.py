@@ -146,6 +146,8 @@ class GitAnalyzer:
                     capture_output=True,
                     text=True,
                     check=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
                 diff = result.stdout
@@ -160,6 +162,8 @@ class GitAnalyzer:
                     capture_output=True,
                     text=True,
                     check=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
                 diff = result.stdout

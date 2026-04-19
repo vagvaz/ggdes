@@ -694,27 +694,20 @@ class AnalysisPipeline:
     def _get_changed_files_from_analysis(self) -> list[str]:
         """Get list of changed files from git analysis results.
 
-        Reads from the unfiltered summary when available, since semantic diff
-        needs to see ALL changed files regardless of feature relevance filtering.
-
         Returns:
             List of file paths that changed (relative to repo root)
         """
         analysis_path = (
             self.kb_manager.get_analysis_path(self.analysis_id)
             / "git_analysis"
+            / "summary.json"
         )
 
-        # Prefer unfiltered summary — semantic diff needs all changed files
-        summary_path = analysis_path / "summary_unfiltered.json"
-        if not summary_path.exists():
-            summary_path = analysis_path / "summary.json"
-
-        if not summary_path.exists():
+        if not analysis_path.exists():
             return []
 
         try:
-            data = json.loads(summary_path.read_text())
+            data = json.loads(analysis_path.read_text())
             files_changed = data.get("files_changed", [])
             # Extract just the path from each FileChange object
             return [f["path"] for f in files_changed if "path" in f]
