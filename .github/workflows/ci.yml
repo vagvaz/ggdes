@@ -169,6 +169,7 @@ jobs:
         run: |
           uv build
           uv pip install dist/*.whl --system
+        shell: bash
 
       - name: Install with pip
         if: matrix.install-method == 'pip'
@@ -177,6 +178,7 @@ jobs:
           pip install build
           python -m build
           pip install dist/*.whl
+        shell: bash
 
       - name: Verify installation
         run: |
