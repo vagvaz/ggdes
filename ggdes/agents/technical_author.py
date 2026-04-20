@@ -165,7 +165,7 @@ class TechnicalAuthor:
 
         try:
             data = json.loads(semantic_diff_path.read_text())
-            return data
+            return data if isinstance(data, dict) else None
         except Exception:
             return None
 

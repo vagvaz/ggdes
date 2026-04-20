@@ -83,6 +83,11 @@ ignore_missing_imports = true
 # Exclude tests from type checking (test code typing issues tracked separately)
 exclude = ["ggdes/skills/", "tests/", "check_analysis.py"]
 
+[[tool.mypy.overrides]]
+module = "ggdes.cli.commands.*"
+# Circular import with typer app causes has-type/untyped-decorator errors
+disable_error_code = ["has-type", "untyped-decorator"]
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.0",

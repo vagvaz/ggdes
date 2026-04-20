@@ -107,7 +107,7 @@ class Coordinator:
 
         try:
             data = json.loads(semantic_diff_path.read_text())
-            return data
+            return data if isinstance(data, dict) else None
         except Exception:
             return None
 
@@ -511,7 +511,7 @@ Semantic Diff Analysis (automated code change detection):
 Key semantic changes:
 """
             # Group changes by type for better presentation
-            changes_by_type: dict[str, list] = {}
+            changes_by_type: dict[str, list[dict[str, Any]]] = {}
             for change in changes:
                 change_type = change.get("change_type", "unknown")
                 if change_type not in changes_by_type:

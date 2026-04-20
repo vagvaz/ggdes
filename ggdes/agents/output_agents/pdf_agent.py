@@ -129,11 +129,13 @@ class PdfAgent(OutputAgent):
         self, content: str, output_file: Path, diagrams_dir: Path
     ) -> None:
         """Generate PDF using reportlab following skill patterns with diagrams."""
+        from reportlab.lib.colors import Color
         from reportlab.lib.enums import TA_CENTER
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import (
+            Flowable,
             Image,
             PageBreak,
             Paragraph,
@@ -204,14 +206,14 @@ class PdfAgent(OutputAgent):
                 parent=styles["Normal"],
                 fontSize=10,
                 alignment=TA_CENTER,
-                textColor="gray",
+                textColor=Color(0.5, 0.5, 0.5),
                 spaceBefore=6,
                 spaceAfter=12,
             )
         )
 
         # Parse and build content
-        story = []
+        story: list[Flowable] = []
         lines = content.split("\n")
 
         for line in lines:

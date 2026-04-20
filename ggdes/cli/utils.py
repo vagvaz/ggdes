@@ -6,7 +6,10 @@ import subprocess
 from datetime import datetime
 from importlib.metadata import version as get_package_version
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 import typer
 import yaml
@@ -17,7 +20,7 @@ from ggdes.kb import KnowledgeBaseManager, StageStatus
 
 # Import console from the cli package (set in __init__.py)
 # We use a late import to avoid circular dependency
-def _get_console():
+def _get_console() -> "Console":
     from ggdes.cli import console
 
     return console

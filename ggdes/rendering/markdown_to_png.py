@@ -116,7 +116,7 @@ class MarkdownToPngRenderer:
 
         # Get Pygments CSS for syntax highlighting
         try:
-            pygments_css = HtmlFormatter().get_style_defs(".highlight")
+            pygments_css: str = HtmlFormatter().get_style_defs(".highlight")  # type: ignore[no-untyped-call]
         except Exception:
             pygments_css = ""
 
