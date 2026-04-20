@@ -36,7 +36,9 @@ class MarkdownAgent(OutputAgent):
             analysis_id: Analysis ID for reading from KB
             review_feedback: Optional feedback from review session to incorporate during regeneration.
         """
-        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
+        super().__init__(
+            repo_path, config, analysis_id, review_feedback=review_feedback
+        )
         self.llm = LLMFactory.from_config(config)
         self.conversation: ConversationContext | None = None
         self.format_name = "markdown"

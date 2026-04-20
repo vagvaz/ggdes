@@ -424,7 +424,9 @@ class KnowledgeBaseManager:
 
         return reset_stages
 
-    def save_review_session(self, analysis_id: str, review_data: dict[str, Any]) -> None:
+    def save_review_session(
+        self, analysis_id: str, review_data: dict[str, Any]
+    ) -> None:
         """Save review session data to KB.
 
         Args:
@@ -434,6 +436,7 @@ class KnowledgeBaseManager:
         review_path = get_kb_path(self.config, analysis_id) / "review_session.json"
         review_path.parent.mkdir(parents=True, exist_ok=True)
         import json
+
         review_path.write_text(json.dumps(review_data, indent=2, default=str))
 
     def load_review_session(self, analysis_id: str) -> dict[str, Any] | None:
@@ -446,6 +449,7 @@ class KnowledgeBaseManager:
             Review session data or None if not found
         """
         import json
+
         review_path = get_kb_path(self.config, analysis_id) / "review_session.json"
         if not review_path.exists():
             return None
@@ -454,7 +458,9 @@ class KnowledgeBaseManager:
         except (json.JSONDecodeError, OSError):
             return None
 
-    def save_section_feedback(self, analysis_id: str, section_title: str, feedback: str) -> None:
+    def save_section_feedback(
+        self, analysis_id: str, section_title: str, feedback: str
+    ) -> None:
         """Save feedback for a specific document section.
 
         Args:
@@ -468,6 +474,7 @@ class KnowledgeBaseManager:
         feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
         feedback_path.parent.mkdir(parents=True, exist_ok=True)
         import contextlib
+
         data: dict[str, Any] = {}
         if feedback_path.exists():
             with contextlib.suppress(json.JSONDecodeError, OSError):
@@ -488,6 +495,7 @@ class KnowledgeBaseManager:
             Dict mapping section titles to feedback text
         """
         import json
+
         feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
         if not feedback_path.exists():
             return {}
@@ -506,7 +514,9 @@ class KnowledgeBaseManager:
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def load_section_feedback_with_timestamps(self, analysis_id: str) -> dict[str, dict[str, str]]:
+    def load_section_feedback_with_timestamps(
+        self, analysis_id: str
+    ) -> dict[str, dict[str, str]]:
         """Load section-level feedback with timestamps from KB.
 
         Args:
@@ -516,6 +526,7 @@ class KnowledgeBaseManager:
             Dict mapping section titles to dicts with 'feedback' and 'updated_at' keys
         """
         import json
+
         feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
         if not feedback_path.exists():
             return {}
@@ -544,6 +555,7 @@ class KnowledgeBaseManager:
             Document plan data or None if not found
         """
         import json
+
         plans_dir = get_kb_path(self.config, analysis_id) / "plans"
         if not plans_dir.exists():
             return None

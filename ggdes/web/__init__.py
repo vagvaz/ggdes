@@ -577,17 +577,25 @@ async def analysis_detail_page(analysis_id: str) -> HTMLResponse:
     # Build stage info
     stages = []
     for name, stage in metadata.stages.items():
-        stages.append({
-            "name": name,
-            "status": stage.status.value,
-            "started_at": stage.started_at.isoformat() if stage.started_at else None,
-            "completed_at": stage.completed_at.isoformat() if stage.completed_at else None,
-            "error": stage.error_message,
-        })
+        stages.append(
+            {
+                "name": name,
+                "status": stage.status.value,
+                "started_at": stage.started_at.isoformat()
+                if stage.started_at
+                else None,
+                "completed_at": stage.completed_at.isoformat()
+                if stage.completed_at
+                else None,
+                "error": stage.error_message,
+            }
+        )
 
     # Load git summary
     git_summary = None
-    git_summary_path = kb.get_analysis_path(analysis_id) / "git_analysis" / "summary.json"
+    git_summary_path = (
+        kb.get_analysis_path(analysis_id) / "git_analysis" / "summary.json"
+    )
     if git_summary_path.exists():
         with contextlib.suppress(Exception):
             git_summary = json.loads(git_summary_path.read_text())
@@ -603,23 +611,32 @@ async def analysis_detail_page(analysis_id: str) -> HTMLResponse:
         for plan_file in plans_dir.glob("*.json"):
             with contextlib.suppress(Exception):
                 plan_data = json.loads(plan_file.read_text())
-                plans.append({
-                    "format": plan_file.stem,
-                    "sections": len(plan_data.get("sections", [])),
-                    "diagrams": len(plan_data.get("diagrams", [])),
-                })
+                plans.append(
+                    {
+                        "format": plan_file.stem,
+                        "sections": len(plan_data.get("sections", [])),
+                        "diagrams": len(plan_data.get("diagrams", [])),
+                    }
+                )
 
     # Load documents
     documents = []
     output_dir = kb.get_analysis_path(analysis_id) / "outputs"
     if output_dir.exists():
         for doc_file in output_dir.iterdir():
-            if doc_file.is_file() and doc_file.suffix in {".md", ".docx", ".pdf", ".pptx"}:
-                documents.append({
-                    "name": doc_file.name,
-                    "format": doc_file.suffix[1:],
-                    "size": doc_file.stat().st_size,
-                })
+            if doc_file.is_file() and doc_file.suffix in {
+                ".md",
+                ".docx",
+                ".pdf",
+                ".pptx",
+            }:
+                documents.append(
+                    {
+                        "name": doc_file.name,
+                        "format": doc_file.suffix[1:],
+                        "size": doc_file.stat().st_size,
+                    }
+                )
 
     return HTMLResponse(
         content=DETAIL_HTML.format(
@@ -701,7 +718,9 @@ async def get_stage_preview(analysis_id: str, stage_name: str) -> dict[str, Any]
     reviewer = StageReviewer(config, analysis_id)
     preview = reviewer.generate_preview(stage_name)
     if not preview:
-        raise HTTPException(status_code=404, detail=f"No preview available for stage: {stage_name}")
+        raise HTTPException(
+            status_code=404, detail=f"No preview available for stage: {stage_name}"
+        )
     return {
         "stage_name": preview.stage_name,
         "display_name": preview.display_name,
@@ -723,19 +742,23 @@ async def list_outputs(analysis_id: str) -> dict[str, Any]:
     for f in analysis_path.rglob("*"):
         if f.is_file() and f.suffix in (".json", ".md", ".txt", ".yaml", ".yml"):
             rel = f.relative_to(analysis_path)
-            files.append({
-                "path": str(f),
-                "relative": str(rel),
-                "name": f.name,
-                "size": f.stat().st_size,
-                "mtime": f.stat().st_mtime,
-            })
+            files.append(
+                {
+                    "path": str(f),
+                    "relative": str(rel),
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "mtime": f.stat().st_mtime,
+                }
+            )
 
     return {"files": sorted(files, key=lambda x: x["relative"])}
 
 
 @app.get("/api/analyses/{analysis_id}/outputs/content")  # type: ignore[untyped-decorator]
-async def get_output_content(analysis_id: str, path: str = Query(...)) -> dict[str, Any]:
+async def get_output_content(
+    analysis_id: str, path: str = Query(...)
+) -> dict[str, Any]:
     """Get content of a specific output file."""
     file_path = Path(path)
     if not file_path.exists():

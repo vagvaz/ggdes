@@ -17,10 +17,16 @@ class PdfAgent(OutputAgent):
     """
 
     def __init__(
-        self, repo_path: Path, config: GGDesConfig, analysis_id: str, review_feedback: str | None = None
+        self,
+        repo_path: Path,
+        config: GGDesConfig,
+        analysis_id: str,
+        review_feedback: str | None = None,
     ) -> None:
         """Initialize pdf agent."""
-        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
+        super().__init__(
+            repo_path, config, analysis_id, review_feedback=review_feedback
+        )
         self.format_name = "pdf"
         self.skill_content = self._load_skill("pdf")
 

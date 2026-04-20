@@ -182,7 +182,9 @@ class SystemPromptBuilder:
         self._skills: list[tuple[str, str]] = []  # (title, content)
         self._base_prompt: str | None = None
         self._user_guidance: str | None = None
-        self._sections: list[tuple[str, str]] = []  # (title, content) for custom sections
+        self._sections: list[
+            tuple[str, str]
+        ] = []  # (title, content) for custom sections
 
     def add_skill(self, title: str, content: str) -> "SystemPromptBuilder":
         """Add a skill section.

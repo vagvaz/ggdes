@@ -71,7 +71,9 @@ class SectionFeedbackPanel(Vertical):
         plan = self.kb_manager.load_document_plan(analysis_id)
         if not plan or not plan.get("sections"):
             placeholder = self.query_one("#sections-placeholder", Label)
-            placeholder.update("[dim]No document plan yet. Run an analysis first.[/dim]")
+            placeholder.update(
+                "[dim]No document plan yet. Run an analysis first.[/dim]"
+            )
             return
 
         self._current_sections = plan["sections"]
@@ -176,7 +178,13 @@ class LiveOutputViewer(Vertical):
 
         has_changes = False
         for dir_path in analysis_path.rglob("*"):
-            if dir_path.is_file() and dir_path.suffix in (".json", ".md", ".txt", ".yaml", ".yml"):
+            if dir_path.is_file() and dir_path.suffix in (
+                ".json",
+                ".md",
+                ".txt",
+                ".yaml",
+                ".yml",
+            ):
                 current_mtime = dir_path.stat().st_mtime
                 last_mtime = self.file_mtimes.get(str(dir_path), 0)
                 if current_mtime > last_mtime:
@@ -269,7 +277,9 @@ class FeedbackView(Vertical):
             with Vertical(classes="feedback-left-panel"):
                 yield SectionFeedbackPanel(id="section-feedback-panel")
                 with Horizontal(classes="feedback-actions"):
-                    yield Button("💾 Save All Feedback", id="save-feedback", variant="primary")
+                    yield Button(
+                        "💾 Save All Feedback", id="save-feedback", variant="primary"
+                    )
                     yield Label("", id="save-status")
 
             # Right: Live output viewer (60%)
@@ -284,7 +294,9 @@ class FeedbackView(Vertical):
             value = event.value
             if value and value != Select.BLANK:
                 analysis_id = str(value)
-                section_panel = self.query_one("#section-feedback-panel", SectionFeedbackPanel)
+                section_panel = self.query_one(
+                    "#section-feedback-panel", SectionFeedbackPanel
+                )
                 section_panel.analysis_id = analysis_id
                 output_viewer = self.query_one("#live-output-viewer", LiveOutputViewer)
                 output_viewer.analysis_id = analysis_id
@@ -292,7 +304,9 @@ class FeedbackView(Vertical):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle save button."""
         if event.button.id == "save-feedback":
-            section_panel = self.query_one("#section-feedback-panel", SectionFeedbackPanel)
+            section_panel = self.query_one(
+                "#section-feedback-panel", SectionFeedbackPanel
+            )
             count = section_panel.save_all_feedback()
             status = self.query_one("#save-status", Label)
             status.update(f"[green]✓ Saved {count} feedback entries[/green]")

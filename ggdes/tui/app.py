@@ -147,10 +147,18 @@ class AnalysisDetailView(VerticalScroll):
                         variant="primary",
                     )
                     # Show review button if any reviewable stages are completed
-                    reviewable = {"git_analysis", "change_filter", "technical_author", "coordinator_plan", "output_generation"}
+                    reviewable = {
+                        "git_analysis",
+                        "change_filter",
+                        "technical_author",
+                        "coordinator_plan",
+                        "output_generation",
+                    }
                     completed_reviewable = [
-                        s for s in reviewable
-                        if s in metadata.stages and metadata.stages[s].status == StageStatus.COMPLETED
+                        s
+                        for s in reviewable
+                        if s in metadata.stages
+                        and metadata.stages[s].status == StageStatus.COMPLETED
                     ]
                     if completed_reviewable:
                         yield Button(
@@ -265,9 +273,7 @@ class ReviewScreen(Screen[None]):
                     if status == StageStatus.COMPLETED:
                         preview = reviewer.generate_preview(stage_name)
                         if preview:
-                            yield Label(
-                                f"  [dim]{preview.summary}[/dim]"
-                            )
+                            yield Label(f"  [dim]{preview.summary}[/dim]")
                             if preview.key_items:
                                 yield Label(
                                     f"  [dim]{preview.item_count} items:[/dim] "
@@ -318,30 +324,36 @@ class ReviewScreen(Screen[None]):
         for stage_name, checkbox in self.regenerate_checkboxes.items():
             feedback_text = self.feedback_inputs.get(stage_name, Input()).value or ""
             if checkbox.value and feedback_text.strip():
-                session.add_review(StageReview(
-                    stage_name=stage_name,
-                    decision=ReviewDecision.REGENERATE_ALL,
-                    feedback=feedback_text.strip(),
-                    items_reviewed=0,
-                    items_accepted=0,
-                ))
+                session.add_review(
+                    StageReview(
+                        stage_name=stage_name,
+                        decision=ReviewDecision.REGENERATE_ALL,
+                        feedback=feedback_text.strip(),
+                        items_reviewed=0,
+                        items_accepted=0,
+                    )
+                )
             elif checkbox.value:
                 # Regenerate without specific feedback
-                session.add_review(StageReview(
-                    stage_name=stage_name,
-                    decision=ReviewDecision.REGENERATE_ALL,
-                    feedback=None,
-                    items_reviewed=0,
-                    items_accepted=0,
-                ))
+                session.add_review(
+                    StageReview(
+                        stage_name=stage_name,
+                        decision=ReviewDecision.REGENERATE_ALL,
+                        feedback=None,
+                        items_reviewed=0,
+                        items_accepted=0,
+                    )
+                )
             else:
                 # Accept the stage
-                session.add_review(StageReview(
-                    stage_name=stage_name,
-                    decision=ReviewDecision.ACCEPT,
-                    items_reviewed=0,
-                    items_accepted=0,
-                ))
+                session.add_review(
+                    StageReview(
+                        stage_name=stage_name,
+                        decision=ReviewDecision.ACCEPT,
+                        items_reviewed=0,
+                        items_accepted=0,
+                    )
+                )
 
         # Persist session to KB
         kb_manager.save_review_session(self.analysis_id, session.to_dict())
@@ -1122,6 +1134,7 @@ class GGDesTUI(App[None]):
 
             with TabPane("📝 Feedback", id="feedback"):
                 from ggdes.tui.feedback_view import FeedbackView
+
                 yield FeedbackView(id="feedback-view")
 
             with TabPane("🔍 Debug", id="debug"):
@@ -1361,6 +1374,7 @@ class GGDesTUI(App[None]):
 
     def _open_review_screen(self, analysis_id: str) -> None:
         """Open the review screen for an analysis."""
+
         def on_review_submit(aid: str) -> None:
             """Callback after review is submitted."""
             self._resume_analysis(aid)

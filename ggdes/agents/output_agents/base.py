@@ -54,6 +54,7 @@ class OutputAgent(ABC):
         alongside ggdes-kb and ggdes-worktrees.
         """
         from ggdes.config import get_output_path
+
         return get_output_path(self.config, self.analysis_id)
 
     def _get_diagram_cache(self) -> Any:
@@ -225,7 +226,11 @@ class OutputAgent(ABC):
                             changed_classes.add(element.get("name", ""))
                         # Also check if a method's parent class changed
                         parent = element.get("parent")
-                        if parent and change.get("change_category") in ("added", "modified", "deleted"):
+                        if parent and change.get("change_category") in (
+                            "added",
+                            "modified",
+                            "deleted",
+                        ):
                             changed_classes.add(parent)
                 except Exception:
                     continue
@@ -328,6 +333,7 @@ class OutputAgent(ABC):
             Dict mapping section titles to feedback text.
         """
         from ggdes.kb import KnowledgeBaseManager
+
         kb = KnowledgeBaseManager(self.config)
         return kb.load_section_feedback(self.analysis_id)
 
@@ -551,9 +557,15 @@ class OutputAgent(ABC):
                 step_type = "process"
                 if fact.category == "data_flow":
                     step_type = "database"
-                elif "if" in fact.description.lower() or "check" in fact.description.lower():
+                elif (
+                    "if" in fact.description.lower()
+                    or "check" in fact.description.lower()
+                ):
                     step_type = "decision"
-                elif "error" in fact.description.lower() or "exception" in fact.description.lower():
+                elif (
+                    "error" in fact.description.lower()
+                    or "exception" in fact.description.lower()
+                ):
                     step_type = "boundary"
 
                 # Truncate label to reasonable length
@@ -640,7 +652,9 @@ class OutputAgent(ABC):
             for cls in ast_classes:
                 cls_name = cls["name"]
                 is_changed = cls_name in changed_classes
-                is_relevant = cls_name in relevant_names or cls_name.lower() in relevant_names
+                is_relevant = (
+                    cls_name in relevant_names or cls_name.lower() in relevant_names
+                )
 
                 # Check if any methods are referenced in facts
                 has_relevant_method = False
@@ -665,20 +679,24 @@ class OutputAgent(ABC):
                 # Format attributes as dicts for PlantUML generator
                 attributes = []
                 for attr in cls.get("attributes", [])[:10]:  # Limit to avoid clutter
-                    attributes.append({
-                        "name": attr,
-                        "type": "",
-                        "visibility": "public",
-                    })
+                    attributes.append(
+                        {
+                            "name": attr,
+                            "type": "",
+                            "visibility": "public",
+                        }
+                    )
 
                 # Format methods as dicts, limit to first 15
                 methods = []
                 for m in cls.get("methods", [])[:15]:
-                    methods.append({
-                        "name": m,
-                        "signature": f"{m}()",
-                        "visibility": "public",
-                    })
+                    methods.append(
+                        {
+                            "name": m,
+                            "signature": f"{m}()",
+                            "visibility": "public",
+                        }
+                    )
 
                 plantuml_classes.append(
                     {
