@@ -28,6 +28,7 @@ from textual.widgets import (
 
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
+from ggdes.tui.debug_view import DebugView
 from ggdes.worktree import WorktreeManager
 
 
@@ -219,6 +220,11 @@ class ReviewScreen(Screen[None]):
                     if feedback:
                         existing_feedback[stage_review["stage_name"]] = feedback
 
+            # Generate previews for completed stages
+            from ggdes.review.reviewer import StageReviewer
+
+            reviewer = StageReviewer(self.config, self.analysis_id)
+
             # Show reviewable stages
             reviewable_stages = [
                 "git_analysis",
@@ -255,8 +261,22 @@ class ReviewScreen(Screen[None]):
                         f"[bold]{stage_name}[/bold] [{status_color}]{status.value}[/{status_color}]"
                     )
 
-                    # Only show feedback controls for completed stages
+                    # Show preview data for completed stages
                     if status == StageStatus.COMPLETED:
+                        preview = reviewer.generate_preview(stage_name)
+                        if preview:
+                            yield Label(
+                                f"  [dim]{preview.summary}[/dim]"
+                            )
+                            if preview.key_items:
+                                yield Label(
+                                    f"  [dim]{preview.item_count} items:[/dim] "
+                                    + ", ".join(
+                                        item.get("label", "?")[:40]
+                                        for item in preview.key_items[:3]
+                                    )
+                                )
+
                         prev_feedback = existing_feedback.get(stage_name, "")
                         self.regenerate_checkboxes[stage_name] = Checkbox(
                             "Regenerate with feedback", id=f"regen_{stage_name}"
@@ -1043,6 +1063,9 @@ class GGDesTUI(App[None]):
         Binding("f", "gitlog_toggle_focus", "Toggle Focus", show=True),
         Binding("c", "gitlog_clear", "Clear Selection", show=True),
         Binding("t", "feedback_tab", "Feedback Tab", show=True),
+        Binding("d", "debug_tab", "Debug Tab", show=True),
+        Binding("ctrl+r", "resume_selected", "Resume", show=False),
+        Binding("ctrl+d", "delete_selected", "Delete", show=False),
     ]
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1056,9 +1079,13 @@ class GGDesTUI(App[None]):
 
         with TabbedContent():
             with TabPane("📊 Analyses", id="analyses"), Horizontal():
-                # Left sidebar: Analysis list
+                # Left sidebar: Analysis list with search
                 with Vertical(id="sidebar"):
                     yield Label("[bold]Analyses[/bold]")
+                    yield Input(
+                        placeholder="Search analyses...",
+                        id="analysis-search",
+                    )
                     yield Label("")
 
                     analyses = self.kb_manager.list_analyses()
@@ -1097,6 +1124,9 @@ class GGDesTUI(App[None]):
                 from ggdes.tui.feedback_view import FeedbackView
                 yield FeedbackView(id="feedback-view")
 
+            with TabPane("🔍 Debug", id="debug"):
+                yield DebugView(id="debug-view")
+
             with TabPane("❓ Help", id="help"):
                 yield CommandHelp()
 
@@ -1108,6 +1138,25 @@ class GGDesTUI(App[None]):
         if isinstance(item, AnalysisListItem):
             detail_view = self.query_one("#detail-view", AnalysisDetailView)
             detail_view.analysis_id = item.analysis_id
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Filter analysis list based on search input."""
+        if event.input.id != "analysis-search":
+            return
+        query = event.value.strip().lower()
+        try:
+            list_view = self.query_one("#analysis-list", ListView)
+        except Exception:
+            return
+
+        for child in list_view.children:
+            if isinstance(child, AnalysisListItem):
+                matches = (
+                    not query
+                    or query in child.analysis_name.lower()
+                    or query in child.analysis_id.lower()
+                )
+                child.set_class(not matches, "hidden")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
@@ -1136,6 +1185,26 @@ class GGDesTUI(App[None]):
     def action_feedback_tab(self) -> None:
         """Switch to Feedback tab."""
         self.query_one(TabbedContent).active = "feedback"
+
+    def action_debug_tab(self) -> None:
+        """Switch to Debug tab."""
+        self.query_one(TabbedContent).active = "debug"
+
+    def action_resume_selected(self) -> None:
+        """Resume the currently selected analysis."""
+        detail_view = self.query_one("#detail-view", AnalysisDetailView)
+        if detail_view.analysis_id:
+            self._resume_analysis(detail_view.analysis_id)
+        else:
+            self.notify("No analysis selected", title="Resume", severity="warning")
+
+    def action_delete_selected(self) -> None:
+        """Delete the currently selected analysis."""
+        detail_view = self.query_one("#detail-view", AnalysisDetailView)
+        if detail_view.analysis_id:
+            self._delete_analysis(detail_view.analysis_id)
+        else:
+            self.notify("No analysis selected", title="Delete", severity="warning")
 
     def action_new_analysis(self) -> None:
         """Start new analysis from TUI."""

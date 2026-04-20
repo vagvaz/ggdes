@@ -296,6 +296,11 @@ class FeedbackView(Vertical):
             count = section_panel.save_all_feedback()
             status = self.query_one("#save-status", Label)
             status.update(f"[green]✓ Saved {count} feedback entries[/green]")
+            self.app.notify(
+                f"Saved {count} feedback entries",
+                title="Feedback Saved",
+                severity="information",
+            )
 
     def _populate_analysis_selector(self) -> None:
         """Load available analyses into the selector."""

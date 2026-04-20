@@ -565,6 +565,80 @@ async def feedback_page(analysis_id: str) -> HTMLResponse:
     )
 
 
+@app.get("/analysis/{analysis_id}", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
+async def analysis_detail_page(analysis_id: str) -> HTMLResponse:
+    """Serve the analysis detail page."""
+    kb = get_kb()
+    metadata = kb.load_metadata(analysis_id)
+
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    # Build stage info
+    stages = []
+    for name, stage in metadata.stages.items():
+        stages.append({
+            "name": name,
+            "status": stage.status.value,
+            "started_at": stage.started_at.isoformat() if stage.started_at else None,
+            "completed_at": stage.completed_at.isoformat() if stage.completed_at else None,
+            "error": stage.error_message,
+        })
+
+    # Load git summary
+    git_summary = None
+    git_summary_path = kb.get_analysis_path(analysis_id) / "git_analysis" / "summary.json"
+    if git_summary_path.exists():
+        with contextlib.suppress(Exception):
+            git_summary = json.loads(git_summary_path.read_text())
+
+    # Load facts count
+    facts_dir = kb.get_analysis_path(analysis_id) / "technical_facts"
+    facts_count = len(list(facts_dir.glob("*.json"))) if facts_dir.exists() else 0
+
+    # Load plans
+    plans_dir = kb.get_analysis_path(analysis_id) / "plans"
+    plans = []
+    if plans_dir.exists():
+        for plan_file in plans_dir.glob("*.json"):
+            with contextlib.suppress(Exception):
+                plan_data = json.loads(plan_file.read_text())
+                plans.append({
+                    "format": plan_file.stem,
+                    "sections": len(plan_data.get("sections", [])),
+                    "diagrams": len(plan_data.get("diagrams", [])),
+                })
+
+    # Load documents
+    documents = []
+    output_dir = kb.get_analysis_path(analysis_id) / "outputs"
+    if output_dir.exists():
+        for doc_file in output_dir.iterdir():
+            if doc_file.is_file() and doc_file.suffix in {".md", ".docx", ".pdf", ".pptx"}:
+                documents.append({
+                    "name": doc_file.name,
+                    "format": doc_file.suffix[1:],
+                    "size": doc_file.stat().st_size,
+                })
+
+    return HTMLResponse(
+        content=DETAIL_HTML.format(
+            analysis_id=analysis_id,
+            analysis_name=metadata.name,
+            repo_path=metadata.repo_path,
+            commit_range=metadata.commit_range or "",
+            created_at=metadata.created_at.isoformat(),
+            target_formats=", ".join(metadata.target_formats or ["markdown"]),
+            stages_json=json.dumps(stages),
+            git_summary_json=json.dumps(git_summary or {}),
+            facts_count=facts_count,
+            plans_json=json.dumps(plans),
+            documents_json=json.dumps(documents),
+        ),
+        status_code=200,
+    )
+
+
 @app.get("/api/analyses/{analysis_id}/feedback")  # type: ignore[untyped-decorator]
 async def get_feedback(analysis_id: str) -> dict[str, str]:
     """Get section-level feedback for an analysis."""
@@ -616,6 +690,25 @@ async def get_document_plan(analysis_id: str) -> dict[str, Any]:
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     return plan
+
+
+@app.get("/api/analyses/{analysis_id}/stage-preview/{stage_name}")  # type: ignore[untyped-decorator]
+async def get_stage_preview(analysis_id: str, stage_name: str) -> dict[str, Any]:
+    """Get a preview of a stage's output for review."""
+    from ggdes.review.reviewer import StageReviewer
+
+    config = get_config()
+    reviewer = StageReviewer(config, analysis_id)
+    preview = reviewer.generate_preview(stage_name)
+    if not preview:
+        raise HTTPException(status_code=404, detail=f"No preview available for stage: {stage_name}")
+    return {
+        "stage_name": preview.stage_name,
+        "display_name": preview.display_name,
+        "summary": preview.summary,
+        "item_count": preview.item_count,
+        "key_items": preview.key_items,
+    }
 
 
 @app.get("/api/analyses/{analysis_id}/outputs")  # type: ignore[untyped-decorator]
@@ -1060,7 +1153,7 @@ INDEX_HTML = """
         }
         
         function viewDetails(id) {
-            window.open(`/api/analyses/${id}`, '_blank');
+            window.location.href = `/analysis/${id}`;
         }
         
         function openFeedback(id) {
@@ -1163,6 +1256,15 @@ FEEDBACK_HTML = """
             grid-template-columns: 40% 60%;
             gap: 20px;
             height: calc(100vh - 180px);
+        }}
+        @media (max-width: 768px) {{
+            .feedback-layout {{
+                grid-template-columns: 1fr;
+                height: auto;
+            }}
+            .section-panel, .output-panel {{
+                max-height: 50vh;
+            }}
         }}
         .section-panel, .output-panel {{
             background: white;
@@ -1458,6 +1560,328 @@ FEEDBACK_HTML = """
         // Initialize
         loadSections();
         loadOutputFiles();
+    </script>
+</body>
+</html>
+"""
+
+
+DETAIL_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{analysis_name} - Analysis Detail</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+        header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
+        header h1 {{ font-size: 1.5em; margin-bottom: 5px; }}
+        header p {{ opacity: 0.9; font-size: 0.95em; }}
+        .back-link {{
+            display: inline-block;
+            margin-top: 10px;
+            color: white;
+            text-decoration: underline;
+            opacity: 0.9;
+        }}
+        .back-link:hover {{ opacity: 1; }}
+        .grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }}
+        @media (max-width: 768px) {{
+            .grid {{ grid-template-columns: 1fr; }}
+        }}
+        .card {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }}
+        .card h2 {{
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+        }}
+        .info-row {{
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }}
+        .info-row:last-child {{ border-bottom: none; }}
+        .info-label {{ color: #666; font-weight: 500; }}
+        .info-value {{ color: #333; }}
+        .stage-list {{ list-style: none; }}
+        .stage-item {{
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: #f8f9fa;
+        }}
+        .stage-icon {{
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }}
+        .stage-completed {{ background: #d4edda; color: #155724; }}
+        .stage-pending {{ background: #e2e3e5; color: #383d41; }}
+        .stage-in_progress {{ background: #fff3cd; color: #856404; }}
+        .stage-failed {{ background: #f8d7da; color: #721c24; }}
+        .stage-skipped {{ background: #d1ecf1; color: #0c5460; }}
+        .stage-name {{ font-weight: 500; }}
+        .stage-time {{ margin-left: auto; color: #999; font-size: 0.85em; }}
+        .actions {{
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }}
+        .btn {{
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }}
+        .btn-primary {{ background: #667eea; color: white; }}
+        .btn-primary:hover {{ background: #5a6fd6; }}
+        .btn-secondary {{ background: #6c757d; color: white; }}
+        .btn-secondary:hover {{ background: #545b62; }}
+        .btn-warning {{ background: #ffc107; color: #333; }}
+        .btn-warning:hover {{ background: #e0a800; }}
+        .btn-danger {{ background: #dc3545; color: white; }}
+        .btn-danger:hover {{ background: #c82333; }}
+        .progress-bar {{
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin: 10px 0;
+        }}
+        .progress-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 10px;
+            transition: width 0.3s;
+        }}
+        .doc-list {{ list-style: none; }}
+        .doc-item {{
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: #f8f9fa;
+        }}
+        .doc-icon {{ margin-right: 10px; font-size: 1.2em; }}
+        .doc-name {{ font-weight: 500; }}
+        .doc-size {{ margin-left: auto; color: #999; font-size: 0.85em; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📋 {analysis_name}</h1>
+            <p>Analysis Detail View</p>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </header>
+
+        <div class="grid">
+            <!-- Info Card -->
+            <div class="card">
+                <h2>ℹ️ Analysis Info</h2>
+                <div class="info-row">
+                    <span class="info-label">ID</span>
+                    <span class="info-value" style="font-family: monospace; font-size: 0.85em;">{analysis_id}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Repository</span>
+                    <span class="info-value">{repo_path}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Commit Range</span>
+                    <span class="info-value" style="font-family: monospace;">{commit_range}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Created</span>
+                    <span class="info-value">{created_at}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Target Formats</span>
+                    <span class="info-value">{target_formats}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Facts</span>
+                    <span class="info-value">{facts_count} technical facts</span>
+                </div>
+            </div>
+
+            <!-- Stage Progress Card -->
+            <div class="card">
+                <h2>📊 Stage Progress</h2>
+                <div id="progress-bar" class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <ul class="stage-list" id="stage-list"></ul>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Documents Card -->
+            <div class="card">
+                <h2>📄 Generated Documents</h2>
+                <ul class="doc-list" id="doc-list"></ul>
+                <p id="no-docs" style="color: #999; display: none;">No documents generated yet.</p>
+            </div>
+
+            <!-- Plans Card -->
+            <div class="card">
+                <h2>📋 Document Plans</h2>
+                <ul class="stage-list" id="plan-list"></ul>
+                <p id="no-plans" style="color: #999; display: none;">No plans generated yet.</p>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-primary" onclick="resumeAnalysis()">▶ Resume</button>
+            <a href="/feedback/{analysis_id}" class="btn btn-warning">📝 Feedback</a>
+            <button class="btn btn-danger" onclick="deleteAnalysis()">🗑 Delete</button>
+        </div>
+    </div>
+
+    <script>
+        const ANALYSIS_ID = '{analysis_id}';
+        const STAGES = {stages_json};
+        const DOCUMENTS = {documents_json};
+        const PLANS = {plans_json};
+
+        // Render stages
+        function renderStages() {{
+            const list = document.getElementById('stage-list');
+            const statusIcons = {{
+                completed: '✓', pending: '○', in_progress: '◐',
+                failed: '✗', skipped: '⊘'
+            }};
+            let completed = 0;
+            STAGES.forEach(s => {{
+                if (s.status === 'completed') completed++;
+                const li = document.createElement('li');
+                li.className = 'stage-item';
+                const iconClass = 'stage-' + s.status;
+                li.innerHTML = `
+                    <div class="stage-icon ${{iconClass}}">${{statusIcons[s.status] || '?'}}</div>
+                    <span class="stage-name">${{s.name}}</span>
+                    <span class="stage-time">${{s.completed_at ? new Date(s.completed_at).toLocaleTimeString() : s.status}}</span>
+                `;
+                list.appendChild(li);
+            }});
+            const pct = STAGES.length > 0 ? (completed / STAGES.length * 100) : 0;
+            document.getElementById('progress-fill').style.width = pct + '%';
+        }}
+
+        // Render documents
+        function renderDocuments() {{
+            const list = document.getElementById('doc-list');
+            if (DOCUMENTS.length === 0) {{
+                document.getElementById('no-docs').style.display = 'block';
+                return;
+            }}
+            const icons = {{ md: '📝', docx: '📘', pdf: '📕', pptx: '📊' }};
+            DOCUMENTS.forEach(d => {{
+                const li = document.createElement('li');
+                li.className = 'doc-item';
+                li.innerHTML = `
+                    <span class="doc-icon">${{icons[d.format] || '📄'}}</span>
+                    <span class="doc-name">${{d.name}}</span>
+                    <span class="doc-size">${{(d.size / 1024).toFixed(1)}} KB</span>
+                `;
+                list.appendChild(li);
+            }});
+        }}
+
+        // Render plans
+        function renderPlans() {{
+            const list = document.getElementById('plan-list');
+            if (PLANS.length === 0) {{
+                document.getElementById('no-plans').style.display = 'block';
+                return;
+            }}
+            PLANS.forEach(p => {{
+                const li = document.createElement('li');
+                li.className = 'stage-item';
+                li.innerHTML = `
+                    <div class="stage-icon stage-completed">📋</div>
+                    <span class="stage-name">${{p.format}}</span>
+                    <span class="stage-time">${{p.sections}} sections, ${{p.diagrams}} diagrams</span>
+                `;
+                list.appendChild(li);
+            }});
+        }}
+
+        async function resumeAnalysis() {{
+            try {{
+                const resp = await fetch(`/api/analyses/${{ANALYSIS_ID}}/resume`, {{ method: 'POST' }});
+                const data = await resp.json();
+                if (data.success) {{
+                    alert('Analysis resumed successfully!');
+                    location.reload();
+                }} else {{
+                    alert('Resume failed: ' + (data.error || 'Unknown error'));
+                }}
+            }} catch (e) {{
+                alert('Error: ' + e.message);
+            }}
+        }}
+
+        async function deleteAnalysis() {{
+            if (!confirm('Delete this analysis? This cannot be undone.')) return;
+            try {{
+                const resp = await fetch(`/api/analyses/${{ANALYSIS_ID}}/delete`, {{ method: 'POST' }});
+                const data = await resp.json();
+                if (data.success) {{
+                    window.location.href = '/';
+                }} else {{
+                    alert('Delete failed: ' + (data.error || 'Unknown error'));
+                }}
+            }} catch (e) {{
+                alert('Error: ' + e.message);
+            }}
+        }}
+
+        renderStages();
+        renderDocuments();
+        renderPlans();
     </script>
 </body>
 </html>

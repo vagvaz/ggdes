@@ -463,14 +463,19 @@ class KnowledgeBaseManager:
             feedback: User feedback text for this section
         """
         import json
+        from datetime import datetime, timezone
+
         feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
         feedback_path.parent.mkdir(parents=True, exist_ok=True)
         import contextlib
-        data: dict[str, str] = {}
+        data: dict[str, Any] = {}
         if feedback_path.exists():
             with contextlib.suppress(json.JSONDecodeError, OSError):
                 data = json.loads(feedback_path.read_text())
-        data[section_title] = feedback
+        data[section_title] = {
+            "feedback": feedback,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
         feedback_path.write_text(json.dumps(data, indent=2))
 
     def load_section_feedback(self, analysis_id: str) -> dict[str, str]:
@@ -488,7 +493,44 @@ class KnowledgeBaseManager:
             return {}
         try:
             result = json.loads(feedback_path.read_text())
-            return result if isinstance(result, dict) else {}
+            if not isinstance(result, dict):
+                return {}
+            # Handle both old format (str values) and new format (dict values with timestamps)
+            feedback: dict[str, str] = {}
+            for key, value in result.items():
+                if isinstance(value, str):
+                    feedback[key] = value
+                elif isinstance(value, dict) and "feedback" in value:
+                    feedback[key] = value["feedback"]
+            return feedback
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def load_section_feedback_with_timestamps(self, analysis_id: str) -> dict[str, dict[str, str]]:
+        """Load section-level feedback with timestamps from KB.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            Dict mapping section titles to dicts with 'feedback' and 'updated_at' keys
+        """
+        import json
+        feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
+        if not feedback_path.exists():
+            return {}
+        try:
+            result = json.loads(feedback_path.read_text())
+            if not isinstance(result, dict):
+                return {}
+            # Normalize old format (str values) to new format
+            normalized: dict[str, dict[str, str]] = {}
+            for key, value in result.items():
+                if isinstance(value, str):
+                    normalized[key] = {"feedback": value, "updated_at": ""}
+                elif isinstance(value, dict) and "feedback" in value:
+                    normalized[key] = value
+            return normalized
         except (json.JSONDecodeError, OSError):
             return {}
 
