@@ -993,6 +993,45 @@ class GGDesTUI(App[None]):
         height: 1fr;
         border: solid $primary-darken-2;
     }
+    
+    /* Feedback Tab Styles */
+    .feedback-selector {
+        margin: 0 0 1 0;
+        align: left middle;
+    }
+    
+    .feedback-left-panel {
+        width: 40%;
+        height: 1fr;
+        border: solid $primary;
+        padding: 1;
+    }
+    
+    .feedback-actions {
+        dock: bottom;
+        padding: 1 0 0 0;
+    }
+    
+    .section-feedback-block {
+        margin: 0 0 1 0;
+    }
+    
+    .section-feedback-input {
+        height: 4;
+        margin: 1 0;
+    }
+    
+    .output-file-tree {
+        width: 35%;
+        border: solid $primary-darken-2;
+        padding: 0 1;
+    }
+    
+    .output-content {
+        width: 65%;
+        border: solid $primary-darken-2;
+        padding: 0 1;
+    }
     """
 
     BINDINGS = [
@@ -1003,6 +1042,7 @@ class GGDesTUI(App[None]):
         Binding("e", "gitlog_set_end", "Set End Commit", show=True),
         Binding("f", "gitlog_toggle_focus", "Toggle Focus", show=True),
         Binding("c", "gitlog_clear", "Clear Selection", show=True),
+        Binding("t", "feedback_tab", "Feedback Tab", show=True),
     ]
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1053,6 +1093,10 @@ class GGDesTUI(App[None]):
             with TabPane("📜 Git Log", id="gitlog"):
                 yield GitLogView(id="git-log-view")
 
+            with TabPane("📝 Feedback", id="feedback"):
+                from ggdes.tui.feedback_view import FeedbackView
+                yield FeedbackView(id="feedback-view")
+
             with TabPane("❓ Help", id="help"):
                 yield CommandHelp()
 
@@ -1088,6 +1132,10 @@ class GGDesTUI(App[None]):
     def action_refresh(self) -> None:
         """Refresh the view."""
         self.refresh()
+
+    def action_feedback_tab(self) -> None:
+        """Switch to Feedback tab."""
+        self.query_one(TabbedContent).active = "feedback"
 
     def action_new_analysis(self) -> None:
         """Start new analysis from TUI."""

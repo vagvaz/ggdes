@@ -321,6 +321,28 @@ class OutputAgent(ABC):
             f"this feedback into your document generation:\n\n{self.review_feedback}"
         )
 
+    def _load_section_feedback(self) -> dict[str, str]:
+        """Load section-level feedback from KB.
+
+        Returns:
+            Dict mapping section titles to feedback text.
+        """
+        from ggdes.kb import KnowledgeBaseManager
+        kb = KnowledgeBaseManager(self.config)
+        return kb.load_section_feedback(self.analysis_id)
+
+    def _get_section_feedback(self, section_title: str) -> str | None:
+        """Get feedback for a specific document section.
+
+        Args:
+            section_title: The section title to look up.
+
+        Returns:
+            Feedback text or None if no feedback exists for this section.
+        """
+        feedback = self._load_section_feedback()
+        return feedback.get(section_title)
+
     def _load_skill(self, skill_name: str) -> str:
         """Load skill documentation from skills directory.
 

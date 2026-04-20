@@ -388,6 +388,17 @@ Technical Facts to Include:
                         prompt += f"```\n{usage_trunc}\n```\n"
             prompt += "\n=== END USAGE EXAMPLES ===\n"
 
+        # Inject section-specific feedback from TUI
+        section_feedback = self._get_section_feedback(section.title)
+        if section_feedback:
+            prompt += (
+                "\n╔══════════════════════════════════════════════════════════════════╗\n"
+                "║         ⚠️  SECTION FEEDBACK (MUST INCORPORATE)  ⚠️              ║\n"
+                "╚══════════════════════════════════════════════════════════════════╝\n\n"
+                f"The following feedback was provided for this section. You MUST incorporate it:\n\n"
+                f"{section_feedback}\n\n"
+            )
+
         prompt += """
 Requirements:
 - Write in clear, technical prose

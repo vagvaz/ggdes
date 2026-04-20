@@ -453,3 +453,66 @@ class KnowledgeBaseManager:
             return json.loads(review_path.read_text())  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             return None
+
+    def save_section_feedback(self, analysis_id: str, section_title: str, feedback: str) -> None:
+        """Save feedback for a specific document section.
+
+        Args:
+            analysis_id: Analysis identifier
+            section_title: Document section title
+            feedback: User feedback text for this section
+        """
+        import json
+        feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
+        feedback_path.parent.mkdir(parents=True, exist_ok=True)
+        import contextlib
+        data: dict[str, str] = {}
+        if feedback_path.exists():
+            with contextlib.suppress(json.JSONDecodeError, OSError):
+                data = json.loads(feedback_path.read_text())
+        data[section_title] = feedback
+        feedback_path.write_text(json.dumps(data, indent=2))
+
+    def load_section_feedback(self, analysis_id: str) -> dict[str, str]:
+        """Load section-level feedback from KB.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            Dict mapping section titles to feedback text
+        """
+        import json
+        feedback_path = get_kb_path(self.config, analysis_id) / "section_feedback.json"
+        if not feedback_path.exists():
+            return {}
+        try:
+            result = json.loads(feedback_path.read_text())
+            return result if isinstance(result, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def load_document_plan(self, analysis_id: str) -> dict[str, Any] | None:
+        """Load the latest document plan from KB.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            Document plan data or None if not found
+        """
+        import json
+        plans_dir = get_kb_path(self.config, analysis_id) / "plans"
+        if not plans_dir.exists():
+            return None
+        plan_files = sorted(
+            plans_dir.glob("plan_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not plan_files:
+            return None
+        try:
+            return json.loads(plan_files[0].read_text())  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, OSError):
+            return None
