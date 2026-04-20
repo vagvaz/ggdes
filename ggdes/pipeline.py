@@ -320,10 +320,12 @@ class AnalysisPipeline:
         console.print(f"[bold]Running {len(pending)} pending stages...[/bold]")
 
         # Define parallel groups - stages that can run concurrently
+        # AST base and head parsing can run in parallel since they're independent.
+        # semantic_diff depends on git_analysis output and should run after AST parsing,
+        # so it's NOT in the parallel group.
         parallel_group = {
             self.kb_manager.STAGE_AST_PARSING_BASE,
             self.kb_manager.STAGE_AST_PARSING_HEAD,
-            self.kb_manager.STAGE_SEMANTIC_DIFF,
         }
 
         # Acquire lock for entire pipeline run
@@ -593,16 +595,20 @@ class AnalysisPipeline:
 
             filtered_summary = change_filter.filter_changes(change_summary, diff)
 
-            # Save the filtered summary (overwrites the original)
-            summary_path.write_text(json.dumps(filtered_summary.model_dump(), indent=2))
-
-            # Also save the original as a backup
-            backup_path = (
+            # Save the filtered summary to change_filter directory (derived artifact)
+            change_filter_dir = (
                 self.kb_manager.get_analysis_path(self.analysis_id)
-                / "git_analysis"
-                / "summary_unfiltered.json"
+                / "change_filter"
             )
-            backup_path.write_text(json.dumps(change_summary.model_dump(), indent=2))
+            change_filter_dir.mkdir(parents=True, exist_ok=True)
+            filtered_path = change_filter_dir / "summary.json"
+            filtered_path.write_text(
+                json.dumps(filtered_summary.model_dump(), indent=2)
+            )
+
+            # Keep the original (raw) summary in git_analysis unchanged
+            # Downstream stages should read from change_filter/summary.json
+            # but git_analysis/summary.json remains the unfiltered reference
 
             console.print(
                 f"  [dim]Filtered: {len(change_summary.files_changed)} → "
@@ -718,17 +724,36 @@ class AnalysisPipeline:
         """Parse AST for base worktree."""
         return self._run_ast_parsing("base")
 
+    def _get_summary_path(self) -> Path:
+        """Get the path to the change summary, preferring filtered over raw.
+
+        Returns the change_filter summary if it exists (filtered output),
+        otherwise falls back to the raw git_analysis summary.
+
+        Returns:
+            Path to the summary JSON file
+        """
+        filtered_path = (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "change_filter"
+            / "summary.json"
+        )
+        if filtered_path.exists():
+            return filtered_path
+
+        return (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "git_analysis"
+            / "summary.json"
+        )
+
     def _get_changed_files_from_analysis(self) -> list[str]:
         """Get list of changed files from git analysis results.
 
         Returns:
             List of file paths that changed (relative to repo root)
         """
-        analysis_path = (
-            self.kb_manager.get_analysis_path(self.analysis_id)
-            / "git_analysis"
-            / "summary.json"
-        )
+        analysis_path = self._get_summary_path()
 
         if not analysis_path.exists():
             return []
@@ -780,11 +805,7 @@ class AnalysisPipeline:
         Returns:
             List of dicts with path, change_type, lines_added, lines_deleted, summary
         """
-        analysis_path = (
-            self.kb_manager.get_analysis_path(self.analysis_id)
-            / "git_analysis"
-            / "summary.json"
-        )
+        analysis_path = self._get_summary_path()
 
         if not analysis_path.exists():
             return []

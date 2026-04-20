@@ -220,13 +220,17 @@ class OutputAgent(ABC):
             for json_file in semantic_diff_dir.glob("*.json"):
                 try:
                     data = json.loads(json_file.read_text())
-                    for change in data.get("changes", []):
+                    for change in data.get("semantic_changes", []):
+                        # Skip doc-only changes
+                        if change.get("is_doc_only", False):
+                            continue
+
                         element = change.get("element", {})
                         if element.get("element_type") == "class":
                             changed_classes.add(element.get("name", ""))
                         # Also check if a method's parent class changed
                         parent = element.get("parent")
-                        if parent and change.get("change_category") in (
+                        if parent and element.get("change_category") in (
                             "added",
                             "modified",
                             "deleted",

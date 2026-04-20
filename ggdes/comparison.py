@@ -264,6 +264,59 @@ class AnalysisComparator:
                     )
                 )
 
+        # Compare individual changes by stable change_id
+        changes1_by_id: dict[str, Any] = {}
+        changes2_by_id: dict[str, Any] = {}
+
+        if semantic_diff1:
+            for change in semantic_diff1.get("semantic_changes", []):
+                cid = change.get("change_id")
+                if cid:
+                    changes1_by_id[cid] = change
+
+        if semantic_diff2:
+            for change in semantic_diff2.get("semantic_changes", []):
+                cid = change.get("change_id")
+                if cid:
+                    changes2_by_id[cid] = change
+
+        all_ids = set(changes1_by_id.keys()) | set(changes2_by_id.keys())
+        for cid in all_ids:
+            if cid in changes1_by_id and cid not in changes2_by_id:
+                c = changes1_by_id[cid]
+                diffs.append(
+                    AnalysisDiff(
+                        field=f"semantic_change:{cid}",
+                        analysis1_value=f"{c.get('change_type', '?')}: {c.get('description', '')[:50]}",
+                        analysis2_value="",
+                        change_type="removed",
+                    )
+                )
+            elif cid not in changes1_by_id and cid in changes2_by_id:
+                c = changes2_by_id[cid]
+                diffs.append(
+                    AnalysisDiff(
+                        field=f"semantic_change:{cid}",
+                        analysis1_value="",
+                        analysis2_value=f"{c.get('change_type', '?')}: {c.get('description', '')[:50]}",
+                        change_type="added",
+                    )
+                )
+            else:
+                # Both have it - check if description or type changed
+                c1, c2 = changes1_by_id[cid], changes2_by_id[cid]
+                if c1.get("change_type") != c2.get("change_type") or c1.get(
+                    "description"
+                ) != c2.get("description"):
+                    diffs.append(
+                        AnalysisDiff(
+                            field=f"semantic_change:{cid}",
+                            analysis1_value=f"{c1.get('change_type', '?')}: {c1.get('description', '')[:50]}",
+                            analysis2_value=f"{c2.get('change_type', '?')}: {c2.get('description', '')[:50]}",
+                            change_type="modified",
+                        )
+                    )
+
         return diffs
 
     def _compare_commits(self, metadata1: Any, metadata2: Any) -> list[AnalysisDiff]:

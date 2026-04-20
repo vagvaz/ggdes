@@ -4,6 +4,7 @@ This module provides semantic code analysis to understand the meaning
 behind code changes, not just syntactic differences.
 """
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import Enum
@@ -13,6 +14,9 @@ from typing import Any
 from rich.console import Console
 
 console = Console()
+
+# Schema version for forward/backward compatibility
+SEMANTIC_DIFF_SCHEMA_VERSION = "2.0"
 
 
 class SemanticChangeType(str, Enum):
@@ -63,6 +67,38 @@ class SemanticChangeType(str, Enum):
 
 
 @dataclass
+class SemanticChangeElement:
+    """Structured element information within a semantic change.
+
+    Provides a normalized view of the code element involved in a change,
+    enabling consumers (output agents, comparison) to extract class/method
+    names and types without parsing free-text descriptions.
+    """
+
+    element_type: str  # "class", "function", "method", "variable", "module", "unknown"
+    name: str  # Symbol name (e.g., "MyClass", "process_data")
+    parent: str | None = None  # Parent class/module if applicable
+    change_category: str = "modified"  # "added", "modified", "removed"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "element_type": self.element_type,
+            "name": self.name,
+            "parent": self.parent,
+            "change_category": self.change_category,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SemanticChangeElement":
+        return cls(
+            element_type=data.get("element_type", "unknown"),
+            name=data.get("name", ""),
+            parent=data.get("parent"),
+            change_category=data.get("change_category", "modified"),
+        )
+
+
+@dataclass
 class SemanticChange:
     """A single semantic change detected in code."""
 
@@ -76,6 +112,25 @@ class SemanticChange:
     related_symbols: list[str] = field(default_factory=list)
     before_snippet: str | None = None
     after_snippet: str | None = None
+    element: SemanticChangeElement | None = None  # Structured element info
+    change_id: str | None = None  # Stable ID for comparison across analyses
+    is_doc_only: bool = False  # True if change only affects documentation/comments
+
+    def __post_init__(self) -> None:
+        """Generate stable change_id if not provided."""
+        if self.change_id is None:
+            self.change_id = self._generate_change_id()
+
+    def _generate_change_id(self) -> str:
+        """Generate a stable ID based on file, symbol, and change type.
+
+        Format: file_path:symbol_name:change_type:hash
+        The hash incorporates line range and description for uniqueness.
+        """
+        symbol = self.related_symbols[0] if self.related_symbols else "unknown"
+        content = f"{self.file_path}:{symbol}:{self.change_type.value}:{self.line_start}-{self.line_end}:{self.description}"
+        hash_suffix = hashlib.sha256(content.encode()).hexdigest()[:8]
+        return f"{self.file_path}:{symbol}:{self.change_type.value}:{hash_suffix}"
 
 
 @dataclass
@@ -92,6 +147,7 @@ class SemanticDiffResult:
     test_changes: list[SemanticChange]
     performance_changes: list[SemanticChange]
     dependency_changes: list[SemanticChange]
+    schema_version: str = SEMANTIC_DIFF_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         """Initialize derived lists from semantic_changes if not provided."""
@@ -198,13 +254,28 @@ class SemanticDiffResult:
 class SemanticDiffAnalyzer:
     """Analyze semantic differences between code versions."""
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: Any, confidence_threshold: float = 0.15) -> None:
         """Initialize analyzer.
 
         Args:
             config: GGDes configuration
+            confidence_threshold: Minimum confidence score to include a change.
+                Changes below this threshold are suppressed. Default 0.15.
         """
         self.config = config
+        self.confidence_threshold = confidence_threshold
+        self._ast_parser: Any | None = None  # Lazy-loaded tree-sitter parser
+
+    def _get_ast_parser(self) -> Any:
+        """Lazily initialize the tree-sitter AST parser."""
+        if self._ast_parser is None:
+            try:
+                from ggdes.parsing.ast_parser import ASTParser
+
+                self._ast_parser = ASTParser()
+            except ImportError:
+                self._ast_parser = None
+        return self._ast_parser
 
     def analyze(
         self,
@@ -267,6 +338,9 @@ class SemanticDiffAnalyzer:
             file_changes = self._analyze_file_changes(base_file, head_file, file_path)
             semantic_changes.extend(file_changes)
 
+        # Apply precision guards: suppress low-confidence changes
+        semantic_changes = self._apply_precision_guards(semantic_changes)
+
         return SemanticDiffResult(
             base_commit=base_commit,
             head_commit=head_commit,
@@ -279,6 +353,33 @@ class SemanticDiffAnalyzer:
             performance_changes=[],
             dependency_changes=[],
         )
+
+    def _apply_precision_guards(
+        self, changes: list[SemanticChange]
+    ) -> list[SemanticChange]:
+        """Apply precision guards to filter low-confidence and doc-only changes.
+
+        Suppresses changes below the confidence threshold and marks
+        documentation-only changes with is_doc_only=True.
+
+        Args:
+            changes: Raw list of semantic changes
+
+        Returns:
+            Filtered list with low-confidence changes removed
+        """
+        filtered = []
+        for change in changes:
+            # Suppress changes below confidence threshold
+            if change.confidence < self.confidence_threshold:
+                console.print(
+                    f"    [dim]Suppressed low-confidence change: "
+                    f"{change.change_type.value} in {change.file_path} "
+                    f"(confidence={change.confidence:.2f})[/dim]"
+                )
+                continue
+            filtered.append(change)
+        return filtered
 
     def _analyze_new_file(
         self,
@@ -327,6 +428,12 @@ class SemanticDiffAnalyzer:
                         related_symbols=[elem["name"]],
                         after_snippet=self._extract_snippet(
                             head_content, elem["line_start"], elem["line_end"]
+                        ),
+                        element=SemanticChangeElement(
+                            element_type=elem.get("type", "function"),
+                            name=elem["name"],
+                            parent=elem.get("parent"),
+                            change_category="added",
                         ),
                     )
                 )
@@ -393,6 +500,12 @@ class SemanticDiffAnalyzer:
                         related_symbols=[elem["name"]],
                         before_snippet=self._extract_snippet(
                             base_content, elem["line_start"], elem["line_end"]
+                        ),
+                        element=SemanticChangeElement(
+                            element_type=elem.get("type", "function"),
+                            name=elem["name"],
+                            parent=elem.get("parent"),
+                            change_category="removed",
                         ),
                     )
                 )
@@ -532,7 +645,6 @@ class SemanticDiffAnalyzer:
         Returns:
             List of semantic changes detected
         """
-        console.print(f"  [dim]Analyzing changed file: {file_path}[/dim]")
         changes: list[SemanticChange] = []
 
         try:
@@ -541,6 +653,10 @@ class SemanticDiffAnalyzer:
         except Exception as e:
             console.print(f"    [yellow]Warning: Could not read file: {e}[/yellow]")
             return changes
+
+        # Log language detection
+        lang = "C++" if self._is_cpp_file(file_path) else "Python"
+        console.print(f"  [dim]Analyzing changed file: {file_path} ({lang})[/dim]")
 
         # Detect function/method signature changes
         signature_changes = self._detect_signature_changes(
@@ -632,6 +748,12 @@ class SemanticDiffAnalyzer:
                         after_snippet=self._extract_snippet(
                             head_content, element["line_start"], element["line_end"]
                         ),
+                        element=SemanticChangeElement(
+                            element_type=element.get("type", "function"),
+                            name=name,
+                            parent=element.get("parent"),
+                            change_category="added",
+                        ),
                     )
                 )
 
@@ -658,6 +780,12 @@ class SemanticDiffAnalyzer:
                         related_symbols=[name],
                         before_snippet=self._extract_snippet(
                             base_content, element["line_start"], element["line_end"]
+                        ),
+                        element=SemanticChangeElement(
+                            element_type=element.get("type", "function"),
+                            name=name,
+                            parent=element.get("parent"),
+                            change_category="removed",
                         ),
                     )
                 )
@@ -709,6 +837,12 @@ class SemanticDiffAnalyzer:
                         after_snippet=self._extract_snippet(
                             head_content, head_el["line_start"], head_el["line_end"]
                         ),
+                        element=SemanticChangeElement(
+                            element_type=head_el.get("type", "function"),
+                            name=name,
+                            parent=head_el.get("parent"),
+                            change_category="modified",
+                        ),
                     )
                 )
 
@@ -738,6 +872,7 @@ class SemanticDiffAnalyzer:
                     line_end=1,
                     confidence=0.8,
                     impact_score=0.2,
+                    is_doc_only=True,
                 )
             )
         # DOCUMENTATION_IMPROVED: when base > 0 and head increased by 20%+
@@ -751,6 +886,7 @@ class SemanticDiffAnalyzer:
                     line_end=1,
                     confidence=0.75,
                     impact_score=0.15,
+                    is_doc_only=True,
                 )
             )
 
@@ -855,6 +991,79 @@ class SemanticDiffAnalyzer:
         except SyntaxError:
             return 0
 
+    def _is_cpp_file(self, file_path: str) -> bool:
+        """Check if file is a C++ file based on extension.
+
+        Args:
+            file_path: Relative file path
+
+        Returns:
+            True if file is C++, False otherwise
+        """
+        cpp_extensions = {".cpp", ".h", ".hpp", ".cc", ".cxx", ".c"}
+        return Path(file_path).suffix.lower() in cpp_extensions
+
+    def _parse_cpp_elements(self, content: str, file_path: str) -> list[dict[str, Any]]:
+        """Parse AST elements from C++ code using tree-sitter.
+
+        Args:
+            content: C++ source code content
+            file_path: Relative file path
+
+        Returns:
+            List of dicts with:
+            - name: element name
+            - type: 'function' or 'class'
+            - parameters: list of parameter names (for functions)
+            - line_start: starting line number
+            - line_end: ending line number
+            - parent: parent class/namespace if applicable
+        """
+        elements: list[dict[str, Any]] = []
+
+        parser = self._get_ast_parser()
+        if parser is None:
+            return elements
+
+        try:
+            # Parse the content
+            result = parser.parse_file_content(content, file_path)
+            if not result or not result.elements:
+                return elements
+
+            for elem in result.elements:
+                # Map element_type to our format
+                elem_type_str = str(elem.element_type).lower()
+                if elem_type_str in ("class", "struct", "interface"):
+                    elem_type = "class"
+                elif elem_type_str in ("function", "method", "constructor", "destructor"):
+                    elem_type = "function"
+                else:
+                    continue  # Skip other element types
+
+                # Extract parameter names from children or signature
+                parameters: list[str] = []
+                if elem.children:
+                    for child in elem.children:
+                        if str(child.element_type).lower() == "parameter":
+                            parameters.append(child.name)
+
+                elements.append(
+                    {
+                        "name": elem.name,
+                        "type": elem_type,
+                        "parameters": parameters,
+                        "line_start": elem.start_line,
+                        "line_end": elem.end_line,
+                        "parent": None,  # Could extract from nested structure if needed
+                    }
+                )
+
+        except Exception:
+            pass
+
+        return elements
+
     def _parse_ast_elements(self, content: str, file_path: str) -> list[dict[str, Any]]:
         """Parse AST elements from code content.
 
@@ -865,6 +1074,10 @@ class SemanticDiffAnalyzer:
         - line_start: starting line number
         - line_end: ending line number
         """
+        # Route to C++ parser if applicable
+        if self._is_cpp_file(file_path):
+            return self._parse_cpp_elements(content, file_path)
+
         elements = []
 
         try:
@@ -938,21 +1151,51 @@ class SemanticDiffAnalyzer:
             return 0
 
 
+def _validate_semantic_diff_data(data: dict[str, Any]) -> None:
+    """Validate semantic diff data before writing to disk.
+
+    Ensures required fields are present and types are correct.
+    Raises ValueError if validation fails.
+    """
+    required_top = {"schema_version", "base_commit", "head_commit", "semantic_changes", "summary"}
+    missing = required_top - set(data.keys())
+    if missing:
+        raise ValueError(f"Missing required top-level fields: {missing}")
+
+    for i, change in enumerate(data["semantic_changes"]):
+        required_change = {"change_type", "description", "file_path", "confidence", "impact_score"}
+        missing_change = required_change - set(change.keys())
+        if missing_change:
+            raise ValueError(f"Change at index {i} missing fields: {missing_change}")
+
+        # Validate confidence and impact_score ranges
+        conf = change.get("confidence", 0)
+        impact = change.get("impact_score", 0)
+        if not (0.0 <= conf <= 1.0):
+            raise ValueError(f"Change at index {i} has invalid confidence: {conf}")
+        if not (0.0 <= impact <= 1.0):
+            raise ValueError(f"Change at index {i} has invalid impact_score: {impact}")
+
+
 def save_semantic_diff(
     result: SemanticDiffResult,
     output_path: Path,
 ) -> None:
     """Save semantic diff result to JSON.
 
+    Validates the data before writing to ensure schema consistency.
+
     Args:
         result: SemanticDiffResult to save
         output_path: Path to save JSON file
     """
     data = {
+        "schema_version": result.schema_version,
         "base_commit": result.base_commit,
         "head_commit": result.head_commit,
         "semantic_changes": [
             {
+                "change_id": c.change_id,
                 "change_type": c.change_type.value,
                 "description": c.description,
                 "file_path": c.file_path,
@@ -963,6 +1206,8 @@ def save_semantic_diff(
                 "related_symbols": c.related_symbols,
                 "before_snippet": c.before_snippet,
                 "after_snippet": c.after_snippet,
+                "element": c.element.to_dict() if c.element else None,
+                "is_doc_only": c.is_doc_only,
             }
             for c in result.semantic_changes
         ],
@@ -980,4 +1225,8 @@ def save_semantic_diff(
         },
     }
 
+    # Validate before writing
+    _validate_semantic_diff_data(data)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(data, indent=2))

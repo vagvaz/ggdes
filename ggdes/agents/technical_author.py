@@ -762,6 +762,7 @@ class TechnicalAuthor:
                 changed_head,
                 source_diffs=source_diffs,
                 diff_context=diff_context,
+                semantic_diff=semantic_diff_data,
             )
             all_facts.extend(behavior_facts)
 
