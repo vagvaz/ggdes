@@ -145,6 +145,18 @@ class AnalysisDetailView(VerticalScroll):
                         id="resume_btn",
                         variant="primary",
                     )
+                    # Show review button if any reviewable stages are completed
+                    reviewable = {"git_analysis", "change_filter", "technical_author", "coordinator_plan", "output_generation"}
+                    completed_reviewable = [
+                        s for s in reviewable
+                        if s in metadata.stages and metadata.stages[s].status == StageStatus.COMPLETED
+                    ]
+                    if completed_reviewable:
+                        yield Button(
+                            "📝 Review",
+                            id="review_btn",
+                            variant="warning",
+                        )
                 else:
                     yield Button(
                         "✓ Complete",
@@ -165,6 +177,169 @@ class AnalysisDetailView(VerticalScroll):
                 yield Label("[bold]Worktrees:[/bold]")
                 yield Label(f"  Base: {metadata.worktrees.base}")
                 yield Label(f"  Head: {metadata.worktrees.head}")
+
+
+class ReviewScreen(Screen[None]):
+    """Screen for reviewing stage outputs and providing feedback."""
+
+    def __init__(
+        self,
+        config: Any,
+        analysis_id: str,
+        on_submit: Callable[..., Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.config = config
+        self.analysis_id = analysis_id
+        self.on_submit_callback = on_submit
+        self.feedback_inputs: dict[str, Input] = {}
+        self.regenerate_checkboxes: dict[str, Checkbox] = {}
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with VerticalScroll():
+            yield Label("[bold cyan]Review Stage Outputs[/bold cyan]")
+            yield Label("[dim]Select stages to regenerate and provide feedback[/dim]")
+            yield Label("")
+
+            # Load metadata to show stage statuses
+            kb_manager = KnowledgeBaseManager(self.config)
+            metadata = kb_manager.load_metadata(self.analysis_id)
+            if not metadata:
+                yield Label("[red]Analysis not found[/red]")
+                return
+
+            # Load persisted review session if any
+            review_session = kb_manager.load_review_session(self.analysis_id)
+            existing_feedback: dict[str, str] = {}
+            if review_session:
+                for stage_review in review_session.get("stage_reviews", []):
+                    feedback = stage_review.get("feedback")
+                    if feedback:
+                        existing_feedback[stage_review["stage_name"]] = feedback
+
+            # Show reviewable stages
+            reviewable_stages = [
+                "git_analysis",
+                "change_filter",
+                "technical_author",
+                "coordinator_plan",
+                "output_generation",
+            ]
+
+            for stage_name in reviewable_stages:
+                stage_info = metadata.stages.get(stage_name)
+                if not stage_info:
+                    continue
+
+                status = stage_info.status
+                status_icon = {
+                    StageStatus.COMPLETED: "✓",
+                    StageStatus.PENDING: "○",
+                    StageStatus.FAILED: "✗",
+                    StageStatus.SKIPPED: "⊘",
+                    StageStatus.IN_PROGRESS: "◐",
+                }.get(status, "?")
+                status_color = {
+                    StageStatus.COMPLETED: "green",
+                    StageStatus.PENDING: "dim",
+                    StageStatus.FAILED: "red",
+                    StageStatus.SKIPPED: "blue",
+                    StageStatus.IN_PROGRESS: "yellow",
+                }.get(status, "white")
+
+                with Container(id=f"review_{stage_name}"):
+                    yield Label(
+                        f"[{status_color}]{status_icon}[/{status_color}] "
+                        f"[bold]{stage_name}[/bold] [{status_color}]{status.value}[/{status_color}]"
+                    )
+
+                    # Only show feedback controls for completed stages
+                    if status == StageStatus.COMPLETED:
+                        prev_feedback = existing_feedback.get(stage_name, "")
+                        self.regenerate_checkboxes[stage_name] = Checkbox(
+                            "Regenerate with feedback", id=f"regen_{stage_name}"
+                        )
+                        yield self.regenerate_checkboxes[stage_name]
+
+                        feedback_input = Input(
+                            value=prev_feedback,
+                            placeholder="Describe what to change or improve...",
+                            id=f"feedback_{stage_name}",
+                        )
+                        self.feedback_inputs[stage_name] = feedback_input
+                        yield feedback_input
+
+                    yield Label("")
+
+            # Action buttons
+            with Horizontal():
+                yield Button("Submit & Resume", id="review_submit", variant="primary")
+                yield Button("Skip Review", id="review_skip", variant="default")
+
+        yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "review_submit":
+            self._submit_feedback()
+        elif event.button.id == "review_skip":
+            self._skip_and_resume()
+
+    def _submit_feedback(self) -> None:
+        """Collect feedback and resume analysis."""
+        from ggdes.kb import KnowledgeBaseManager
+        from ggdes.review import ReviewDecision, ReviewSession, StageReview
+
+        kb_manager = KnowledgeBaseManager(self.config)
+        session = ReviewSession(analysis_id=self.analysis_id)
+
+        for stage_name, checkbox in self.regenerate_checkboxes.items():
+            feedback_text = self.feedback_inputs.get(stage_name, Input()).value or ""
+            if checkbox.value and feedback_text.strip():
+                session.add_review(StageReview(
+                    stage_name=stage_name,
+                    decision=ReviewDecision.REGENERATE_ALL,
+                    feedback=feedback_text.strip(),
+                    items_reviewed=0,
+                    items_accepted=0,
+                ))
+            elif checkbox.value:
+                # Regenerate without specific feedback
+                session.add_review(StageReview(
+                    stage_name=stage_name,
+                    decision=ReviewDecision.REGENERATE_ALL,
+                    feedback=None,
+                    items_reviewed=0,
+                    items_accepted=0,
+                ))
+            else:
+                # Accept the stage
+                session.add_review(StageReview(
+                    stage_name=stage_name,
+                    decision=ReviewDecision.ACCEPT,
+                    items_reviewed=0,
+                    items_accepted=0,
+                ))
+
+        # Persist session to KB
+        kb_manager.save_review_session(self.analysis_id, session.to_dict())
+
+        self.notify("Feedback saved. Resuming analysis...", title="Review")
+        self.dismiss()
+
+        # Resume analysis with interactive mode
+        if self.on_submit_callback:
+            self.on_submit_callback(self.analysis_id)
+
+    def _skip_and_resume(self) -> None:
+        """Skip review and resume analysis."""
+        self.notify("Skipping review. Resuming analysis...", title="Review")
+        self.dismiss()
+
+        if self.on_submit_callback:
+            self.on_submit_callback(self.analysis_id)
 
 
 class WorktreeView(VerticalScroll):
@@ -901,6 +1076,10 @@ class GGDesTUI(App[None]):
             detail_view = self.query_one("#detail-view", AnalysisDetailView)
             if detail_view.analysis_id:
                 self._resume_analysis(detail_view.analysis_id)
+        elif button_id == "review_btn":
+            detail_view = self.query_one("#detail-view", AnalysisDetailView)
+            if detail_view.analysis_id:
+                self._open_review_screen(detail_view.analysis_id)
         elif button_id == "delete_btn":
             detail_view = self.query_one("#detail-view", AnalysisDetailView)
             if detail_view.analysis_id:
@@ -1062,6 +1241,20 @@ class GGDesTUI(App[None]):
                 title="Git Log",
                 severity="warning",
             )
+
+    def _open_review_screen(self, analysis_id: str) -> None:
+        """Open the review screen for an analysis."""
+        def on_review_submit(aid: str) -> None:
+            """Callback after review is submitted."""
+            self._resume_analysis(aid)
+
+        self.push_screen(
+            ReviewScreen(
+                config=self.config,
+                analysis_id=analysis_id,
+                on_submit=on_review_submit,
+            )
+        )
 
     def _resume_analysis(self, analysis_id: str) -> None:
         """Resume an analysis by running the pipeline."""

@@ -423,3 +423,33 @@ class KnowledgeBaseManager:
             self.save_metadata(analysis_id, metadata)
 
         return reset_stages
+
+    def save_review_session(self, analysis_id: str, review_data: dict[str, Any]) -> None:
+        """Save review session data to KB.
+
+        Args:
+            analysis_id: Analysis identifier
+            review_data: Serialized ReviewSession data
+        """
+        review_path = get_kb_path(self.config, analysis_id) / "review_session.json"
+        review_path.parent.mkdir(parents=True, exist_ok=True)
+        import json
+        review_path.write_text(json.dumps(review_data, indent=2, default=str))
+
+    def load_review_session(self, analysis_id: str) -> dict[str, Any] | None:
+        """Load review session data from KB.
+
+        Args:
+            analysis_id: Analysis identifier
+
+        Returns:
+            Review session data or None if not found
+        """
+        import json
+        review_path = get_kb_path(self.config, analysis_id) / "review_session.json"
+        if not review_path.exists():
+            return None
+        try:
+            return json.loads(review_path.read_text())  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, OSError):
+            return None

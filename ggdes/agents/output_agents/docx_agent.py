@@ -17,9 +17,11 @@ class DocxAgent(OutputAgent):
     the patterns documented in the docx skill.
     """
 
-    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
+    def __init__(
+        self, repo_path: Path, config: GGDesConfig, analysis_id: str, review_feedback: str | None = None
+    ) -> None:
         """Initialize docx agent."""
-        super().__init__(repo_path, config, analysis_id)
+        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
         self.format_name = "docx"
         self.skill_content = self._load_skill("docx")
 
@@ -90,6 +92,15 @@ class DocxAgent(OutputAgent):
 
         # Get content
         content = self._get_content_for_docx()
+
+        # Inject review feedback if available
+        if self.review_feedback:
+            feedback_block = (
+                "\n\n## Review Feedback (MUST INCORPORATE)\n\n"
+                f"{self.review_feedback}\n\n"
+                "The document above must be updated to incorporate this feedback.\n"
+            )
+            content += feedback_block
 
         # Generate diagrams
         diagrams_dir = output_dir / "diagrams"

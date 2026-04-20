@@ -20,18 +20,26 @@ console = Console()
 class OutputAgent(ABC):
     """Abstract base class for document output agents."""
 
-    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
+    def __init__(
+        self,
+        repo_path: Path,
+        config: GGDesConfig,
+        analysis_id: str,
+        review_feedback: str | None = None,
+    ) -> None:
         """Initialize output agent.
 
         Args:
             repo_path: Path to git repository
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading from KB
+            review_feedback: Optional feedback from review session to incorporate during regeneration.
         """
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
         self.user_context: dict[str, Any] | None = None
+        self.review_feedback = review_feedback
         self._diagram_generator: PlantUMLGenerator | None = None
         self._diagram_cache: DiagramCache | None = None
         self._validated_elements: set[str] | None = None
@@ -302,6 +310,16 @@ class OutputAgent(ABC):
             f"  [yellow]⚠ Element '{elem}' not found in AST, using as-is[/yellow]"
         )
         return elem
+
+    def _build_review_feedback_block(self) -> str:
+        """Build a formatted block with review feedback for injection into prompts."""
+        return (
+            "╔══════════════════════════════════════════════════════════════════╗\n"
+            "║              ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️          ║\n"
+            "╚══════════════════════════════════════════════════════════════════╝\n\n"
+            "The following feedback was provided during review. You MUST incorporate\n"
+            f"this feedback into your document generation:\n\n{self.review_feedback}"
+        )
 
     def _load_skill(self, skill_name: str) -> str:
         """Load skill documentation from skills directory.

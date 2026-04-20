@@ -51,6 +51,27 @@ class AnalysisPipeline:
         self.wt_manager = WorktreeManager(config, self.repo_path)
         self._metadata_lock = threading.Lock()
         self._review_session: ReviewSession | None = None
+        self._load_review_session()
+
+    def _load_review_session(self) -> None:
+        """Load review session from KB if it exists (for resume scenarios)."""
+        review_data = self.kb_manager.load_review_session(self.analysis_id)
+        if review_data:
+            self._review_session = ReviewSession.from_dict(review_data)
+            console.print(f"[dim]Loaded review session with {len(self._review_session.stage_reviews)} prior review(s)[/dim]")
+
+    def _save_review_session(self) -> None:
+        """Persist review session to KB."""
+        if self._review_session:
+            self.kb_manager.save_review_session(
+                self.analysis_id, self._review_session.to_dict()
+            )
+
+    def _get_feedback_for_stage(self, stage_name: str) -> str | None:
+        """Get accumulated feedback for a stage from review session."""
+        if self._review_session:
+            return self._review_session.get_feedback(stage_name)
+        return None
 
     def run_stage(self, stage_name: str) -> bool:
         """Run a specific stage.
@@ -207,12 +228,16 @@ class AnalysisPipeline:
         if review.decision.value in ("regenerate_all", "regenerate_partial"):
             # Invalidate this stage and all subsequent stages so they re-run
             self._invalidate_from_stage(stage_name)
+            # Persist review session so feedback survives resume
+            self._save_review_session()
             console.print(
                 f"[yellow]Stages will be regenerated on resume. "
                 f"Feedback: {review.feedback or '(no specific feedback)'}[/yellow]"
             )
             return True
 
+        # Save review session after any review decision
+        self._save_review_session()
         return True
 
     def _invalidate_from_stage(self, stage_name: str) -> None:
@@ -819,6 +844,13 @@ class AnalysisPipeline:
         # Get user context from metadata
         user_context = getattr(self.metadata, "user_context", None)
 
+        # Get feedback for this stage (from review session)
+        feedback = self._get_feedback_for_stage(
+            self.kb_manager.STAGE_TECHNICAL_AUTHOR
+        )
+        if feedback:
+            console.print(f"  [yellow]Applying review feedback: {feedback[:100]}...[/yellow]")
+
         # Detect language for expert skill
         language_expert_skill = None
         try:
@@ -838,6 +870,7 @@ class AnalysisPipeline:
             user_context=user_context,
             language_expert_skill=language_expert_skill,
             tool_executor=tool_executor,
+            review_feedback=feedback,
         )
 
         console.print("  [dim]Synthesizing technical facts from analysis...[/dim]")
@@ -904,8 +937,16 @@ class AnalysisPipeline:
         # Get user context from metadata
         user_context = getattr(self.metadata, "user_context", None)
 
+        # Get feedback for this stage (from review session)
+        feedback = self._get_feedback_for_stage(
+            self.kb_manager.STAGE_COORDINATOR_PLAN
+        )
+        if feedback:
+            console.print(f"  [yellow]Applying review feedback: {feedback[:100]}...[/yellow]")
+
         coordinator = Coordinator(
-            self.repo_path, self.config, self.analysis_id, user_context=user_context
+            self.repo_path, self.config, self.analysis_id, user_context=user_context,
+            review_feedback=feedback,
         )
 
         # Get target formats from metadata (CLI-selected formats)
@@ -1034,11 +1075,16 @@ class AnalysisPipeline:
             PptxAgent,
         )
 
+        # Get feedback for this stage
+        feedback = self._get_feedback_for_stage("output_generation")
+
         # Get formats to generate from metadata (CLI-selected formats)
         formats = self.metadata.target_formats or ["markdown"]
         console.print(
             f"  [dim]Generating documents in formats: {', '.join(formats)}[/dim]"
         )
+        if feedback:
+            console.print("  [yellow]Applying review feedback to output generation[/yellow]")
 
         generated_files = []
 
@@ -1051,7 +1097,10 @@ class AnalysisPipeline:
                 # Check if render_png flag is set in metadata
                 render_png = getattr(self.metadata, "render_png", False)
 
-                agent = MarkdownAgent(self.repo_path, self.config, self.analysis_id)
+                agent = MarkdownAgent(
+                    self.repo_path, self.config, self.analysis_id,
+                    review_feedback=feedback,
+                )
                 path = agent.generate(
                     storage_policy=storage_policy, render_png=render_png
                 )
@@ -1076,17 +1125,20 @@ class AnalysisPipeline:
                     fmt_path: Path | None = None
                     if fmt == "docx":
                         docx_agent = DocxAgent(
-                            self.repo_path, self.config, self.analysis_id
+                            self.repo_path, self.config, self.analysis_id,
+                            review_feedback=feedback,
                         )
                         fmt_path = docx_agent.generate()
                     elif fmt == "pptx":
                         pptx_agent = PptxAgent(
-                            self.repo_path, self.config, self.analysis_id
+                            self.repo_path, self.config, self.analysis_id,
+                            review_feedback=feedback,
                         )
                         fmt_path = pptx_agent.generate()
                     elif fmt == "pdf":
                         pdf_agent = PdfAgent(
-                            self.repo_path, self.config, self.analysis_id
+                            self.repo_path, self.config, self.analysis_id,
+                            review_feedback=feedback,
                         )
                         fmt_path = pdf_agent.generate()
                     else:

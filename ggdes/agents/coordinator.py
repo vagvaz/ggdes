@@ -32,6 +32,7 @@ class Coordinator:
         config: GGDesConfig,
         analysis_id: str,
         user_context: dict[str, Any] | None = None,
+        review_feedback: str | None = None,
     ):
         """Initialize coordinator.
 
@@ -40,6 +41,7 @@ class Coordinator:
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading/writing to KB
             user_context: Optional user-provided context from CLI questionnaire
+            review_feedback: Optional feedback from review session to incorporate during regeneration.
         """
         self.repo_path = repo_path
         self.config = config
@@ -47,6 +49,7 @@ class Coordinator:
         self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
         self.conversation: ConversationContext | None = None
+        self.review_feedback = review_feedback
 
     def _init_conversation(
         self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
@@ -62,6 +65,9 @@ class Coordinator:
         if user_guidance:
             builder.set_user_guidance(user_guidance)
 
+        if self.review_feedback:
+            builder.add_section("REVIEW FEEDBACK", self._build_review_feedback_block())
+
         system_prompt = builder.build()
 
         self.conversation = ConversationContext(
@@ -75,6 +81,16 @@ class Coordinator:
         from ggdes.agents.skill_utils import build_user_context_guidance
 
         return build_user_context_guidance(self.user_context)
+
+    def _build_review_feedback_block(self) -> str:
+        """Build a formatted block with review feedback for injection into prompts."""
+        return (
+            "╔══════════════════════════════════════════════════════════════════╗\n"
+            "║              ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️          ║\n"
+            "╚══════════════════════════════════════════════════════════════════╝\n\n"
+            "The following feedback was provided during review. You MUST incorporate\n"
+            f"this feedback into your document plan:\n\n{self.review_feedback}"
+        )
 
     def _load_facts(self) -> list[TechnicalFact]:
         """Load technical facts from KB."""
@@ -197,6 +213,10 @@ class Coordinator:
                     fmt, facts, facts_by_category, user_context, semantic_diff_data
                 )
                 plans.append(plan)
+
+        # Interactive review: LLM self-review of generated plans (used during regeneration)
+        if self.review_feedback and plans:
+            await self._interactive_review(plans)
 
         # Save conversation
 
@@ -493,6 +513,17 @@ User Requirements:
         if user_context.get("additional_context"):
             prompt += f"\nAdditional Context: {user_context['additional_context']}\n"
 
+        # Inject review feedback if available
+        if self.review_feedback:
+            prompt += f"""
+
+Review Feedback (from previous stage review):
+{self.review_feedback}
+
+You MUST incorporate this feedback into your document plan. Adjust sections,
+priorities, and content accordingly.
+"""
+
         # Include semantic diff analysis if available
         if semantic_diff:
             summary = semantic_diff.get("summary", {})
@@ -626,6 +657,38 @@ Provide a document plan as JSON:
                 ],
                 "diagrams": [],
             }
+
+    async def _interactive_review(self, plans: list[DocumentPlan]) -> None:
+        """LLM self-review of generated plans to verify feedback was incorporated."""
+        if not self.conversation:
+            return
+
+        from ggdes.prompts import get_prompt
+
+        plan_summary = []
+        for plan in plans:
+            sections = ", ".join(s.title for s in plan.sections)
+            plan_summary.append(f"{plan.format}: [{sections}]")
+
+        review_prompt = get_prompt("coordinator", "interactive_review").format(
+            document_plan="\n".join(plan_summary)
+        )
+
+        self.conversation.add_user_message(review_prompt)
+        context = self.conversation.get_context_for_llm()
+
+        console.print("[dim]Running interactive review of document plans...[/dim]")
+
+        try:
+            response = self.llm.chat(messages=context, temperature=0.3, max_tokens=1024)
+            self.conversation.add_assistant_message(response)
+
+            if response.strip().lower().startswith("approve"):
+                console.print("[green]✓ Interactive review: plan approved[/green]")
+            else:
+                console.print(f"[yellow]Review feedback: {response[:200]}[/yellow]")
+        except Exception as e:
+            console.print(f"[dim]Interactive review skipped: {e}[/dim]")
 
     def _save_plans(self, plans: list[DocumentPlan]) -> None:
         """Save document plans to knowledge base."""

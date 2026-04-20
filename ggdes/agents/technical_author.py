@@ -47,6 +47,7 @@ class TechnicalAuthor:
         user_context: dict[str, Any] | None = None,
         language_expert_skill: str | None = None,
         tool_executor: ToolExecutor | None = None,
+        review_feedback: str | None = None,
     ):
         """Initialize technical author.
 
@@ -58,6 +59,7 @@ class TechnicalAuthor:
             language_expert_skill: Optional name of language expert skill to load (e.g., 'python-expert', 'cpp-expert')
             tool_executor: Optional ToolExecutor for grounded LLM calls. If None,
                 tools will not be available during fact generation.
+            review_feedback: Optional feedback from review session to incorporate during regeneration.
         """
         self.repo_path = repo_path
         self.config = config
@@ -69,6 +71,7 @@ class TechnicalAuthor:
         self._coauthor_skill: str | None = None
         self._language_expert_skill: str | None = None
         self.tool_executor = tool_executor
+        self.review_feedback = review_feedback
 
         # Load skills with graceful fallback
         self._load_skills(language_expert_skill)
@@ -122,6 +125,9 @@ class TechnicalAuthor:
         if user_guidance:
             builder.set_user_guidance(user_guidance)
 
+        if self.review_feedback:
+            builder.add_section("REVIEW FEEDBACK", self._build_review_feedback_block())
+
         system_prompt = builder.build()
 
         self.conversation = ConversationContext(
@@ -135,6 +141,16 @@ class TechnicalAuthor:
         from ggdes.agents.skill_utils import build_user_context_guidance
 
         return build_user_context_guidance(self.user_context)
+
+    def _build_review_feedback_block(self) -> str:
+        """Build a formatted block with review feedback for injection into prompts."""
+        return (
+            "╔══════════════════════════════════════════════════════════════════╗\n"
+            "║              ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️          ║\n"
+            "╚══════════════════════════════════════════════════════════════════╝\n\n"
+            "The following feedback was provided during review. You MUST incorporate\n"
+            f"this feedback into your analysis:\n\n{self.review_feedback}"
+        )
 
     def _load_git_analysis(self) -> ChangeSummary | None:
         """Load git analysis results from KB."""
@@ -914,6 +930,17 @@ Use the semantic diff analysis to identify breaking changes, API modifications, 
 
             prompt += """
 Before writing your analysis, use the get_element_source tool to retrieve the actual source code for key functions and classes. This ensures your descriptions are grounded in real code.
+"""
+            if self.review_feedback:
+                prompt += f"""
+
+REVIEW FEEDBACK TO INCORPORATE:
+{self.review_feedback}
+
+You MUST address this feedback in your analysis. Adjust your descriptions accordingly.
+"""
+
+            prompt += """
 
 For each API change, provide:
 1. Fact ID (e.g., api_001, api_002)
@@ -1085,6 +1112,17 @@ Use the semantic diff analysis to identify and describe behavioral changes. Focu
 IMPORTANT: Only analyze behavioral changes in the {len(changed_files)} files that were changed. Do not reference files that were not in the git diff.
 
 Before writing your analysis, use the get_element_source tool to retrieve the actual source code for key functions and classes in the changed files. This ensures your descriptions are grounded in real code.
+"""
+        if self.review_feedback:
+            prompt += f"""
+
+REVIEW FEEDBACK TO INCORPORATE:
+{self.review_feedback}
+
+You MUST address this feedback in your analysis. Adjust your descriptions accordingly.
+"""
+
+        prompt += """
 
 For each behavioral change, provide:
 1. Fact ID (e.g., behavior_001)

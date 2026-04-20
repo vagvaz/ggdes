@@ -16,9 +16,11 @@ class PptxAgent(OutputAgent):
     the patterns documented in the pptx skill.
     """
 
-    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
+    def __init__(
+        self, repo_path: Path, config: GGDesConfig, analysis_id: str, review_feedback: str | None = None
+    ) -> None:
         """Initialize pptx agent."""
-        super().__init__(repo_path, config, analysis_id)
+        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
         self.format_name = "pptx"
         self.skill_content = self._load_skill("pptx")
 
@@ -89,6 +91,15 @@ class PptxAgent(OutputAgent):
 
         # Get content
         content = self._get_content_for_pptx()
+
+        # Inject review feedback if available
+        if self.review_feedback:
+            feedback_block = (
+                "\n\n## Review Feedback (MUST INCORPORATE)\n\n"
+                f"{self.review_feedback}\n\n"
+                "The presentation above must be updated to incorporate this feedback.\n"
+            )
+            content += feedback_block
 
         # Parse content into slides
         slides = self._parse_content_to_slides(content)

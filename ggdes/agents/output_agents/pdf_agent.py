@@ -16,9 +16,11 @@ class PdfAgent(OutputAgent):
     the patterns documented in the pdf skill.
     """
 
-    def __init__(self, repo_path: Path, config: GGDesConfig, analysis_id: str) -> None:
+    def __init__(
+        self, repo_path: Path, config: GGDesConfig, analysis_id: str, review_feedback: str | None = None
+    ) -> None:
         """Initialize pdf agent."""
-        super().__init__(repo_path, config, analysis_id)
+        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
         self.format_name = "pdf"
         self.skill_content = self._load_skill("pdf")
 
@@ -89,6 +91,15 @@ class PdfAgent(OutputAgent):
 
         # Get content
         content = self._get_content_for_pdf()
+
+        # Inject review feedback if available
+        if self.review_feedback:
+            feedback_block = (
+                "\n\n## Review Feedback (MUST INCORPORATE)\n\n"
+                f"{self.review_feedback}\n\n"
+                "The document above must be updated to incorporate this feedback.\n"
+            )
+            content += feedback_block
 
         # Generate diagrams
         diagrams_dir = output_dir / "diagrams"

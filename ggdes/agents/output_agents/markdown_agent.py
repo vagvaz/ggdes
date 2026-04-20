@@ -26,6 +26,7 @@ class MarkdownAgent(OutputAgent):
         repo_path: Path,
         config: GGDesConfig,
         analysis_id: str,
+        review_feedback: str | None = None,
     ):
         """Initialize markdown agent.
 
@@ -33,8 +34,9 @@ class MarkdownAgent(OutputAgent):
             repo_path: Path to git repository
             config: GGDesConfig instance
             analysis_id: Analysis ID for reading from KB
+            review_feedback: Optional feedback from review session to incorporate during regeneration.
         """
-        super().__init__(repo_path, config, analysis_id)
+        super().__init__(repo_path, config, analysis_id, review_feedback=review_feedback)
         self.llm = LLMFactory.from_config(config)
         self.conversation: ConversationContext | None = None
         self.format_name = "markdown"
@@ -55,6 +57,13 @@ class MarkdownAgent(OutputAgent):
                 system_prompt += (
                     f"\n\n=== USER CONTEXT ===\n{user_guidance}\n=== END CONTEXT ==="
                 )
+
+        if self.review_feedback:
+            system_prompt += (
+                f"\n\n=== REVIEW FEEDBACK ===\n"
+                f"{self._build_review_feedback_block()}\n"
+                f"=== END REVIEW FEEDBACK ==="
+            )
 
         self.conversation = ConversationContext(
             system_prompt=system_prompt,

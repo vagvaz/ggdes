@@ -182,6 +182,7 @@ class SystemPromptBuilder:
         self._skills: list[tuple[str, str]] = []  # (title, content)
         self._base_prompt: str | None = None
         self._user_guidance: str | None = None
+        self._sections: list[tuple[str, str]] = []  # (title, content) for custom sections
 
     def add_skill(self, title: str, content: str) -> "SystemPromptBuilder":
         """Add a skill section.
@@ -220,6 +221,19 @@ class SystemPromptBuilder:
         self._user_guidance = guidance
         return self
 
+    def add_section(self, title: str, content: str) -> "SystemPromptBuilder":
+        """Add a custom section (placed after base prompt, before user guidance).
+
+        Args:
+            title: Section title
+            content: Section content
+
+        Returns:
+            Self for chaining
+        """
+        self._sections.append((title, content))
+        return self
+
     def build(self) -> str:
         """Build the complete system prompt.
 
@@ -235,6 +249,10 @@ class SystemPromptBuilder:
         # 2. Base system prompt
         if self._base_prompt:
             parts.append(self._base_prompt)
+
+        # 2.5. Custom sections
+        for title, content in self._sections:
+            parts.append(f"=== {title} ===\n{content}\n=== END {title} ===")
 
         # 3. User guidance with VERY IMPORTANT box
         if self._user_guidance:
