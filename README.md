@@ -309,15 +309,86 @@ uv run ggdes tui
 
 Keyboard shortcuts:
 - `q` - Quit
-- `r` - Resume selected analysis
-- `a` - Show all / Active only toggle
-- `↑/↓` - Navigate analyses
+- `r` - Refresh
+- `a` - New Analysis
+- `s` - Set Start Commit (Git Log tab)
+- `e` - Set End Commit (Git Log tab)
+- `f` - Toggle Focus (Git Log tab)
+- `c` - Clear Selection (Git Log tab)
+- `t` - Switch to Feedback tab
+
+### Tabs
+
+| Tab | Purpose |
+|-----|---------|
+| 📊 Analyses | List, view details, resume, delete analyses |
+| 🌳 Worktrees | Manage git worktrees |
+| 📜 Git Log | Visual commit selection for analysis ranges |
+| 📝 Feedback | Section-level feedback + live output viewer |
+| ❓ Help | Command reference |
+
+### Interactive Review Mode
+
+Run analyses with `--interactive` to review each stage before proceeding:
+
+```bash
+uv run ggdes analyze --feature "my-feature" --commits "HEAD~5..HEAD" --interactive
+```
+
+After each reviewable stage completes, you'll see a preview and can:
+- **Accept** — continue to the next stage
+- **Regenerate all** — re-run with your feedback text
+- **Regenerate specific items** — select items to regenerate
+- **Skip review** — skip all remaining reviews
+
+Feedback is persisted to the knowledge base and incorporated during regeneration.
+
+### TUI Review & Feedback
+
+The TUI provides two ways to give feedback:
+
+#### 1. Review Screen (per-stage)
+In the Analyses tab, select an analysis with completed stages and click **📝 Review**. You'll see:
+- All reviewable stages with their status (✓ completed, ○ pending, ✗ failed)
+- Checkboxes to mark stages for regeneration
+- Text inputs for feedback per stage
+- "Submit & Resume" to save feedback and continue analysis
+
+#### 2. Feedback Tab (section-level)
+Press `t` or switch to the **📝 Feedback** tab for granular, section-level feedback:
+- **Left panel**: Document sections from the Coordinator's plan, each with a Markdown TextArea for targeted feedback
+- **Right panel**: Live output file browser that auto-refreshes every 3 seconds, showing files as the pipeline generates them
+- **Analysis selector**: Choose which analysis to provide feedback for
+- **Save All Feedback**: Persists section feedback to the KB
+
+Section feedback is injected into the output agent's prompts during document generation, ensuring each section reflects your specific guidance.
+
+### Web UI
+
+```bash
+# Start web server
+uv run ggdes web
+
+# Custom host/port
+uv run ggdes web --host 0.0.0.0 --port 8080
+
+# Development mode with auto-reload
+uv run ggdes web --reload
+```
+
+Features:
+- Real-time updates via WebSocket
+- View all analyses with progress bars
+- Resume analyses with one click
+- Download generated documents
+- Preview and cleanup old worktrees
+- System statistics dashboard
 
 ---
 
 ## Understanding the Pipeline
 
-GGDes runs 8 stages in sequence:
+GGDes runs stages in sequence:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -325,41 +396,59 @@ GGDes runs 8 stages in sequence:
 ├─────────────────────────────────────────────────────────────┤
 │  1. worktree_setup  │  Creates isolated git worktrees        │
 │  2. git_analysis    │  LLM analyzes diffs for intent/impact  │
-│  3. ast_parsing_base│  Parses AST of "before" state          │
-│  4. ast_parsing_head│  Parses AST of "after" state           │
-│  5. semantic_diff   │  (Future) Semantic comparison          │
-│  6. technical_author│  Extracts technical facts from code     │
-│  7. coordinator_plan│  Plans document structure              │
-│  8. output_gen      │  Generates final documents             │
+│  3. change_filter   │  Filters relevant files for analysis   │
+│  4. ast_parsing_base│  Parses AST of "before" state          │
+│  5. ast_parsing_head│  Parses AST of "after" state           │
+│  6. semantic_diff   │  Semantic change analysis              │
+│  7. technical_author│  Extracts technical facts from code     │
+│  8. coordinator_plan│  Plans document structure              │
+│  9. output_gen      │  Generates final documents             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Interactive Review
+
+When running with `--interactive`, reviewable stages (git_analysis, change_filter, technical_author, coordinator_plan, output_generation) pause for your feedback. Feedback is persisted to the KB and injected into agent prompts during regeneration.
+
+### Feedback Loop
+
+User feedback flows through the system:
+1. **Collection**: CLI review prompts or TUI Feedback tab
+2. **Persistence**: Saved to KB as `review_session.json` and `section_feedback.json`
+3. **Injection**: Passed to TechnicalAuthor, Coordinator, and output agents
+4. **Regeneration**: LLM incorporates feedback into regenerated output
+5. **Self-Review**: Coordinator runs an LLM self-review after plan generation when feedback is present
 
 ### What's in the Knowledge Base
 
 Each analysis creates a knowledge base at `.ggdes/kb/analyses/<id>/`:
 
 ```
-metadata.yaml           # Stage tracking, timestamps
+metadata.yaml                # Stage tracking, timestamps
+review_session.json          # Persisted review session feedback
+section_feedback.json        # Section-level feedback from TUI
 git_analysis/
-  └── summary.json      # ChangeSummary (intent, impact, files)
-ast_base/               # AST of base commit
-  └── <file>.json       # CodeElement[]
-ast_head/               # AST of head commit
-  └── <file>.json       # CodeElement[]
+  └── summary.json           # ChangeSummary (intent, impact, files)
+ast_base/                    # AST of base commit
+  └── <file>.json            # CodeElement[]
+ast_head/                    # AST of head commit
+  └── <file>.json            # CodeElement[]
+semantic_diff/
+  └── result.json            # Semantic change analysis
 technical_facts/
-  ├── facts.json        # All TechnicalFact[]
-  └── <fact_id>.json    # Individual facts
+  ├── facts.json             # All TechnicalFact[]
+  └── <fact_id>.json         # Individual facts
 plans/
-  ├── plan_markdown.json
+  ├── plan_markdown.json     # Document plan with sections
   ├── plan_docx.json
   └── index.json
 conversations/
-  ├── git_analyzer/     # LLM conversation history
+  ├── git_analyzer/          # LLM conversation history
   ├── technical_author/
   └── coordinator/
 ```
 
-You can inspect these files to understand what the agents extracted.
+You can inspect these files to understand what the agents extracted. The `review_session.json` and `section_feedback.json` files contain user feedback that is injected into agent prompts during regeneration.
 
 ---
 
@@ -416,11 +505,22 @@ The Terminal User Interface provides a visual way to manage analyses.
 uv run ggdes tui
 ```
 
+### Tabs
+
+| Tab | Description |
+|-----|-------------|
+| 📊 Analyses | List of analyses, detail view, resume, review, delete |
+| 🌳 Worktrees | Active worktree management |
+| 📜 Git Log | Visual commit selection with focus commits |
+| 📝 Feedback | Section-level feedback + live output viewer |
+| ❓ Help | Keyboard shortcut reference |
+
 ### Navigation
 
-- **Left panel**: List of analyses with status
+- **Left panel**: List of analyses with progress status
 - **Right panel**: Details of selected analysis
 - **Progress bar**: Shows overall completion
+- **Review button**: Appears when reviewable stages are completed
 
 ### Status Indicators
 
@@ -435,8 +535,31 @@ uv run ggdes tui
 ### Actions
 
 - **Resume**: Continue an incomplete analysis
-- **Delete**: Remove analysis data
-- **Open Worktree**: Open the git worktree in your $EDITOR
+- **Review**: Provide feedback on completed stages (appears when applicable)
+- **Delete**: Remove analysis data with confirmation
+- **New Analysis**: Create analysis from Git Log selection
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `r` | Refresh |
+| `a` | New Analysis |
+| `t` | Switch to Feedback tab |
+| `s` | Set Start Commit (Git Log) |
+| `e` | Set End Commit (Git Log) |
+| `f` | Toggle Focus (Git Log) |
+| `c` | Clear Selection (Git Log) |
+
+### Feedback Tab
+
+The Feedback tab (`t` shortcut) provides:
+- **Analysis selector**: Choose which analysis to work with
+- **Section tree**: Document sections from the Coordinator's plan
+- **Per-section feedback**: Markdown TextArea for each section
+- **Live output viewer**: Auto-refreshing file browser showing pipeline output
+- **Save All Feedback**: Persists to KB for use during document generation
 
 ---
 
@@ -524,15 +647,39 @@ ggdes analyze --feature "oauth-integration" --commits "abc123..def456"
 ggdes analyze --feature "everything" --commits "HEAD~50..HEAD"
 ```
 
-### 3. Review Before Finalizing
-
-In interactive mode, review the coordinator's document plan:
+### 3. Use Interactive Review for Quality Control
 
 ```bash
-# Interactive mode shows you the plan before generating
-ggdes analyze --feature "api-changes" --commits "HEAD~3..HEAD"
-# When prompted, review the planned sections and diagrams
+# Interactive mode lets you review each stage
+ggdes analyze --feature "api-changes" --commits "HEAD~3..HEAD" --interactive
 ```
+
+When prompted, review the planned sections and diagrams. Provide specific feedback like:
+- "Add more detail about the authentication flow"
+- "Include migration examples for the breaking API changes"
+- "Focus on the performance improvements in the database layer"
+
+### 4. Use the TUI Feedback Tab for Section-Level Guidance
+
+Press `t` in the TUI to open the Feedback tab:
+- Select your analysis from the dropdown
+- Review document sections from the Coordinator's plan
+- Provide targeted feedback per section in the Markdown TextAreas
+- Click "Save All Feedback" to persist to the KB
+- Watch live output files appear in the right panel as the pipeline runs
+
+### 5. Resume with Feedback
+
+If you provided feedback during review, resume the analysis to regenerate with your guidance:
+
+```bash
+# Via CLI
+ggdes resume my-analysis-id --interactive
+
+# Via TUI: select analysis → click Resume
+```
+
+The system loads your persisted feedback and injects it into agent prompts during regeneration.
 
 ### 4. Keep Worktrees for Review
 
@@ -584,6 +731,8 @@ Options:
   --api-key TEXT         API key
   --auto                 Run all stages automatically
   --force                Force run even if locked
+  --interactive          Enable review mode after each stage
+  --no-semantic-diff     Skip semantic diff analysis (faster)
 ```
 
 #### `resume`
@@ -596,6 +745,7 @@ ggdes resume <analysis-id> [options]
 Options:
   --stage TEXT           Run specific stage
   --force                Force resume
+  --interactive          Enable review mode with feedback prompts
 ```
 
 #### `status`
@@ -620,6 +770,46 @@ Launch interactive terminal UI.
 
 ```bash
 ggdes tui
+```
+
+#### `web`
+
+Start web server with real-time dashboard.
+
+```bash
+ggdes web [--host HOST] [--port PORT] [--reload]
+```
+
+#### `doctor`
+
+Check system health and auto-fix issues.
+
+```bash
+ggdes doctor [--fix]
+```
+
+#### `compare`
+
+Compare two analyses side-by-side.
+
+```bash
+ggdes compare analysis1 analysis2 [--output comparison.json]
+```
+
+#### `export`
+
+Export analysis to JSON or ZIP.
+
+```bash
+ggdes export analysis-id output.zip [--include-diagrams]
+```
+
+#### `archive`
+
+Archive old analyses.
+
+```bash
+ggdes archive analysis-id [--keep-days 30]
 ```
 
 #### `config`
@@ -673,7 +863,7 @@ uv run ruff format .
 - **Languages**: Python and C++ have full AST support; others are partially supported
 - **LLM Required**: Cloud providers need API keys; Ollama needs local setup
 - **Large Diffs**: Very large changes (>100k tokens) use chunking which may lose some context
-- **Output Dependencies**: Docx, Pptx, Pdf require pandoc installation
+- **Output Dependencies**: Docx, Pptx, Pdf require pandoc or Node.js packages
 
 ---
 
@@ -681,7 +871,6 @@ uv run ruff format .
 
 - [ ] Dual-state semantic analysis
 - [ ] Support for Java, TypeScript, Go, Rust
-- [ ] Web UI for non-terminal users
 - [ ] CI/CD integrations (GitHub Actions, etc.)
 - [ ] Custom document templates
 - [ ] Incremental analysis (changed files only)
