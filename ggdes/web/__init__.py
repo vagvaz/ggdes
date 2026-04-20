@@ -542,6 +542,122 @@ async def cleanup_worktrees(days: int = Query(default=7, ge=1)) -> dict[str, Any
     }
 
 
+@app.get("/feedback/{analysis_id}", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
+async def feedback_page(analysis_id: str) -> HTMLResponse:
+    """Serve the feedback interface for a specific analysis."""
+    kb = get_kb()
+    metadata = kb.load_metadata(analysis_id)
+
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    plan = kb.load_document_plan(analysis_id)
+    existing_feedback = kb.load_section_feedback(analysis_id)
+
+    return HTMLResponse(
+        content=FEEDBACK_HTML.format(
+            analysis_id=analysis_id,
+            analysis_name=metadata.name,
+            plan_json=json.dumps(plan or {}),
+            feedback_json=json.dumps(existing_feedback or {}),
+        ),
+        status_code=200,
+    )
+
+
+@app.get("/api/analyses/{analysis_id}/feedback")  # type: ignore[untyped-decorator]
+async def get_feedback(analysis_id: str) -> dict[str, str]:
+    """Get section-level feedback for an analysis."""
+    kb = get_kb()
+    return kb.load_section_feedback(analysis_id)
+
+
+@app.post("/api/analyses/{analysis_id}/feedback")  # type: ignore[untyped-decorator]
+async def save_feedback(
+    analysis_id: str,
+    section_title: str = Query(...),
+    feedback: str = Query(...),
+) -> dict[str, Any]:
+    """Save feedback for a specific section."""
+    kb = get_kb()
+    kb.save_section_feedback(analysis_id, section_title, feedback)
+    return {"success": True, "section": section_title}
+
+
+class FeedbackBulkRequest:
+    """Request model for bulk feedback save."""
+
+    def __init__(self, feedback_items: list[dict[str, str]]) -> None:
+        self.feedback_items = feedback_items
+
+
+@app.post("/api/analyses/{analysis_id}/feedback/bulk")  # type: ignore[untyped-decorator]
+async def save_feedback_bulk(
+    analysis_id: str,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Save feedback for multiple sections at once."""
+    kb = get_kb()
+    count = 0
+    for item in request.get("feedback_items", []):
+        section = item.get("section", "")
+        feedback_text = item.get("feedback", "")
+        if section and feedback_text:
+            kb.save_section_feedback(analysis_id, section, feedback_text)
+            count += 1
+    return {"success": True, "count": count}
+
+
+@app.get("/api/analyses/{analysis_id}/plan")  # type: ignore[untyped-decorator]
+async def get_document_plan(analysis_id: str) -> dict[str, Any]:
+    """Get document plan with sections for an analysis."""
+    kb = get_kb()
+    plan = kb.load_document_plan(analysis_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return plan
+
+
+@app.get("/api/analyses/{analysis_id}/outputs")  # type: ignore[untyped-decorator]
+async def list_outputs(analysis_id: str) -> dict[str, Any]:
+    """List all output files for an analysis."""
+    kb = get_kb()
+    analysis_path = kb.get_analysis_path(analysis_id)
+    if not analysis_path.exists():
+        return {"files": []}
+
+    files: list[dict[str, Any]] = []
+    for f in analysis_path.rglob("*"):
+        if f.is_file() and f.suffix in (".json", ".md", ".txt", ".yaml", ".yml"):
+            rel = f.relative_to(analysis_path)
+            files.append({
+                "path": str(f),
+                "relative": str(rel),
+                "name": f.name,
+                "size": f.stat().st_size,
+                "mtime": f.stat().st_mtime,
+            })
+
+    return {"files": sorted(files, key=lambda x: x["relative"])}
+
+
+@app.get("/api/analyses/{analysis_id}/outputs/content")  # type: ignore[untyped-decorator]
+async def get_output_content(analysis_id: str, path: str = Query(...)) -> dict[str, Any]:
+    """Get content of a specific output file."""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        text = file_path.read_text()
+        if file_path.suffix == ".json":
+            parsed = json.loads(text)
+            text = json.dumps(parsed, indent=2)
+        return {"content": text, "name": file_path.name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 # Simple HTML interface
 INDEX_HTML = """
 <!DOCTYPE html>
@@ -890,6 +1006,7 @@ INDEX_HTML = """
                         <div class="actions">
                             ${a.progress.pending > 0 ? `<button class="btn btn-primary" onclick="resumeAnalysis('${a.id}')">Resume</button>` : ''}
                             <button class="btn btn-secondary" onclick="viewDetails('${a.id}')">Details</button>
+                            <button class="btn btn-secondary" onclick="openFeedback('${a.id}')">📝 Feedback</button>
                             <button class="btn btn-danger" onclick="deleteAnalysis('${a.id}')">Delete</button>
                         </div>
                     </div>
@@ -946,6 +1063,10 @@ INDEX_HTML = """
             window.open(`/api/analyses/${id}`, '_blank');
         }
         
+        function openFeedback(id) {
+            window.location.href = `/feedback/${id}`;
+        }
+        
         async function previewCleanup() {
             try {
                 const response = await fetch('/api/worktrees/cleanup-preview?days=7');
@@ -996,6 +1117,347 @@ INDEX_HTML = """
         connectWebSocket();
         loadStats();
         loadAnalyses();
+    </script>
+</body>
+</html>
+"""
+
+
+# Feedback page HTML
+FEEDBACK_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback - {analysis_name}</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }}
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+        header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
+        header h1 {{ font-size: 1.5em; margin-bottom: 5px; }}
+        header p {{ opacity: 0.9; }}
+        .back-link {{
+            display: inline-block;
+            margin-top: 10px;
+            color: white;
+            text-decoration: underline;
+            opacity: 0.9;
+        }}
+        .back-link:hover {{ opacity: 1; }}
+        .feedback-layout {{
+            display: grid;
+            grid-template-columns: 40% 60%;
+            gap: 20px;
+            height: calc(100vh - 180px);
+        }}
+        .section-panel, .output-panel {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }}
+        .panel-header {{
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: bold;
+            font-size: 1em;
+        }}
+        .sections-scroll {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }}
+        .section-block {{
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }}
+        .section-block:last-child {{ border-bottom: none; }}
+        .section-title {{
+            font-size: 1.05em;
+            color: #333;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }}
+        .section-description {{
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }}
+        .section-feedback {{
+            width: 100%;
+            min-height: 100px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 0.95em;
+            resize: vertical;
+            transition: border-color 0.2s;
+        }}
+        .section-feedback:focus {{
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+        }}
+        .output-layout {{
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }}
+        .file-tree-panel {{
+            width: 35%;
+            border-right: 1px solid #e0e0e0;
+            overflow-y: auto;
+            padding: 10px;
+        }}
+        .file-tree-panel ul {{ list-style: none; }}
+        .file-tree-panel li {{
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 0.9em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .file-tree-panel li:hover {{ background: #f0f0f0; }}
+        .file-tree-panel li.active {{ background: #e8eaf6; color: #667eea; }}
+        .file-tree-panel .tree-dir {{ font-weight: 600; color: #555; }}
+        .output-content {{
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+            background: #fafafa;
+        }}
+        .output-content pre {{
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.85em;
+            line-height: 1.5;
+        }}
+        .actions-bar {{
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }}
+        .btn {{
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95em;
+            font-weight: 500;
+            transition: all 0.2s;
+        }}
+        .btn-primary {{
+            background: #667eea;
+            color: white;
+        }}
+        .btn-primary:hover {{ background: #5a6fd6; }}
+        .btn-secondary {{
+            background: #6c757d;
+            color: white;
+        }}
+        .btn-secondary:hover {{ background: #545b62; }}
+        .status-message {{ margin-left: auto; font-weight: 500; font-size: 0.9em; }}
+        .status-success {{ color: #28a745; }}
+        .status-error {{ color: #dc3545; }}
+        .loading {{ color: #666; padding: 20px; text-align: center; }}
+        .empty-state {{ color: #999; padding: 40px; text-align: center; }}
+        .output-title {{ font-weight: 600; margin-bottom: 10px; color: #333; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 Section Feedback</h1>
+            <p>Analysis: <strong>{analysis_name}</strong></p>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </header>
+
+        <div class="feedback-layout">
+            <div class="section-panel">
+                <div class="panel-header">📄 Document Sections</div>
+                <div class="sections-scroll" id="sections-container">
+                    <div class="loading">Loading sections...</div>
+                </div>
+                <div class="actions-bar">
+                    <button class="btn btn-primary" onclick="saveAllFeedback()">💾 Save All Feedback</button>
+                    <span id="save-status" class="status-message"></span>
+                </div>
+            </div>
+
+            <div class="output-panel">
+                <div class="panel-header">📁 Live Output Files</div>
+                <div class="output-layout">
+                    <div class="file-tree-panel">
+                        <ul id="file-tree"></ul>
+                    </div>
+                    <div class="output-content" id="output-content">
+                        <p class="empty-state">Select a file to view its content</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ANALYSIS_ID = '{analysis_id}';
+        const PLAN_DATA = {plan_json};
+        const EXISTING_FEEDBACK = {feedback_json};
+
+        let feedbackInputs = {{}};
+        let activeFileLi = null;
+
+        function loadSections() {{
+            const container = document.getElementById('sections-container');
+
+            if (!PLAN_DATA || !PLAN_DATA.sections || PLAN_DATA.sections.length === 0) {{
+                container.innerHTML = '<p class="empty-state">No document plan found. Run an analysis first.</p>';
+                return;
+            }}
+
+            container.innerHTML = PLAN_DATA.sections.map((section, i) => `
+                <div class="section-block">
+                    <div class="section-title">${{i + 1}}. ${{esc(section.title)}}</div>
+                    <div class="section-description">${{esc(section.description || '')}}</div>
+                    <textarea
+                        class="section-feedback"
+                        id="feedback_${{i}}"
+                        placeholder="Feedback for this section..."
+                    >${{esc(EXISTING_FEEDBACK[section.title] || '')}}</textarea>
+                </div>
+            `).join('');
+
+            PLAN_DATA.sections.forEach((section, i) => {{
+                feedbackInputs[section.title] = document.getElementById(`feedback_${{i}}`);
+            }});
+        }}
+
+        async function saveAllFeedback() {{
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Saving...';
+            statusEl.className = 'status-message';
+
+            const feedbackItems = Object.entries(feedbackInputs)
+                .map(([section, textarea]) => ({{
+                    section: section,
+                    feedback: textarea.value.trim()
+                }}))
+                .filter(item => item.feedback);
+
+            try {{
+                const response = await fetch(`/api/analyses/${{ANALYSIS_ID}}/feedback/bulk`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ feedback_items: feedbackItems }})
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    statusEl.textContent = `✓ Saved ${{result.count}} feedback entries`;
+                    statusEl.className = 'status-message status-success';
+                }} else {{
+                    throw new Error('Save failed');
+                }}
+            }} catch (error) {{
+                statusEl.textContent = '✗ Save failed: ' + error.message;
+                statusEl.className = 'status-message status-error';
+            }}
+        }}
+
+        async function loadOutputFiles() {{
+            try {{
+                const response = await fetch(`/api/analyses/${{ANALYSIS_ID}}/outputs`);
+                const data = await response.json();
+                const treeEl = document.getElementById('file-tree');
+
+                if (!data.files || data.files.length === 0) {{
+                    treeEl.innerHTML = '<li class="empty-state">No output files yet</li>';
+                    return;
+                }}
+
+                // Group files by directory
+                const groups = {{}};
+                data.files.forEach(f => {{
+                    const parts = f.relative.split('/');
+                    const dir = parts.length > 1 ? parts[0] : 'root';
+                    if (!groups[dir]) groups[dir] = [];
+                    groups[dir].push(f);
+                }});
+
+                let html = '';
+                for (const [dir, files] of Object.entries(groups)) {{
+                    if (dir !== 'root') {{
+                        html += `<li class="tree-dir">📁 ${{esc(dir)}}</li>`;
+                    }}
+                    files.forEach(f => {{
+                        html += `<li onclick="viewFile('${{f.path}}', '${{esc(f.name)}}')" data-path="${{f.path}}">📄 ${{esc(f.name)}}</li>`;
+                    }});
+                }}
+                treeEl.innerHTML = html;
+            }} catch (error) {{
+                console.error('Failed to load files:', error);
+            }}
+        }}
+
+        async function viewFile(filePath, fileName) {{
+            // Update active state
+            if (activeFileLi) activeFileLi.classList.remove('active');
+            const li = document.querySelector(`li[data-path="${{filePath}}"]`);
+            if (li) {{ li.classList.add('active'); activeFileLi = li; }}
+
+            const contentEl = document.getElementById('output-content');
+            contentEl.innerHTML = '<p class="loading">Loading...</p>';
+
+            try {{
+                const response = await fetch(`/api/analyses/${{ANALYSIS_ID}}/outputs/content?path=${{encodeURIComponent(filePath)}}`);
+                const data = await response.json();
+
+                contentEl.innerHTML = `
+                    <div class="output-title">${{esc(fileName)}}</div>
+                    <pre>${{esc(data.content)}}</pre>
+                `;
+            }} catch (error) {{
+                contentEl.innerHTML = `<p class="status-error">Error loading file: ${{error.message}}</p>`;
+            }}
+        }}
+
+        function esc(text) {{
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }}
+
+        // Poll for new output files every 5 seconds
+        setInterval(loadOutputFiles, 5000);
+
+        // Initialize
+        loadSections();
+        loadOutputFiles();
     </script>
 </body>
 </html>
