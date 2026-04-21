@@ -502,9 +502,8 @@ class GitAnalyzer:
             f"{'The full diff is larger than this — focus your analysis on the visible changes above.' if diff_truncated else ''}"
         )
 
-        # Turn 1: Combined analysis + structured output
-        self.conversation.add_user_message(
-            f"""You are analyzing a git commit range with the following context:
+        # Single-turn: direct structured output from diff (no conversation replay)
+        prompt = f"""You are analyzing a git commit range with the following context:
 
 FILES CHANGED ({len(files)} total):
 {files_context}
@@ -526,20 +525,16 @@ Analyze the git diff and provide a comprehensive structured summary covering:
 2. BREAKING CHANGES: Identify any breaking changes, API modifications, or significant behavioral changes. Be specific about what changed and why. If there are no breaking changes, explicitly state 'No breaking changes detected.'
 3. IMPACT ASSESSMENT: Assess the impact on the system — what are the risks? Who is affected? What needs to be tested?
 
-Then provide a structured ChangeSummary as a JSON object with:
-- change_type: The primary type (feature, bugfix, refactor, docs, test, chore, performance, security)
-- description: A clear description of what changed (2-3 sentences)
-- intent: Why this change was made
-- impact: What systems/behaviors are affected
-- impact_level: none, low, medium, high, or critical
-- breaking_changes: List any breaking changes (empty list if none)
-- dependencies_changed: List any dependency changes (empty list if none)
-
 IMPORTANT: Your description MUST be based on the actual git diff and file list shown above. Do NOT say "no changes detected" when files clearly changed."""
-        )
 
-        context = self.conversation.get_context_for_llm()
-        change_summary = await self._generate_structured(context)
+        change_summary = await self._generate_structured_direct(prompt)
+
+        # Store in conversation for downstream stages
+        if self.conversation:
+            self.conversation.add_user_message(prompt)
+            self.conversation.add_assistant_message(
+                f"ChangeSummary: {change_summary.model_dump_json()}"
+            )
 
         # Add file info from git stats
         from ggdes.schemas import FileChange
@@ -723,6 +718,42 @@ IMPORTANT: Base your summary only on the chunk analyses above. Do not invent cha
 
         return chunks
 
+    async def _generate_structured_direct(self, prompt: str) -> ChangeSummary:
+        """Generate structured output directly from a prompt (no conversation replay).
+
+        This is the fast path: sends the diff once and gets structured JSON back,
+        avoiding the two-turn conversation replay overhead.
+        """
+        system = None
+        if self.conversation:
+            # Extract system prompt from conversation if available
+            for msg in self.conversation.get_context_for_llm():
+                if msg["role"] == "system":
+                    system = msg["content"]
+                    break
+
+        if system is not None:
+            system += (
+                "\n\nYou must respond with a JSON object matching the ChangeSummary schema. "
+                "Include fields: change_type, description, intent, impact, impact_level, "
+                "breaking_changes (array), dependencies_changed (array). "
+                "\n\nCRITICAL: All code references (file paths, function names, class names) "
+                "must exist in the git diff or parsed code. Do not reference code that wasn't changed."
+            )
+
+        change_summary = self.llm.generate_structured(
+            prompt=prompt,
+            response_model=ChangeSummary,
+            system_prompt=system,
+            temperature=0.2,
+            max_retries=3,
+        )
+
+        # Validate code references in the generated summary
+        await self._validate_code_references(change_summary)
+
+        return change_summary
+
     async def _chat_with_context(self, context: list[dict[str, Any]]) -> str:
         """Send chat request with full conversation context."""
         logger.info(
@@ -825,7 +856,7 @@ IMPORTANT: Base your summary only on the chunk analyses above. Do not invent cha
         )
 
         # Validate and auto-correct the entire summary output
-        max_corrections = 2
+        max_corrections = 1
 
         # Validate description
         if change_summary.description:
