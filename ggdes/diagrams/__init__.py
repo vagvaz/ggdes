@@ -5,6 +5,17 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
+from ggdes.diagrams.llm_generator import LLMDiagramGenerator
+
+__all__ = [
+    "LLMDiagramGenerator",
+    "PlantUMLGenerator",
+    "generate_architecture_diagram",
+    "generate_class_diagram",
+    "generate_flow_diagram",
+    "generate_sequence_diagram",
+]
+
 
 class PlantUMLGenerator:
     """Generate diagrams using PlantUML."""

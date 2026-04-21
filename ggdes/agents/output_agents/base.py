@@ -10,7 +10,7 @@ from rich.console import Console
 from ggdes.config import GGDesConfig, get_kb_path
 
 if TYPE_CHECKING:
-    from ggdes.diagrams import PlantUMLGenerator
+    from ggdes.diagrams import LLMDiagramGenerator, PlantUMLGenerator
     from ggdes.diagrams.cache import DiagramCache
     from ggdes.schemas import TechnicalFact
 
@@ -41,6 +41,7 @@ class OutputAgent(ABC):
         self.user_context: dict[str, Any] | None = None
         self.review_feedback = review_feedback
         self._diagram_generator: PlantUMLGenerator | None = None
+        self._llm_diagram_generator: LLMDiagramGenerator | None = None
         self._diagram_cache: DiagramCache | None = None
         self._validated_elements: set[str] | None = None
         self._cached_facts: list[TechnicalFact] | None = None
@@ -79,6 +80,31 @@ class OutputAgent(ABC):
                 )
                 return None
         return self._diagram_generator
+
+    def _get_llm_diagram_generator(self) -> Any:
+        """Get or create LLM-driven diagram generator instance.
+
+        Falls back to template-based generator if LLM is unavailable.
+
+        Returns:
+            LLMDiagramGenerator instance or None if PlantUML is unavailable.
+        """
+        if self._llm_diagram_generator is None:
+            from ggdes.diagrams import LLMDiagramGenerator
+
+            try:
+                self._llm_diagram_generator = LLMDiagramGenerator(
+                    config=self.config,
+                    analysis_id=self.analysis_id,
+                )
+            except Exception as e:
+                console.print(
+                    f"  [yellow]⚠ LLM diagram generator unavailable, using templates: {e}[/yellow]"
+                )
+                # Fall back to template generator
+                if self._get_diagram_generator() is None:
+                    return None
+        return self._llm_diagram_generator
 
     def _load_user_context(self) -> None:
         """Load user context from document plan or metadata."""
@@ -379,6 +405,9 @@ class OutputAgent(ABC):
     ) -> list[tuple[str, Path, str]]:
         """Generate diagrams from technical facts with caching support.
 
+        Uses LLM-driven generation as primary approach, falling back to
+        template-based generation when LLM is unavailable.
+
         Args:
             facts: List of TechnicalFact objects
             output_dir: Directory to save diagrams
@@ -388,12 +417,44 @@ class OutputAgent(ABC):
         Returns:
             List of (diagram_title, diagram_path, diagram_type) tuples
         """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        generated = []
+
+        # Try LLM-driven generation first
+        llm_generator = self._get_llm_diagram_generator()
+        if llm_generator is not None:
+            console.print("  [dim]Using LLM-driven diagram generation[/dim]")
+            diagram_types = diagram_types or ["architecture", "flow", "class"]
+
+            if "architecture" in diagram_types:
+                result = llm_generator.generate_architecture_diagram(
+                    facts, output_dir, use_cache=use_cache
+                )
+                if result:
+                    generated.append(result)
+
+            if "flow" in diagram_types:
+                result = llm_generator.generate_flow_diagram(
+                    facts, output_dir, use_cache=use_cache
+                )
+                if result:
+                    generated.append(result)
+
+            if "class" in diagram_types:
+                result = llm_generator.generate_class_diagram(
+                    facts, output_dir, use_cache=use_cache
+                )
+                if result:
+                    generated.append(result)
+
+            if generated:
+                return generated
+
+        # Fall back to template-based generation
+        console.print("  [dim]Falling back to template-based diagram generation[/dim]")
         generator = self._get_diagram_generator()
         if not generator:
             return []
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        generated = []
 
         # Get cache if enabled
         cache = self._get_diagram_cache() if use_cache else None
