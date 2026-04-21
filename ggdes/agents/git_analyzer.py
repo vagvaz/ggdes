@@ -1,5 +1,6 @@
 """Git Analysis Agent for analyzing code changes with multi-turn support."""
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -558,6 +559,44 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
 
         return change_summary
 
+    def _get_chunk_summaries_path(self) -> Path:
+        """Get path to save/load chunk summaries."""
+        assert self.analysis_id is not None
+        return (
+            get_kb_path(self.config, self.analysis_id)
+            / "git_analysis"
+            / "chunk_summaries.json"
+        )
+
+    def _load_saved_chunk_summaries(self) -> list[dict[str, Any]] | None:
+        """Load previously saved chunk summaries from disk (for resume)."""
+        if not self.analysis_id:
+            return None
+        path = self._get_chunk_summaries_path()
+        if path.exists():
+            try:
+                data: list[dict[str, Any]] = json.loads(path.read_text())
+                console.print(
+                    f"  [dim]Loaded {len(data)} saved chunk summaries from previous run[/dim]"
+                )
+                return data
+            except (json.JSONDecodeError, OSError) as e:
+                console.print(
+                    f"  [yellow]Warning: Could not load chunk summaries: {e}[/yellow]"
+                )
+        return None
+
+    def _save_chunk_summaries(self, summaries: list[dict[str, Any]]) -> None:
+        """Save chunk summaries to disk for resume support."""
+        if not self.analysis_id:
+            return
+        path = self._get_chunk_summaries_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(summaries, indent=2))
+        console.print(
+            f"  [dim]Saved {len(summaries)} chunk summaries to {path}[/dim]"
+        )
+
     async def _analyze_chunked(
         self, diff: str, files: list[dict[str, Any]], commits: list[dict[str, Any]]
     ) -> ChangeSummary:
@@ -566,6 +605,8 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
         Supports two modes:
         - independent: Each chunk analyzed separately (fast)
         - accumulated: Each chunk sees all previous context (slower, more coherent)
+
+        On resume, loads previously saved chunk summaries to skip re-analysis.
         """
         if not self.conversation:
             raise RuntimeError("Conversation not initialized")
@@ -578,16 +619,28 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
             f"  [dim]Diff split into {len(chunks)} chunks ({chunk_mode.value} mode)[/dim]"
         )
 
-        chunk_summaries = []
-
-        if chunk_mode.value == "independent":
-            # Process each chunk independently (no growing context)
-            for i, chunk in enumerate(chunks):
+        # Try to load saved chunk summaries from previous run
+        saved_summaries = self._load_saved_chunk_summaries()
+        if saved_summaries and len(saved_summaries) == len(chunks):
+            console.print(
+                f"  [green]✓ All {len(chunks)} chunk summaries loaded from previous run, skipping LLM calls[/green]"
+            )
+            chunk_summaries = saved_summaries
+        else:
+            if saved_summaries and len(saved_summaries) < len(chunks):
                 console.print(
-                    f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                    f"  [yellow]Partial chunk summaries found ({len(saved_summaries)}/{len(chunks)}), re-analyzing all chunks[/yellow]"
                 )
+            chunk_summaries = []
 
-                chunk_prompt = f"""You are analyzing a git diff chunk. This is chunk {i + 1} of {len(chunks)}.
+            if chunk_mode.value == "independent":
+                # Process each chunk independently (no growing context)
+                for i, chunk in enumerate(chunks):
+                    console.print(
+                        f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                    )
+
+                    chunk_prompt = f"""You are analyzing a git diff chunk. This is chunk {i + 1} of {len(chunks)}.
 
 Files in this chunk: {chunk["files"]}
 
@@ -603,28 +656,28 @@ Provide a brief analysis of these specific changes. Focus on:
 
 IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
-                response = self.llm.generate(
-                    prompt=chunk_prompt,
-                    system_prompt=self.conversation.system_prompt,
-                    temperature=0.3,
-                    max_tokens=2048,
-                )
+                    response = self.llm.generate(
+                        prompt=chunk_prompt,
+                        system_prompt=self.conversation.system_prompt,
+                        temperature=0.3,
+                        max_tokens=2048,
+                    )
 
-                chunk_summaries.append(
-                    {
-                        "chunk_num": i + 1,
-                        "files": chunk["files"],
-                        "analysis": response,
-                    }
-                )
-        else:
-            # Accumulated mode: each chunk sees all previous context (original behavior)
-            for i, chunk in enumerate(chunks):
-                console.print(
-                    f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
-                )
+                    chunk_summaries.append(
+                        {
+                            "chunk_num": i + 1,
+                            "files": chunk["files"],
+                            "analysis": response,
+                        }
+                    )
+            else:
+                # Accumulated mode: each chunk sees all previous context (original behavior)
+                for i, chunk in enumerate(chunks):
+                    console.print(
+                        f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                    )
 
-                chunk_context = f"""
+                    chunk_context = f"""
 This is chunk {i + 1} of {len(chunks)} of a large diff.
 Files in this chunk: {chunk["files"]}
 
@@ -637,19 +690,22 @@ Provide a brief analysis of these specific changes. Focus on:
 
 IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
-                self.conversation.add_user_message(chunk_context)
+                    self.conversation.add_user_message(chunk_context)
 
-                context = self.conversation.get_context_for_llm()
-                response = await self._chat_with_context(context)
-                self.conversation.add_assistant_message(response)
+                    context = self.conversation.get_context_for_llm()
+                    response = await self._chat_with_context(context)
+                    self.conversation.add_assistant_message(response)
 
-                chunk_summaries.append(
-                    {
-                        "chunk_num": i + 1,
-                        "files": chunk["files"],
-                        "analysis": response,
-                    }
-                )
+                    chunk_summaries.append(
+                        {
+                            "chunk_num": i + 1,
+                            "files": chunk["files"],
+                            "analysis": response,
+                        }
+                    )
+
+            # Save chunk summaries after all chunks are analyzed
+            self._save_chunk_summaries(chunk_summaries)
 
         # Synthesis turn: Combine all chunk analyses using the conversation context
         synthesis_prompt = f"""
@@ -666,14 +722,21 @@ Now synthesize these into a cohesive overall analysis. Identify:
 3. System-wide impact
 4. Overall change type (feature, bugfix, refactor, etc.)
 
-Then provide a structured ChangeSummary as a JSON object with:
-- change_type: The primary type (feature, bugfix, refactor, docs, test, chore, performance, security)
-- description: A clear description of what changed (2-3 sentences)
-- intent: Why this change was made
-- impact: What systems/behaviors are affected
-- impact_level: none, low, medium, high, or critical
-- breaking_changes: List any breaking changes (empty list if none)
-- dependencies_changed: List any dependency changes (empty list if none)
+Then provide a structured ChangeSummary as a JSON object. You MUST output ONLY valid JSON with this exact structure:
+
+```json
+{
+    "change_type": "feature|bugfix|refactor|docs|test|chore|performance|security",
+    "description": "A clear description of what changed (2-3 sentences)",
+    "intent": "Why this change was made",
+    "impact": "What systems/behaviors are affected",
+    "impact_level": "none|low|medium|high|critical",
+    "breaking_changes": ["list any breaking changes, or empty array if none"],
+    "dependencies_changed": ["list any dependency changes, or empty array if none"]
+}
+```
+
+CRITICAL: Replace ALL placeholder values with actual analysis findings. Do NOT output the template as-is. Do NOT output {"response": "..."}. Output the complete JSON object with real content.
 
 IMPORTANT: Base your summary only on the chunk analyses above. Do not invent changes not mentioned in the summaries.
 """

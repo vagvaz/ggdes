@@ -357,6 +357,9 @@ Please provide a corrected response in valid JSON format. Remember:
 4. Ensure all fields are present with proper values
 
 The expected JSON structure must match the original schema you were given.
+CRITICAL: Your response must be a complete JSON object with ALL required fields filled in with actual content.
+Do NOT return {{"response": "..."}} or any meta-commentary. Return the full schema-matching JSON.
+
 Provide only the corrected JSON response:"""
 
 
