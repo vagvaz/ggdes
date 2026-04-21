@@ -427,6 +427,69 @@ def _parse_xml_response(response_text: str, response_model: type[T]) -> T:
         raise ValueError(f"Response validation failed: {e}") from e
 
 
+def _repair_json(text: str) -> str | None:
+    """Attempt to repair common JSON formatting issues without an LLM call.
+
+    Handles: trailing commas, single quotes, unquoted keys, missing quotes,
+    comments, and other common LLM output quirks.
+
+    Args:
+        text: Potentially malformed JSON string
+
+    Returns:
+        Repaired JSON string, or None if repair is not possible
+    """
+    original = text.strip()
+
+    # Remove markdown code blocks
+    text = _strip_markdown_code_blocks(original)
+    text = text.strip()
+
+    # Try parsing as-is first
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    repaired = text
+
+    # 1. Replace single quotes with double quotes (but be careful with apostrophes in values)
+    # Only replace single quotes that are likely JSON delimiters
+    # Simple heuristic: replace ' at start/end of keys and string values
+    repaired = re.sub(r"'([^']*)'(?=\s*[:,}\]])", r'"\1"', repaired)
+
+    # 2. Remove trailing commas before } or ]
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+
+    # 3. Remove JavaScript-style comments (// and /* */)
+    repaired = re.sub(r"//[^\n]*\n", "\n", repaired)
+    repaired = re.sub(r"/\*.*?\*/", "", repaired, flags=re.DOTALL)
+
+    # 4. Quote unquoted keys: { key: "value" } -> { "key": "value" }
+    repaired = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', repaired)
+
+    # 5. Try to extract JSON if the above didn't work
+    try:
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        # Try extracting the JSON object from surrounding text
+        match = re.search(r"\{[\s\S]*\}", repaired)
+        if match:
+            extracted = match.group()
+            # Apply repairs to extracted content
+            extracted = re.sub(r",\s*([}\]])", r"\1", extracted)
+            extracted = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', extracted)
+            try:
+                json.loads(extracted)
+                return extracted
+            except json.JSONDecodeError:
+                pass
+
+    return None
+
+
 def _parse_json_response(response_text: str, response_model: type[T]) -> T:
     """Parse and validate JSON response into Pydantic model.
 
@@ -674,7 +737,27 @@ class LLMProvider(ABC):
                 if output_format == "xml":
                     result = _parse_xml_response(response_text, response_model)
                 else:
-                    result = _parse_json_response(response_text, response_model)
+                    try:
+                        result = _parse_json_response(response_text, response_model)
+                    except (ValueError, json.JSONDecodeError) as parse_err:
+                        # Attempt JSON repair before falling back to LLM retry
+                        repaired = _repair_json(response_text)
+                        if repaired is not None:
+                            try:
+                                result = _parse_json_response(repaired, response_model)
+                                logger.info(
+                                    "JSON repair succeeded | provider={} model={} "
+                                    "response_model={}",
+                                    self.__class__.__name__,
+                                    self.model_name,
+                                    model_name,
+                                )
+                            except (ValueError, ValidationError):
+                                # Repair produced valid JSON but didn't match schema
+                                raise parse_err
+                        else:
+                            # Repair not possible, fall through to LLM retry
+                            raise parse_err
 
                 call_duration = time.time() - call_start
                 logger.info(
