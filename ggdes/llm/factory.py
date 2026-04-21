@@ -1081,7 +1081,7 @@ class OllamaProvider(BaseOpenAICompatibleProvider):
         model_name: str,
         base_url: str | None = None,
         structured_format: str = "auto",
-        enable_thinking: bool = False,
+        enable_thinking: bool = True,
         **kwargs: Any,
     ):
         super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
@@ -1342,10 +1342,6 @@ class LLMFactory:
         structured_format = getattr(config.model, "structured_format", "auto")
         if hasattr(structured_format, "value"):
             structured_format = structured_format.value
-
-        # Pass thinking control for Ollama provider
-        enable_thinking = getattr(config.model, "enable_thinking", False)
-        kwargs["enable_thinking"] = enable_thinking
 
         return cls.create(
             provider=config.model.provider,

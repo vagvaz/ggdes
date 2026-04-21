@@ -44,7 +44,8 @@ class GitAnalyzer:
         self.config = config
         self.analysis_id = analysis_id
         self.user_context = user_context or {}
-        self.llm = LLMFactory.from_config(config)
+        # Use config.analysis.enable_thinking for git analysis LLM calls
+        self.llm = self._create_analysis_llm(config)
         self.conversation: ConversationContext | None = None
         self.chunk_token_threshold = config.analysis.chunk_token_threshold
         self.max_diff_tokens = config.analysis.max_diff_tokens
@@ -57,6 +58,49 @@ class GitAnalyzer:
 
         # Detect language and load expert skill (with graceful fallback)
         self._load_language_expert_skill()
+
+    def _create_thinking_llm(self) -> Any:
+        """Create an LLM with thinking enabled as fallback for generate_structured."""
+        kwargs: dict[str, Any] = {}
+        if self.config.model.base_url:
+            kwargs["base_url"] = self.config.model.base_url
+
+        structured_format = getattr(self.config.model, "structured_format", "auto")
+        if hasattr(structured_format, "value"):
+            structured_format = structured_format.value
+
+        kwargs["enable_thinking"] = True
+
+        return LLMFactory.create(
+            provider=self.config.model.provider,
+            model_name=self.config.model.model_name,
+            api_key=self.config.model.api_key,
+            structured_format=structured_format,
+            **kwargs,
+        )
+
+    def _create_analysis_llm(self, config: GGDesConfig) -> Any:
+        """Create LLM provider for git analysis using config.analysis.enable_thinking."""
+        kwargs: dict[str, Any] = {}
+        if config.model.base_url:
+            kwargs["base_url"] = config.model.base_url
+
+        # Get structured format from config
+        structured_format = getattr(config.model, "structured_format", "auto")
+        if hasattr(structured_format, "value"):
+            structured_format = structured_format.value
+
+        # Use config.analysis.enable_thinking instead of config.model.enable_thinking
+        enable_thinking = getattr(config.analysis, "enable_thinking", False)
+        kwargs["enable_thinking"] = enable_thinking
+
+        return LLMFactory.create(
+            provider=config.model.provider,
+            model_name=config.model.model_name,
+            api_key=config.model.api_key,
+            structured_format=structured_format,
+            **kwargs,
+        )
 
     def _load_language_expert_skill(self) -> None:
         """Detect repository language and load expert skill."""
@@ -949,13 +993,14 @@ IMPORTANT: Base your summary only on the chunk analyses above. Do not invent cha
                 max_retries=3,
             )
         except ValueError:
-            # Last resort: retry with thinking enabled (Ollama models only)
+            # Last resort: retry with thinking enabled
             from ggdes.llm import LLMFactory, OllamaProvider
 
+            console.print(
+                "  [yellow]Structured output failed, retrying synthesis with thinking enabled...[/yellow]"
+            )
+            # For Ollama, create thinking LLM directly
             if isinstance(self.llm, OllamaProvider):
-                console.print(
-                    "  [yellow]Structured output failed, retrying synthesis with thinking enabled...[/yellow]"
-                )
                 thinking_llm = LLMFactory.create(
                     provider="ollama",
                     model_name=self.llm.model_name,
@@ -963,15 +1008,17 @@ IMPORTANT: Base your summary only on the chunk analyses above. Do not invent cha
                     base_url=self.llm.base_url,
                     enable_thinking=True,
                 )
-                change_summary = thinking_llm.generate_structured(
-                    prompt=full_prompt,
-                    response_model=ChangeSummary,
-                    system_prompt=system,
-                    temperature=0.2,
-                    max_retries=3,
-                )
             else:
-                raise
+                # For other providers, create with enable_thinking from config
+                thinking_llm = self._create_thinking_llm()
+
+            change_summary = thinking_llm.generate_structured(
+                prompt=full_prompt,
+                response_model=ChangeSummary,
+                system_prompt=system,
+                temperature=0.2,
+                max_retries=3,
+            )
 
         # Validate code references in the generated summary
         await self._validate_code_references(change_summary)

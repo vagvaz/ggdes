@@ -29,9 +29,9 @@ class ModelConfig(BaseModel):
         description="Output format for structured responses: 'auto', 'json', or 'xml'",
     )
     enable_thinking: bool = Field(
-        default=False,
+        default=True,
         description="Enable thinking/reasoning mode for Ollama thinking-capable models. "
-        "Default is False to avoid 200+ second reasoning delays.",
+        "Default is True for better quality output. Git analysis uses its own analysis.enable_thinking setting.",
     )
 
     @field_validator("api_key")
@@ -97,6 +97,12 @@ class AnalysisConfig(BaseModel):
     max_diff_tokens: int = Field(
         default=50000,
         description="Absolute max tokens before chunking is triggered.",
+    )
+    enable_thinking: bool = Field(
+        default=False,
+        description="Enable thinking/reasoning mode for git analysis LLM calls. "
+        "Default is False to avoid 200+ second reasoning delays. "
+        "If generate_structured fails, a thinking-enabled LLM is used as fallback.",
     )
 
 
