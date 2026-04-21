@@ -45,8 +45,8 @@ class GitAnalyzer:
         self.user_context = user_context or {}
         self.llm = LLMFactory.from_config(config)
         self.conversation: ConversationContext | None = None
-        self.chunk_token_threshold = 25000  # Chunk diffs larger than this
-        self.max_diff_tokens = 50000  # Absolute max before chunking
+        self.chunk_token_threshold = config.analysis.chunk_token_threshold
+        self.max_diff_tokens = config.analysis.max_diff_tokens
         self._language_expert_skill: str | None = None
 
         # Store analysis data for code reference validation
@@ -445,12 +445,13 @@ class GitAnalyzer:
 
         # Check if diff needs chunking
         diff_tokens = estimate_tokens(diff)
+        use_chunked = self.config.analysis.enable_chunked_diff and diff_tokens > self.max_diff_tokens
 
-        if diff_tokens > self.max_diff_tokens:
+        if use_chunked:
             # Multi-chunk analysis
             change_summary = await self._analyze_chunked(diff, files, commits)
         else:
-            # Single-pass analysis
+            # Single-pass analysis (with truncation if needed)
             change_summary = await self._analyze_single(diff, files, commits)
 
         # Save conversation to KB
@@ -560,18 +561,70 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
     async def _analyze_chunked(
         self, diff: str, files: list[dict[str, Any]], commits: list[dict[str, Any]]
     ) -> ChangeSummary:
-        """Multi-chunk analysis for large diffs."""
+        """Multi-chunk analysis for large diffs.
+
+        Supports two modes:
+        - independent: Each chunk analyzed separately (fast)
+        - accumulated: Each chunk sees all previous context (slower, more coherent)
+        """
         if not self.conversation:
             raise RuntimeError("Conversation not initialized")
 
         # Split diff into chunks by file or size
         chunks = self._chunk_diff(diff, max_tokens=self.chunk_token_threshold)
 
+        chunk_mode = self.config.analysis.chunk_mode
+        console.print(
+            f"  [dim]Diff split into {len(chunks)} chunks ({chunk_mode.value} mode)[/dim]"
+        )
+
         chunk_summaries = []
 
-        # Process each chunk
-        for i, chunk in enumerate(chunks):
-            chunk_context = f"""
+        if chunk_mode.value == "independent":
+            # Process each chunk independently (no growing context)
+            for i, chunk in enumerate(chunks):
+                console.print(
+                    f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                )
+
+                chunk_prompt = f"""You are analyzing a git diff chunk. This is chunk {i + 1} of {len(chunks)}.
+
+Files in this chunk: {chunk["files"]}
+
+GIT DIFF:
+```diff
+{chunk["content"]}
+```
+
+Provide a brief analysis of these specific changes. Focus on:
+1. What functionality changed in this chunk
+2. Any breaking changes or API modifications
+3. Impact on the files in this chunk
+
+IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
+"""
+                response = self.llm.generate(
+                    prompt=chunk_prompt,
+                    system_prompt=self.conversation.system_prompt,
+                    temperature=0.3,
+                    max_tokens=2048,
+                )
+
+                chunk_summaries.append(
+                    {
+                        "chunk_num": i + 1,
+                        "files": chunk["files"],
+                        "analysis": response,
+                    }
+                )
+        else:
+            # Accumulated mode: each chunk sees all previous context (original behavior)
+            for i, chunk in enumerate(chunks):
+                console.print(
+                    f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                )
+
+                chunk_context = f"""
 This is chunk {i + 1} of {len(chunks)} of a large diff.
 Files in this chunk: {chunk["files"]}
 
@@ -584,21 +637,21 @@ Provide a brief analysis of these specific changes. Focus on:
 
 IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
-            self.conversation.add_user_message(chunk_context)
+                self.conversation.add_user_message(chunk_context)
 
-            context = self.conversation.get_context_for_llm()
-            response = await self._chat_with_context(context)
-            self.conversation.add_assistant_message(response)
+                context = self.conversation.get_context_for_llm()
+                response = await self._chat_with_context(context)
+                self.conversation.add_assistant_message(response)
 
-            chunk_summaries.append(
-                {
-                    "chunk_num": i + 1,
-                    "files": chunk["files"],
-                    "analysis": response,
-                }
-            )
+                chunk_summaries.append(
+                    {
+                        "chunk_num": i + 1,
+                        "files": chunk["files"],
+                        "analysis": response,
+                    }
+                )
 
-        # Synthesis turn: Combine all chunk analyses
+        # Synthesis turn: Combine all chunk analyses using the conversation context
         synthesis_prompt = f"""
 You have analyzed {len(chunks)} chunks of a large diff. Here are the summaries:
 

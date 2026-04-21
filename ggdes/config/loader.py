@@ -28,6 +28,11 @@ class ModelConfig(BaseModel):
         default=StructuredOutputFormat.AUTO,
         description="Output format for structured responses: 'auto', 'json', or 'xml'",
     )
+    enable_thinking: bool = Field(
+        default=False,
+        description="Enable thinking/reasoning mode for Ollama thinking-capable models. "
+        "Default is False to avoid 200+ second reasoning delays.",
+    )
 
     @field_validator("api_key")
     @classmethod
@@ -62,6 +67,37 @@ class FeaturesConfig(BaseModel):
     dual_state_analysis: bool = False
     auto_cleanup: bool = True
     worktree_retention_days: int = 7
+
+
+class ChunkAnalysisMode(str, Enum):
+    """How diff chunks are analyzed."""
+
+    INDEPENDENT = "independent"  # Each chunk analyzed separately (fast)
+    ACCUMULATED = "accumulated"  # Each chunk sees all previous context (slower, more coherent)
+
+
+class AnalysisConfig(BaseModel):
+    """Git analysis configuration."""
+
+    enable_chunked_diff: bool = Field(
+        default=True,
+        description="Enable chunked diff analysis for large diffs. "
+        "When True, diffs exceeding max_diff_tokens are split into chunks. "
+        "When False, diffs are truncated to fit in a single pass.",
+    )
+    chunk_mode: ChunkAnalysisMode = Field(
+        default=ChunkAnalysisMode.INDEPENDENT,
+        description="How chunks are analyzed: 'independent' (each chunk separately, fast) "
+        "or 'accumulated' (each chunk sees all previous context, slower but more coherent).",
+    )
+    chunk_token_threshold: int = Field(
+        default=25000,
+        description="Maximum tokens per diff chunk before splitting.",
+    )
+    max_diff_tokens: int = Field(
+        default=50000,
+        description="Absolute max tokens before chunking is triggered.",
+    )
 
 
 class ParsingMode(str, Enum):
@@ -111,6 +147,7 @@ class GGDesConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     parsing: ParsingConfig = Field(default_factory=ParsingConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     repo: RepoConfig = Field(default_factory=RepoConfig)

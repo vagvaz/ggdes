@@ -1,6 +1,8 @@
 model:
   provider: "ollama"
-  model_name: "qwen3-coder-next"
+  # model_name: "qwen3-coder-next"
+  # model_name: "gemma4:31b"
+  model_name: lfm2.5-thinking
   api_key: "ollama"
   base_url: "http://192.168.0.179:11234/v1"
 
@@ -16,3 +18,9 @@ features:
   dual_state_analysis: false
   auto_cleanup: true
   worktree_retention_days: 7
+
+analysis:
+  enable_chunked_diff: true
+  chunk_mode: independent        # independent (fast) or accumulated (slower, more coherent)
+  chunk_token_threshold: 25000
+  max_diff_tokens: 50000

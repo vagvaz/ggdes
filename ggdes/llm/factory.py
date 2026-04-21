@@ -431,7 +431,7 @@ def _repair_json(text: str) -> str | None:
     """Attempt to repair common JSON formatting issues without an LLM call.
 
     Handles: trailing commas, single quotes, unquoted keys, missing quotes,
-    comments, and other common LLM output quirks.
+    comments, extra data after JSON, and other common LLM output quirks.
 
     Args:
         text: Potentially malformed JSON string
@@ -469,23 +469,74 @@ def _repair_json(text: str) -> str | None:
     # 4. Quote unquoted keys: { key: "value" } -> { "key": "value" }
     repaired = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', repaired)
 
-    # 5. Try to extract JSON if the above didn't work
+    # 5. Try parsing after basic repairs
     try:
         json.loads(repaired)
         return repaired
     except json.JSONDecodeError:
-        # Try extracting the JSON object from surrounding text
-        match = re.search(r"\{[\s\S]*\}", repaired)
-        if match:
-            extracted = match.group()
-            # Apply repairs to extracted content
-            extracted = re.sub(r",\s*([}\]])", r"\1", extracted)
-            extracted = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', extracted)
-            try:
-                json.loads(extracted)
-                return extracted
-            except json.JSONDecodeError:
-                pass
+        pass
+
+    # 6. Extract JSON object from surrounding text using brace counting
+    # This handles "extra data" errors where JSON is followed by prose
+    extracted = _extract_json_object(repaired)
+    if extracted is not None:
+        # Apply repairs to extracted content
+        extracted = re.sub(r",\s*([}\]])", r"\1", extracted)
+        extracted = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', extracted)
+        try:
+            json.loads(extracted)
+            return extracted
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Extract a complete JSON object from text using brace/bracket counting.
+
+    Handles cases where JSON is embedded in prose or followed by extra text.
+    Uses proper nesting to find the complete object boundary.
+
+    Args:
+        text: Text potentially containing a JSON object
+
+    Returns:
+        Extracted JSON string, or None if not found
+    """
+    # Find the first { character
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start, len(text)):
+        char = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == "\\":
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
 
     return None
 
@@ -512,17 +563,25 @@ def _parse_json_response(response_text: str, response_model: type[T]) -> T:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        # Try to extract JSON from text
-        match = re.search(r"\{[\s\S]*\}", text)
-        if match:
+        # Attempt JSON repair first (handles trailing text, extra data, etc.)
+        repaired = _repair_json(text)
+        if repaired is not None:
             try:
-                data = json.loads(match.group())
+                data = json.loads(repaired)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Failed to parse JSON from response: {e}") from e
         else:
-            raise ValueError(
-                f"No JSON object found in response: {text[:200]}"
-            ) from None
+            # Repair failed, try basic extraction
+            match = re.search(r"\{[\s\S]*?\}", text)
+            if match:
+                try:
+                    data = json.loads(match.group())
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Failed to parse JSON from response: {e}") from e
+            else:
+                raise ValueError(
+                    f"No JSON object found in response: {text[:200]}"
+                ) from None
 
     # Validate with Pydantic
     try:
@@ -995,7 +1054,24 @@ class OpenAIProvider(BaseOpenAICompatibleProvider):
 
 
 class OllamaProvider(BaseOpenAICompatibleProvider):
-    """Ollama local model provider using OpenAI-compatible endpoint."""
+    """Ollama local model provider using OpenAI-compatible endpoint.
+
+    Automatically disables thinking/reasoning mode for thinking-capable models
+    (e.g. lfm2.5-thinking, qwen3, deepseek-r1) to avoid excessive latency.
+    Thinking can be re-enabled via the `enable_thinking` constructor parameter.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str,
+        base_url: str | None = None,
+        structured_format: str = "auto",
+        enable_thinking: bool = False,
+        **kwargs: Any,
+    ):
+        super().__init__(api_key, model_name, base_url, structured_format, **kwargs)
+        self.enable_thinking = enable_thinking
 
     def _get_default_format(self) -> str:
         """Ollama models typically work best with JSON."""
@@ -1009,6 +1085,79 @@ class OllamaProvider(BaseOpenAICompatibleProvider):
             api_key="ollama",  # Ollama doesn't validate API keys
             base_url=self.base_url,
         )
+
+    def _get_extra_body(self) -> dict[str, Any] | None:
+        """Build extra_body for Ollama-specific parameters.
+
+        Disables thinking by default to avoid 200+ second reasoning delays
+        on thinking-capable models like lfm2.5-thinking, qwen3, deepseek-r1.
+        Uses both Ollama-native and OpenAI-standard parameters for compatibility.
+        """
+        if self.enable_thinking:
+            return None
+        # Disable thinking via multiple compatible methods:
+        # - Ollama native: options.think = False
+        # - OpenAI standard: reasoning_effort = "none"
+        return {
+            "options": {"think": False},
+            "reasoning_effort": "none",
+        }
+
+    @retry_on_failure(  # type: ignore[type-var]
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(Exception,),
+    )
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate text using full conversation context."""
+        client = self._get_client()
+        extra_body = self._get_extra_body()
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            extra_body=extra_body,
+        )
+
+        return response.choices[0].message.content  # type: ignore[no-any-return]
+
+    @retry_on_failure(  # type: ignore[type-var]
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(Exception,),
+    )
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate text from prompt."""
+        client = self._get_client()
+        extra_body = self._get_extra_body()
+
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            extra_body=extra_body,
+        )
+
+        return response.choices[0].message.content  # type: ignore[no-any-return]
 
 
 class CustomOpenAIProvider(BaseOpenAICompatibleProvider):
@@ -1171,7 +1320,7 @@ class LLMFactory:
         Returns:
             LLMProvider instance
         """
-        kwargs: dict[str, str] = {}
+        kwargs: dict[str, Any] = {}
         if config.model.base_url:
             kwargs["base_url"] = config.model.base_url
 
@@ -1179,6 +1328,10 @@ class LLMFactory:
         structured_format = getattr(config.model, "structured_format", "auto")
         if hasattr(structured_format, "value"):
             structured_format = structured_format.value
+
+        # Pass thinking control for Ollama provider
+        enable_thinking = getattr(config.model, "enable_thinking", False)
+        kwargs["enable_thinking"] = enable_thinking
 
         return cls.create(
             provider=config.model.provider,
