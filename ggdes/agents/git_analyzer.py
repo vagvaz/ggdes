@@ -940,13 +940,38 @@ IMPORTANT: Base your summary only on the chunk analyses above. Do not invent cha
         full_prompt = "\n---\n".join(prompt_parts)
 
         # Generate structured output
-        change_summary = self.llm.generate_structured(
-            prompt=full_prompt,
-            response_model=ChangeSummary,
-            system_prompt=system,
-            temperature=0.2,
-            max_retries=3,
-        )
+        try:
+            change_summary = self.llm.generate_structured(
+                prompt=full_prompt,
+                response_model=ChangeSummary,
+                system_prompt=system,
+                temperature=0.2,
+                max_retries=3,
+            )
+        except ValueError:
+            # Last resort: retry with thinking enabled (Ollama models only)
+            from ggdes.llm import LLMFactory, OllamaProvider
+
+            if isinstance(self.llm, OllamaProvider):
+                console.print(
+                    "  [yellow]Structured output failed, retrying synthesis with thinking enabled...[/yellow]"
+                )
+                thinking_llm = LLMFactory.create(
+                    provider="ollama",
+                    model_name=self.llm.model_name,
+                    api_key="ollama",
+                    base_url=self.llm.base_url,
+                    enable_thinking=True,
+                )
+                change_summary = thinking_llm.generate_structured(
+                    prompt=full_prompt,
+                    response_model=ChangeSummary,
+                    system_prompt=system,
+                    temperature=0.2,
+                    max_retries=3,
+                )
+            else:
+                raise
 
         # Validate code references in the generated summary
         await self._validate_code_references(change_summary)
