@@ -308,6 +308,7 @@ def _create_correction_prompt(
     original_response: str,
     parse_error: str,
     output_format: str = "json",
+    schema_hint: str | None = None,
 ) -> str:
     """Create a corrective prompt for the LLM when parsing fails.
 
@@ -315,10 +316,15 @@ def _create_correction_prompt(
         original_response: The LLM's previous response that failed parsing
         parse_error: The error message from parsing
         output_format: 'json' or 'xml'
+        schema_hint: Optional schema description to remind the model of required fields
 
     Returns:
         Corrective prompt
     """
+    schema_section = ""
+    if schema_hint:
+        schema_section = f"\nRequired fields: {schema_hint}\n"
+
     if output_format == "xml":
         return f"""Your previous response could not be parsed as valid XML.
 
@@ -326,7 +332,7 @@ Error: {parse_error}
 
 Your previous response:
 {original_response}
-
+{schema_section}
 Please provide a corrected response in valid XML format. Remember:
 1. Use proper XML tags with matching opening and closing tags
 2. No markdown formatting (no ```xml blocks)
@@ -343,7 +349,7 @@ Error: {parse_error}
 
 Your previous response:
 {original_response}
-
+{schema_section}
 Please provide a corrected response in valid JSON format. Remember:
 1. Use double quotes for all keys and string values
 2. No markdown formatting (no ```json blocks)
@@ -767,11 +773,16 @@ class LLMProvider(ABC):
                     # First attempt - use original prompt
                     current_prompt = prompt
                 else:
-                    # Retry with correction prompt
+                    # Retry with correction prompt including schema hint
                     assert previous_response is not None
                     assert last_error is not None
+                    # Build schema hint from model fields
+                    schema = response_model.model_json_schema()
+                    required_fields = schema.get("required", [])
+                    schema_hint = ", ".join(required_fields) if required_fields else None
                     correction_prompt = _create_correction_prompt(
-                        previous_response, str(last_error), output_format
+                        previous_response, str(last_error), output_format,
+                        schema_hint=schema_hint,
                     )
                     current_prompt = correction_prompt
                     logger.warning(
