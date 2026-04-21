@@ -825,9 +825,9 @@ class LLMProvider(ABC):
                                     self.model_name,
                                     model_name,
                                 )
-                            except (ValueError, ValidationError):
+                            except (ValueError, ValidationError) as inner_err:
                                 # Repair produced valid JSON but didn't match schema
-                                raise parse_err
+                                raise parse_err from inner_err
                         else:
                             # Repair not possible, fall through to LLM retry
                             raise parse_err

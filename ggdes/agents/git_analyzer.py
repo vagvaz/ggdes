@@ -16,6 +16,7 @@ from ggdes.agents.skill_utils import (
 from ggdes.config import GGDesConfig, get_kb_path
 from ggdes.llm import LLMFactory
 from ggdes.llm.conversation import ConversationContext, estimate_tokens
+from ggdes.llm.factory import LLMProvider
 from ggdes.prompts import get_prompt
 from ggdes.schemas import ChangeSummary, StoragePolicy
 
@@ -59,7 +60,7 @@ class GitAnalyzer:
         # Detect language and load expert skill (with graceful fallback)
         self._load_language_expert_skill()
 
-    def _create_thinking_llm(self) -> Any:
+    def _create_thinking_llm(self) -> LLMProvider:
         """Create an LLM with thinking enabled as fallback for generate_structured."""
         kwargs: dict[str, Any] = {}
         if self.config.model.base_url:
@@ -79,7 +80,7 @@ class GitAnalyzer:
             **kwargs,
         )
 
-    def _create_analysis_llm(self, config: GGDesConfig) -> Any:
+    def _create_analysis_llm(self, config: GGDesConfig) -> LLMProvider:
         """Create LLM provider for git analysis using config.analysis.enable_thinking."""
         kwargs: dict[str, Any] = {}
         if config.model.base_url:
