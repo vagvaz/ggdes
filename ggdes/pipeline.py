@@ -1092,6 +1092,16 @@ class AnalysisPipeline:
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             return False
 
+    def _get_output_base(self) -> Path:
+        """Get the base output directory, possibly scoped to a revision."""
+        from ggdes.config import get_output_path
+
+        base = get_output_path(self.config, self.analysis_id)
+        rev = getattr(self.metadata, "current_revision", None)
+        if rev:
+            base = base / rev
+        return base
+
     def _run_output_generation(self) -> bool:
         """Run document output generation stage."""
         from ggdes.agents.output_agents import (
@@ -1106,6 +1116,9 @@ class AnalysisPipeline:
 
         # Get formats to generate from metadata (CLI-selected formats)
         formats = self.metadata.target_formats or ["markdown"]
+        rev = getattr(self.metadata, "current_revision", None)
+        if rev:
+            console.print(f"  [dim]Revision: {rev}[/dim]")
         console.print(
             f"  [dim]Generating documents in formats: {', '.join(formats)}[/dim]"
         )

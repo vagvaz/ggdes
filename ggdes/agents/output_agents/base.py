@@ -51,12 +51,23 @@ class OutputAgent(ABC):
     def output_dir(self) -> Path:
         """Output directory for generated documents.
 
-        Uses config-based path: ~/ggdes-output/<analysis_id>/
+        Uses config-based path: ~/ggdes-output/<analysis_id>/<revision>/
         alongside ggdes-kb and ggdes-worktrees.
+        When a revision is active, outputs go into a versioned subdirectory.
         """
         from ggdes.config import get_output_path
 
-        return get_output_path(self.config, self.analysis_id)
+        base = get_output_path(self.config, self.analysis_id)
+        # Check if metadata has a current_revision set
+        try:
+            from ggdes.kb import KnowledgeBaseManager
+            kb = KnowledgeBaseManager(self.config)
+            meta = kb.load_metadata(self.analysis_id)
+            if meta and getattr(meta, "current_revision", None):
+                base = base / meta.current_revision
+        except Exception:
+            pass
+        return base
 
     def _get_diagram_cache(self) -> Any:
         """Get or create diagram cache instance."""
@@ -378,6 +389,33 @@ class OutputAgent(ABC):
         """
         feedback = self._load_section_feedback()
         return feedback.get(section_title)
+
+    def _build_section_feedback_block(self) -> str:
+        """Build a formatted block with ALL section feedback for injection.
+
+        Unlike _get_section_feedback which returns one section's feedback,
+        this returns ALL sections' feedback as a single formatted block.
+        Used by non-markdown agents that don't generate per-section prompts.
+        """
+        feedback = self._load_section_feedback()
+        if not feedback:
+            return ""
+
+        lines = [
+            "╔══════════════════════════════════════════════════════════════════╗",
+            "║         ⚠️  SECTION FEEDBACK (MUST INCORPORATE)  ⚠️             ║",
+            "╚══════════════════════════════════════════════════════════════════╝",
+            "",
+            "The following per-section feedback was provided. You MUST incorporate",
+            "each piece of feedback into its corresponding section:",
+            "",
+        ]
+        for section_title, fb_text in feedback.items():
+            lines.append(f"--- {section_title} ---")
+            lines.append(fb_text)
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _load_skill(self, skill_name: str) -> str:
         """Load skill documentation from skills directory.
