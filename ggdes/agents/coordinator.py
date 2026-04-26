@@ -361,7 +361,7 @@ class Coordinator:
         context = conv.get_context_for_llm()
 
         # Generate plan via LLM
-        plan_data = await self._generate_plan_response(context, fmt)
+        plan_data = await self._generate_plan_response(context, fmt, facts=facts)
 
         # Create DocumentPlan
         sections = []
@@ -612,16 +612,135 @@ Provide a document plan as JSON:
 
         return prompt
 
+    def _extract_json_from_response(self, response: str) -> str | None:
+        """Extract JSON string from an LLM response using multiple strategies."""
+        # Strategy 1: Try raw response as JSON
+        text = response.strip()
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Extract from ```json ... ``` fence
+        if "```json" in text:
+            start = text.find("```json") + 7
+            end = text.find("```", start)
+            if end != -1:
+                candidate = text[start:end].strip()
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    pass
+
+        # Strategy 3: Extract from ``` ... ``` fence (no language tag)
+        if "```" in text:
+            start = text.find("```") + 3
+            end = text.find("```", start)
+            if end != -1:
+                candidate = text[start:end].strip()
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    pass
+
+        # Strategy 4: Find outermost { ... } in the response
+        brace_start = text.find("{")
+        if brace_start != -1:
+            depth = 0
+            for i in range(brace_start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[brace_start : i + 1]
+                        try:
+                            json.loads(candidate)
+                            return candidate
+                        except json.JSONDecodeError:
+                            break
+
+        return None
+
+    def _build_fallback_plan(self, facts: list["TechnicalFact"], fmt: str) -> dict[str, Any]:
+        """Build a fallback plan from facts when LLM JSON parsing fails.
+        
+        Creates one section per fact category and assigns all relevant facts.
+        This is far better than returning an empty plan.
+        """
+        sections = []
+        added_fact_ids = set()
+
+        # Group facts by category
+        categories = ["api", "behavior", "architecture", "data_flow", "dependency"]
+        category_titles = {
+            "api": "API Changes",
+            "behavior": "Behavioral Changes",
+            "architecture": "Architecture Changes",
+            "data_flow": "Data Flow Changes",
+            "dependency": "Dependency Changes",
+        }
+
+        for cat in categories:
+            cat_facts = [f for f in facts if f.category == cat]
+            if cat_facts:
+                fact_ids = [f.fact_id for f in cat_facts]
+                added_fact_ids.update(fact_ids)
+                sections.append({
+                    "title": category_titles.get(cat, cat.replace("_", " ").title()),
+                    "description": f"{len(cat_facts)} {cat.replace('_', ' ')} change(s)",
+                    "technical_facts": fact_ids,
+                    "code_references": list({
+                        elem for f in cat_facts for elem in f.source_elements
+                    }),
+                    "diagrams": [],
+                })
+
+        # Catch-all for any uncategorized facts
+        remaining = [f for f in facts if f.fact_id not in added_fact_ids]
+        if remaining:
+            sections.append({
+                "title": "Other Changes",
+                "description": f"{len(remaining)} additional change(s)",
+                "technical_facts": [f.fact_id for f in remaining],
+                "code_references": [],
+                "diagrams": [],
+            })
+
+        if not sections:
+            sections.append({
+                "title": "Overview",
+                "description": "Summary of changes",
+                "technical_facts": [],
+                "code_references": [],
+                "diagrams": [],
+            })
+
+        return {
+            "title": f"Design Document - {self.analysis_id}",
+            "sections": sections,
+            "diagrams": [],
+        }
+
     async def _generate_plan_response(
-        self, context: list[dict[str, Any]], fmt: str
+        self, context: list[dict[str, Any]], fmt: str, facts: list["TechnicalFact"] | None = None
     ) -> dict[str, Any]:
-        """Generate document plan from conversation context."""
+        """Generate document plan from conversation context.
+
+        Tries to parse the LLM response as JSON. On failure, retries once with
+        a correction prompt. If that also fails, builds a facts-derived fallback plan.
+        """
         logger.info(
             "Coordinator: LLM call for %s plan | messages=%d model=%s",
             fmt,
             len(context),
             self.llm.model_name,
         )
+
+        # First attempt
         response = self.llm.chat(
             messages=context,
             temperature=0.4,
@@ -629,34 +748,63 @@ Provide a document plan as JSON:
         )
 
         # Parse JSON response
-        try:
-            # Extract JSON from response
-            if "```json" in response:
-                json_start = response.find("```json") + 7
-                json_end = response.find("```", json_start)
-                response = response[json_start:json_end].strip()
-            elif "```" in response:
-                json_start = response.find("```") + 3
-                json_end = response.find("```", json_start)
-                response = response[json_start:json_end].strip()
+        json_str = self._extract_json_from_response(response)
+        if json_str is not None:
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
 
-            result: dict[str, Any] = json.loads(response)
-            return result
-        except json.JSONDecodeError:
-            # Fallback: return default plan
-            return {
-                "title": f"Design Document - {self.analysis_id}",
-                "sections": [
-                    {
-                        "title": "Overview",
-                        "description": "Summary of changes",
-                        "technical_facts": [],
-                        "code_references": [],
-                        "diagrams": [],
-                    }
-                ],
-                "diagrams": [],
-            }
+        # Retry with correction prompt
+        logger.warning(
+            "Coordinator: JSON parse failed for %s plan, retrying with correction",
+            fmt,
+        )
+        correction_prompt = (
+            "Your previous response was not valid JSON. Respond with ONLY a valid JSON object "
+            "matching this exact schema:\n"
+            '{"title": "...", "sections": [{"title": "...", "description": "...", '
+            '"technical_facts": ["fact_id_1"], "code_references": [], "diagrams": []}], '
+            '"diagrams": []}\n'
+            "Do NOT include markdown code fences, explanations, or any text outside the JSON object."
+        )
+        retry_context = context + [
+            {"role": "assistant", "content": response},
+            {"role": "user", "content": correction_prompt},
+        ]
+        retry_response = self.llm.chat(
+            messages=retry_context,
+            temperature=0.2,  # Lower temperature for more deterministic output
+            max_tokens=4096,
+        )
+
+        json_str = self._extract_json_from_response(retry_response)
+        if json_str is not None:
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+
+        # All parsing failed - build fallback from facts if available
+        logger.error(
+            "Coordinator: JSON parse failed for %s plan after retry, using fact-derived fallback",
+            fmt,
+        )
+        if facts:
+            return self._build_fallback_plan(facts, fmt)
+        return {
+            "title": f"Design Document - {self.analysis_id}",
+            "sections": [
+                {
+                    "title": "Overview",
+                    "description": "Summary of changes",
+                    "technical_facts": [],
+                    "code_references": [],
+                    "diagrams": [],
+                }
+            ],
+            "diagrams": [],
+        }
 
     async def _interactive_review(self, plans: list[DocumentPlan]) -> None:
         """LLM self-review of generated plans to verify feedback was incorporated."""
