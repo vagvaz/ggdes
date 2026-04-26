@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from ggdes.diagrams.llm_generator import LLMDiagramGenerator
-
 __all__ = [
     "LLMDiagramGenerator",
     "PlantUMLGenerator",
@@ -532,3 +530,6 @@ def generate_sequence_diagram(
     lines.append("@enduml")
 
     return "\n".join(lines)
+
+
+from ggdes.diagrams.llm_generator import LLMDiagramGenerator
