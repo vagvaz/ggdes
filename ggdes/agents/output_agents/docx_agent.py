@@ -100,11 +100,22 @@ class DocxAgent(OutputAgent):
         content = self._get_content_for_docx()
 
         # Inject review feedback if available
-        if self.review_feedback:
+        section_fb = self._build_section_feedback_block()
+        if self.review_feedback or section_fb:
+            feedback_parts = []
+            if section_fb:
+                feedback_parts.append(section_fb)
+            if self.review_feedback:
+                feedback_parts.append(
+                    "╔══════════════════════════════════════════════════════════════════╗\n"
+                    "║         ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️             ║\n"
+                    "╚══════════════════════════════════════════════════════════════════╝\n\n"
+                    f"{self.review_feedback}"
+                )
             feedback_block = (
-                "\n\n## Review Feedback (MUST INCORPORATE)\n\n"
-                f"{self.review_feedback}\n\n"
-                "The document above must be updated to incorporate this feedback.\n"
+                "\n\n## User Feedback (MUST INCORPORATE)\n\n"
+                + "\n\n".join(feedback_parts)
+                + "\n\nThe document above must be updated to incorporate this feedback.\n"
             )
             content += feedback_block
 
