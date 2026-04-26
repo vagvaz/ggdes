@@ -209,7 +209,7 @@ class PdfAgent(OutputAgent):
         )
         styles.add(
             ParagraphStyle(
-                name="Bullet",
+                name="BulletList",
                 parent=styles["Normal"],
                 fontSize=11,
                 leading=14,
@@ -266,7 +266,7 @@ class PdfAgent(OutputAgent):
                 story.append(
                     Paragraph(
                         f"• {self._escape_xml(text)}",
-                        styles["Bullet"],
+                        styles["BulletList"],
                     )
                 )
 
@@ -276,7 +276,7 @@ class PdfAgent(OutputAgent):
                 story.append(
                     Paragraph(
                         f"{stripped[0]}. {self._escape_xml(text)}",
-                        styles["Bullet"],
+                        styles["BulletList"],
                     )
                 )
 
