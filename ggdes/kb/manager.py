@@ -88,6 +88,9 @@ class AnalysisMetadata(BaseModel):
     # Generated documents tracking
     documents: list[DocumentInfo] = Field(default_factory=list)
 
+    # Current revision ID for versioned output (v1, v2, ...)
+    current_revision: str | None = None
+
     # Render markdown to PNG images
     render_png: bool = False
 
