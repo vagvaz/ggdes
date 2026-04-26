@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from fastapi.responses import FileResponse, HTMLResponse
 
 from ggdes.config import GGDesConfig, load_config
@@ -208,9 +209,14 @@ async def get_analysis(analysis_id: str) -> dict[str, Any]:
     }
 
 
+class ResumeRequest(BaseModel):
+    """Request body for resuming an analysis."""
+    formats: list[str] | None = None
+
+
 @app.post("/api/analyses/{analysis_id}/resume")  # type: ignore[untyped-decorator]
-async def resume_analysis(analysis_id: str) -> dict[str, Any]:
-    """Resume an analysis."""
+async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -> dict[str, Any]:
+    """Resume an analysis. Optionally accepts new formats to regenerate documents."""
     config = get_config()
     kb = get_kb()
 
@@ -219,6 +225,29 @@ async def resume_analysis(analysis_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
     try:
+        # If formats are specified, update metadata and reset relevant stages
+        if body and body.formats is not None:
+            old_formats = set(metadata.target_formats or ["markdown"])
+            new_formats = set(body.formats)
+            metadata.target_formats = body.formats
+            formats_changed = old_formats != new_formats
+
+            for stage_name in metadata.stages:
+                stage = metadata.stages[stage_name]
+                if stage.status in (StageStatus.COMPLETED, StageStatus.FAILED):
+                    if stage_name == "output_generation":
+                        stage.status = StageStatus.PENDING
+                        stage.output_path = None
+                        stage.error_message = None
+                        stage.completed_at = None
+                    elif formats_changed and stage_name == "coordinator_plan":
+                        stage.status = StageStatus.PENDING
+                        stage.output_path = None
+                        stage.error_message = None
+                        stage.completed_at = None
+
+            kb.save_metadata(analysis_id, metadata)
+
         pipeline = AnalysisPipeline(config, analysis_id)
         success = pipeline.run_all_pending()
 
@@ -1797,17 +1826,95 @@ DETAIL_HTML = """
         </div>
 
         <div class="actions">
-            <button class="btn btn-primary" onclick="resumeAnalysis()">▶ Resume</button>
+            <button class="btn btn-primary" onclick="openResumeModal()">🔄 Regenerate</button>
             <a href="/feedback/{analysis_id}" class="btn btn-warning">📝 Feedback</a>
             <button class="btn btn-danger" onclick="deleteAnalysis()">🗑 Delete</button>
         </div>
     </div>
 
+    <!-- Resume Format Modal -->
+    <div id="resume-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>Regenerate Documents</h3>
+            <p style="margin: 10px 0; color: #666;">Select formats to generate. If unchanged, only document output re-runs.</p>
+            <div class="format-options" style="margin: 15px 0;">
+                <label class="format-checkbox"><input type="checkbox" id="fmt-md" checked> Markdown</label>
+                <label class="format-checkbox"><input type="checkbox" id="fmt-docx"> DOCX</label>
+                <label class="format-checkbox"><input type="checkbox" id="fmt-pdf"> PDF</label>
+                <label class="format-checkbox"><input type="checkbox" id="fmt-pptx"> PPTX</label>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-default" onclick="closeResumeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="resumeAnalysisWithFormats()">Regenerate</button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; border-radius: 10px; min-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .format-options { display: flex; gap: 15px; flex-wrap: wrap; }
+        .format-checkbox { display: flex; align-items: center; gap: 5px; padding: 8px 12px;
+            border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }
+        .format-checkbox:hover { background: #f0f0ff; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .btn-default { background: #f0f0f0; color: #333; border: 1px solid #ddd; padding: 8px 16px;
+            border-radius: 6px; cursor: pointer; }
+        .btn-default:hover { background: #e0e0e0; }
+    </style>
+
     <script>
         const ANALYSIS_ID = '{analysis_id}';
+        const CURRENT_FORMATS = '{target_formats}';
         const STAGES = {stages_json};
         const DOCUMENTS = {documents_json};
         const PLANS = {plans_json};
+
+        function openResumeModal() {{
+            // Pre-check current formats
+            const current = CURRENT_FORMATS.split(', ').map(s => s.trim().toLowerCase());
+            document.getElementById('fmt-md').checked = current.includes('markdown');
+            document.getElementById('fmt-docx').checked = current.includes('docx');
+            document.getElementById('fmt-pdf').checked = current.includes('pdf');
+            document.getElementById('fmt-pptx').checked = current.includes('pptx');
+            document.getElementById('resume-modal').style.display = 'flex';
+        }}
+
+        function closeResumeModal() {{
+            document.getElementById('resume-modal').style.display = 'none';
+        }}
+
+        function resumeAnalysisWithFormats() {{
+            const formats = [];
+            if (document.getElementById('fmt-md').checked) formats.push('markdown');
+            if (document.getElementById('fmt-docx').checked) formats.push('docx');
+            if (document.getElementById('fmt-pdf').checked) formats.push('pdf');
+            if (document.getElementById('fmt-pptx').checked) formats.push('pptx');
+            if (formats.length === 0) {{ alert('Please select at least one format.'); return; }}
+            closeResumeModal();
+            resumeAnalysis(formats);
+        }}
+
+        async function resumeAnalysis(formats) {{
+            try {{
+                const body = formats ? JSON.stringify({{ formats }}) : '{{}}';
+                const resp = await fetch(`/api/analyses/${{ANALYSIS_ID}}/resume`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: body,
+                }});
+                const data = await resp.json();
+                if (data.success) {{
+                    alert('Analysis regenerated successfully!');
+                    location.reload();
+                }} else {{
+                    alert('Regeneration failed: ' + (data.error || 'Unknown error'));
+                }}
+            }} catch (e) {{
+                alert('Error: ' + e.message);
+            }}
+        }}
 
         // Render stages
         function renderStages() {{

@@ -168,16 +168,18 @@ class AnalysisDetailView(VerticalScroll):
                         )
                 else:
                     yield Button(
-                        "✓ Complete",
-                        id="complete_btn",
-                        variant="success",
-                        disabled=True,
+                        "🔄 Regenerate Documents",
+                        id="regenerate_docs_btn",
+                        variant="primary",
                     )
 
                 yield Button("🗑 Delete", id="delete_btn", variant="error")
                 yield Button(
                     "📁 Open Worktree", id="open_worktree_btn", variant="default"
                 )
+
+            yield Label("")
+            yield Label(f"[dim]Formats: {', '.join(metadata.target_formats) or 'markdown'}[/dim]")
 
             yield Label("")
 
@@ -790,6 +792,66 @@ class CommandHelp(Static):
         yield Label(self.COMMANDS)
 
 
+class FormatResumeDialog(Screen[None]):
+    """Dialog for selecting formats when resuming a completed analysis."""
+
+    def __init__(
+        self,
+        analysis_id: str,
+        current_formats: list[str],
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.analysis_id = analysis_id
+        self.current_formats = current_formats or ["markdown"]
+
+    def compose(self) -> ComposeResult:
+        with Container(id="format-resume-dialog"):
+            yield Label("[bold]Select Output Formats[/bold]", id="dialog-title")
+            yield Label(
+                "Select formats to generate. If formats changed, coordinator plans will also "
+                "be regenerated. If same formats, only document generation re-runs.",
+                id="dialog-description",
+            )
+            yield Label("")
+            yield Label("Output Formats:", classes="field-label")
+            with Horizontal(id="formats-row"):
+                yield Checkbox("Markdown", id="fmt-markdown", value="markdown" in self.current_formats)
+                yield Checkbox("DOCX", id="fmt-docx", value="docx" in self.current_formats)
+                yield Checkbox("PDF", id="fmt-pdf", value="pdf" in self.current_formats)
+                yield Checkbox("PPTX", id="fmt-pptx", value="pptx" in self.current_formats)
+
+            yield Label("")
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Cancel", id="cancel-btn", variant="default")
+                yield Button("Regenerate", id="regenerate-btn", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel-btn":
+            self.dismiss()
+            return
+
+        formats = []
+        if self.query_one("#fmt-markdown", Checkbox).value:
+            formats.append("markdown")
+        if self.query_one("#fmt-docx", Checkbox).value:
+            formats.append("docx")
+        if self.query_one("#fmt-pdf", Checkbox).value:
+            formats.append("pdf")
+        if self.query_one("#fmt-pptx", Checkbox).value:
+            formats.append("pptx")
+
+        if not formats:
+            self.notify("Please select at least one format", severity="error")
+            return
+
+        self.dismiss()
+        # Notify the app to regenerate with new formats
+        app = self.app
+        if hasattr(app, "_regenerate_with_formats"):
+            app._regenerate_with_formats(self.analysis_id, formats)
+
+
 class ConfirmDialog(Screen[None]):
     """Simple confirmation dialog."""
 
@@ -936,6 +998,18 @@ class NewAnalysisDialog(Screen[None]):
         self.on_create(name, commit_range, focus_commits, formats)
 
     CSS = """
+    #format-resume-dialog {
+        width: 80;
+        height: auto;
+        border: solid $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+    #dialog-description {
+        text-align: center;
+        margin-bottom: 1;
+        color: $text-disabled;
+    }
     #new-analysis-dialog {
         width: 80;
         height: auto;
@@ -1186,6 +1260,10 @@ class GGDesTUI(App[None]):
             detail_view = self.query_one("#detail-view", AnalysisDetailView)
             if detail_view.analysis_id:
                 self._open_review_screen(detail_view.analysis_id)
+        elif button_id == "regenerate_docs_btn":
+            detail_view = self.query_one("#detail-view", AnalysisDetailView)
+            if detail_view.analysis_id:
+                self._open_format_resume_dialog(detail_view.analysis_id)
         elif button_id == "delete_btn":
             detail_view = self.query_one("#detail-view", AnalysisDetailView)
             if detail_view.analysis_id:
@@ -1386,6 +1464,78 @@ class GGDesTUI(App[None]):
                 on_submit=on_review_submit,
             )
         )
+
+    def _open_format_resume_dialog(self, analysis_id: str) -> None:
+        """Open dialog to select new formats for a completed analysis."""
+        metadata = self.kb_manager.load_metadata(analysis_id)
+        if not metadata:
+            self.notify("Analysis not found", severity="error")
+            return
+        current = metadata.target_formats or ["markdown"]
+        self.push_screen(FormatResumeDialog(analysis_id=analysis_id, current_formats=current))
+
+    def _regenerate_with_formats(self, analysis_id: str, formats: list[str]) -> None:
+        """Regenerate documents with (possibly changed) formats on a completed analysis."""
+        from ggdes.pipeline import AnalysisPipeline
+        from ggdes.kb.manager import StageStatus
+
+        self.notify(
+            f"Regenerating with formats: {', '.join(formats)}",
+            title="Regenerate",
+        )
+
+        try:
+            metadata = self.kb_manager.load_metadata(analysis_id)
+            if not metadata:
+                self.notify("Analysis not found", severity="error")
+                return
+
+            old_formats = set(metadata.target_formats or ["markdown"])
+            new_formats = set(formats)
+
+            metadata.target_formats = formats
+
+            # Reset output_generation always (re-run document generation)
+            stages_to_reset = ["output_generation"]
+            # If formats changed, also reset coordinator_plan to regenerate plans
+            if old_formats != new_formats:
+                stages_to_reset.insert(0, "coordinator_plan")
+
+            for stage_name in stages_to_reset:
+                if stage_name in metadata.stages:
+                    stage = metadata.stages[stage_name]
+                    if stage.status in (StageStatus.COMPLETED, StageStatus.FAILED):
+                        stage.status = StageStatus.PENDING
+                        stage.output_path = None
+                        stage.error_message = None
+                        stage.completed_at = None
+
+            kb_manager = KnowledgeBaseManager(self.config)
+            kb_manager.save_metadata(analysis_id, metadata)
+
+            pipeline = AnalysisPipeline(self.config, analysis_id)
+            success = pipeline.run_all_pending()
+
+            if success:
+                self.notify(
+                    f"Regenerated with formats: {', '.join(formats)}",
+                    title="Regenerate",
+                    severity="information",
+                )
+            else:
+                self.notify(
+                    "Regeneration incomplete. Check CLI for details.",
+                    title="Regenerate",
+                    severity="warning",
+                )
+        except Exception as e:
+            self.notify(
+                f"Failed to regenerate: {str(e)[:100]}",
+                title="Regenerate Error",
+                severity="error",
+            )
+        finally:
+            self.refresh()
 
     def _resume_analysis(self, analysis_id: str) -> None:
         """Resume an analysis by running the pipeline."""
