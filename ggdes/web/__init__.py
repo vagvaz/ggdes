@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
 
 from ggdes.config import GGDesConfig, load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
@@ -234,17 +234,15 @@ async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -
 
             for stage_name in metadata.stages:
                 stage = metadata.stages[stage_name]
-                if stage.status in (StageStatus.COMPLETED, StageStatus.FAILED):
-                    if stage_name == "output_generation":
-                        stage.status = StageStatus.PENDING
-                        stage.output_path = None
-                        stage.error_message = None
-                        stage.completed_at = None
-                    elif formats_changed and stage_name == "coordinator_plan":
-                        stage.status = StageStatus.PENDING
-                        stage.output_path = None
-                        stage.error_message = None
-                        stage.completed_at = None
+                should_reset = (
+                    stage_name == "output_generation"
+                    or (formats_changed and stage_name == "coordinator_plan")
+                )
+                if should_reset and stage.status in (StageStatus.COMPLETED, StageStatus.FAILED):
+                    stage.status = StageStatus.PENDING
+                    stage.output_path = None
+                    stage.error_message = None
+                    stage.completed_at = None
 
             kb.save_metadata(analysis_id, metadata)
 
@@ -262,6 +260,112 @@ async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -
 
         return {"success": success, "analysis_id": analysis_id}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ── Feedback & Revision endpoints ─────────────────────────────────────
+
+
+class RegenerateRequest(BaseModel):
+    """Request body for feedback-driven regeneration."""
+    section_feedback: dict[str, str] = {}  # section_title -> feedback text
+    stage_feedback: str | None = None
+    affects_structure: bool = False
+    summary: str = ""
+
+
+class SetRevisionRequest(BaseModel):
+    """Request body for setting the current revision."""
+    revision_id: str
+
+
+@app.get("/api/analyses/{analysis_id}/revisions")  # type: ignore[untyped-decorator]
+async def list_revisions(analysis_id: str) -> dict[str, Any]:
+    """List all revisions for an analysis."""
+    config = get_config()
+    try:
+        from ggdes.feedback import FeedbackManager
+
+        mgr = FeedbackManager(config, analysis_id)
+        revisions = []
+        for rev in mgr.list_revisions():
+            revisions.append({
+                "id": rev.revision_id,
+                "parent": rev.parent,
+                "created_at": rev.created_at.isoformat(),
+                "summary": rev.feedback_summary,
+                "outputs": {fmt: str(p) for fmt, p in rev.outputs.items()},
+            })
+        kb = get_kb()
+        metadata = kb.load_metadata(analysis_id)
+        current = getattr(metadata, "current_revision", None) if metadata else None
+        return {"revisions": revisions, "current": current}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/analyses/{analysis_id}/regenerate")  # type: ignore[untyped-decorator]
+async def regenerate_from_feedback(
+    analysis_id: str, body: RegenerateRequest
+) -> dict[str, Any]:
+    """Save feedback and regenerate documents."""
+    config = get_config()
+    kb = get_kb()
+    metadata = kb.load_metadata(analysis_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    try:
+        # Save section feedback to KB for agent consumption
+        for section_title, fb_text in body.section_feedback.items():
+            if fb_text.strip():
+                kb.save_section_feedback(analysis_id, section_title, fb_text)
+
+        # Use FeedbackManager for the regeneration lifecycle
+        from ggdes.feedback import FeedbackBatch, FeedbackManager, SectionFeedback
+
+        mgr = FeedbackManager(config, analysis_id)
+        batch = FeedbackBatch(
+            analysis_id=analysis_id,
+            section_feedback={
+                k: SectionFeedback(text=v, action="refine")
+                for k, v in body.section_feedback.items()
+                if v.strip()
+            },
+            stage_feedback=body.stage_feedback,
+            affects_structure=body.affects_structure,
+        )
+        rev_id = mgr.regenerate(batch, summary=body.summary)
+
+        # Broadcast update
+        await manager.broadcast({
+            "type": "analysis_updated",
+            "analysis_id": analysis_id,
+            "status": "completed" if rev_id else "incomplete",
+        })
+
+        return {
+            "success": rev_id is not None,
+            "analysis_id": analysis_id,
+            "revision_id": rev_id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.put("/api/analyses/{analysis_id}/revisions/current")  # type: ignore[untyped-decorator]
+async def set_current_revision(
+    analysis_id: str, body: SetRevisionRequest
+) -> dict[str, Any]:
+    """Set the current revision (does NOT regenerate)."""
+    config = get_config()
+    try:
+        from ggdes.feedback import FeedbackManager
+
+        mgr = FeedbackManager(config, analysis_id)
+        success = mgr.set_current(body.revision_id)
+        return {"success": success, "analysis_id": analysis_id, "revision_id": body.revision_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -1430,6 +1534,11 @@ FEEDBACK_HTML = """
             color: white;
         }}
         .btn-primary:hover {{ background: #5a6fd6; }}
+        .btn-warning {{
+            background: #ffc107;
+            color: #333;
+        }}
+        .btn-warning:hover {{ background: #e0a800; }}
         .btn-secondary {{
             background: #6c757d;
             color: white;
@@ -1459,6 +1568,7 @@ FEEDBACK_HTML = """
                 </div>
                 <div class="actions-bar">
                     <button class="btn btn-primary" onclick="saveAllFeedback()">💾 Save All Feedback</button>
+                    <button class="btn btn-warning" onclick="saveAndRegenerate()">🔄 Save & Regenerate</button>
                     <span id="save-status" class="status-message"></span>
                 </div>
             </div>
@@ -1597,6 +1707,55 @@ FEEDBACK_HTML = """
                 `;
             }} catch (error) {{
                 contentEl.innerHTML = `<p class="status-error">Error loading file: ${{error.message}}</p>`;
+            }}
+        }}
+
+        async function saveAndRegenerate() {{
+            const statusEl = document.getElementById('save-status');
+            statusEl.textContent = 'Saving and regenerating...';
+            statusEl.className = 'status-message';
+
+            const feedbackItems = Object.entries(feedbackInputs)
+                .map(([section, textarea]) => ({{
+                    section: section,
+                    feedback: textarea.value.trim()
+                }}))
+                .filter(item => item.feedback);
+
+            if (feedbackItems.length === 0) {{
+                statusEl.textContent = '⚠ No feedback to regenerate from';
+                statusEl.className = 'status-message status-error';
+                return;
+            }}
+
+            // Build section_feedback dict
+            const sectionFeedback = {{}};
+            feedbackItems.forEach(item => {{ sectionFeedback[item.section] = item.feedback; }});
+
+            if (!confirm('Regenerate documents with ' + feedbackItems.length + ' feedback items?')) return;
+
+            try {{
+                const response = await fetch(`/api/analyses/${{ANALYSIS_ID}}/regenerate`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        section_feedback: sectionFeedback,
+                        affects_structure: false,
+                        summary: 'Web feedback regeneration'
+                    }})
+                }});
+                const result = await response.json();
+                if (result.success) {{
+                    statusEl.textContent = '✓ Regenerated as ' + (result.revision_id || '') + ' — reloading...';
+                    statusEl.className = 'status-message status-success';
+                    setTimeout(() => location.reload(), 2000);
+                }} else {{
+                    statusEl.textContent = '✗ Regeneration failed';
+                    statusEl.className = 'status-message status-error';
+                }}
+            }} catch (error) {{
+                statusEl.textContent = '✗ Error: ' + error.message;
+                statusEl.className = 'status-message status-error';
             }}
         }}
 

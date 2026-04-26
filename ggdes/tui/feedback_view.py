@@ -280,6 +280,11 @@ class FeedbackView(Vertical):
                     yield Button(
                         "💾 Save All Feedback", id="save-feedback", variant="primary"
                     )
+                    yield Button(
+                        "🔄 Save & Regenerate",
+                        id="save-and-regenerate",
+                        variant="warning",
+                    )
                     yield Label("", id="save-status")
 
             # Right: Live output viewer (60%)
@@ -302,7 +307,7 @@ class FeedbackView(Vertical):
                 output_viewer.analysis_id = analysis_id
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle save button."""
+        """Handle save/regenerate button."""
         if event.button.id == "save-feedback":
             section_panel = self.query_one(
                 "#section-feedback-panel", SectionFeedbackPanel
@@ -315,6 +320,47 @@ class FeedbackView(Vertical):
                 title="Feedback Saved",
                 severity="information",
             )
+        elif event.button.id == "save-and-regenerate":
+            section_panel = self.query_one(
+                "#section-feedback-panel", SectionFeedbackPanel
+            )
+            count = section_panel.save_all_feedback()
+            if count == 0:
+                self.app.notify(
+                    "No feedback to regenerate from. Add feedback first.",
+                    title="Regenerate",
+                    severity="warning",
+                )
+                return
+            analysis_id = section_panel.analysis_id
+            if not analysis_id:
+                return
+
+            # Trigger regeneration via FeedbackManager
+            from ggdes.config import load_config
+            from ggdes.feedback import FeedbackManager
+
+            config, _ = load_config()
+            mgr = FeedbackManager(config, analysis_id)
+            rev_id = mgr.regenerate(
+                mgr.collect(), summary="Feedback-driven regeneration"
+            )
+
+            status = self.query_one("#save-status", Label)
+            if rev_id:
+                status.update(f"[green]✓ Regenerated → {rev_id}[/green]")
+                self.app.notify(
+                    f"Regenerated as {rev_id}",
+                    title="Regeneration Complete",
+                    severity="information",
+                )
+            else:
+                status.update("[red]✗ Regeneration failed[/red]")
+                self.app.notify(
+                    "Regeneration failed. Check logs.",
+                    title="Regeneration Error",
+                    severity="error",
+                )
 
     def _populate_analysis_selector(self) -> None:
         """Load available analyses into the selector."""

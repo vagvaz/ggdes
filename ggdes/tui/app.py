@@ -189,6 +189,28 @@ class AnalysisDetailView(VerticalScroll):
                 yield Label(f"  Base: {metadata.worktrees.base}")
                 yield Label(f"  Head: {metadata.worktrees.head}")
 
+            yield Label("")
+
+            # Revisions
+            yield Label("[bold]Revisions:[/bold]")
+            try:
+                from ggdes.feedback import FeedbackManager
+
+                mgr = FeedbackManager(self.config, analysis_id)
+                revisions = mgr.list_revisions()
+                if revisions:
+                    current = getattr(metadata, "current_revision", None)
+                    for rev in reversed(revisions):
+                        marker = " ← current" if rev.revision_id == current else ""
+                        yield Label(
+                            f"  {rev.revision_id}  {rev.created_at.strftime('%Y-%m-%d %H:%M')}  "
+                            f"{rev.feedback_summary}{marker}"
+                        )
+                else:
+                    yield Label("  [dim]No revisions yet[/dim]")
+            except Exception:
+                yield Label("  [dim]No revisions available[/dim]")
+
 
 class ReviewScreen(Screen[None]):
     """Screen for reviewing stage outputs and providing feedback."""
@@ -1476,8 +1498,8 @@ class GGDesTUI(App[None]):
 
     def _regenerate_with_formats(self, analysis_id: str, formats: list[str]) -> None:
         """Regenerate documents with (possibly changed) formats on a completed analysis."""
-        from ggdes.pipeline import AnalysisPipeline
         from ggdes.kb.manager import StageStatus
+        from ggdes.pipeline import AnalysisPipeline
 
         self.notify(
             f"Regenerating with formats: {', '.join(formats)}",
