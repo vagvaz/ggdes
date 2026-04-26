@@ -988,7 +988,7 @@ class SemanticDiffAnalyzer:
                     count += 1
 
             return count
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             return 0
 
     def _is_cpp_file(self, file_path: str) -> bool:
@@ -1111,7 +1111,7 @@ class SemanticDiffAnalyzer:
                         }
                     )
 
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             pass
 
         return elements
@@ -1131,7 +1131,7 @@ class SemanticDiffAnalyzer:
                         count += 1
 
             return count
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             return 0
 
     def _count_control_structures(self, content: str) -> int:
@@ -1147,7 +1147,7 @@ class SemanticDiffAnalyzer:
                     count += 1
 
             return count
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             return 0
 
 
