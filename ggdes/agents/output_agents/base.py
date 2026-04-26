@@ -117,6 +117,62 @@ class OutputAgent(ABC):
                     return None
         return self._llm_diagram_generator
 
+    def _build_content_from_plan(self, plan: dict[str, Any]) -> str:
+        """Build markdown content from document plan sections.
+
+        Falls back when a pre-rendered markdown file is not available.
+        The plan dict typically has 'title', 'audience', 'sections', and 'diagrams' keys,
+        but no 'content' key.
+
+        Args:
+            plan: Document plan dictionary
+
+        Returns:
+            Markdown-formatted string built from plan sections
+        """
+        from loguru import logger
+
+        lines: list[str] = []
+
+        # Title
+        title = plan.get("title", "Design Documentation")
+        lines.append(f"# {title}")
+        lines.append("")
+
+        # Audience
+        audience = plan.get("audience", "")
+        if audience:
+            lines.append(f"**Audience:** {audience}")
+            lines.append("")
+
+        # Sections
+        sections = plan.get("sections", [])
+        for section in sections:
+            section_title = section.get("title", "") if isinstance(section, dict) else ""
+            section_desc = section.get("description", "") if isinstance(section, dict) else ""
+            if section_title:
+                lines.append(f"## {section_title}")
+                lines.append("")
+            if section_desc:
+                lines.append(section_desc)
+                lines.append("")
+
+        # Diagrams
+        diagrams = plan.get("diagrams", [])
+        if diagrams:
+            lines.append("## Diagrams")
+            lines.append("")
+            for d in diagrams:
+                d_title = d.get("title", "Diagram") if isinstance(d, dict) else "Diagram"
+                lines.append(f"- {d_title}")
+            lines.append("")
+
+        result = "\n".join(lines)
+        logger.info(
+            f"Built content from plan: {len(sections)} sections, {len(result)} chars"
+        )
+        return result
+
     def _load_user_context(self) -> None:
         """Load user context from document plan or metadata."""
         try:

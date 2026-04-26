@@ -274,6 +274,8 @@ class SemanticDiffAnalyzer:
 
                 self._ast_parser = ASTParser()
             except ImportError:
+                console.print("  ⚠ tree-sitter parser not available — semantic diff AST analysis disabled")
+                console.print("    Install: uv pip install tree-sitter tree-sitter-python tree-sitter-cpp")
                 self._ast_parser = None
         return self._ast_parser
 

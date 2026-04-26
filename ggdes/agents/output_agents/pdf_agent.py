@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from ggdes.agents.output_agents.base import OutputAgent
 from ggdes.config import GGDesConfig, get_kb_path
 
@@ -58,11 +60,11 @@ class PdfAgent(OutputAgent):
             content: str = Path(md_files[0]).read_text()
             return content
 
-        # Fallback: use plan content
+        # Fallback: build content from plan sections (plan has no "content" field)
         plan = self._load_plan()
         if plan:
-            plan_content: str = plan.get("content", "")
-            return plan_content
+            logger.info("No markdown file found, building content from plan sections")
+            return self._build_content_from_plan(plan)
 
         return ""
 

@@ -57,6 +57,14 @@ write_technical_facts: |
   - Verifiable (can be checked against the provided source code)
   - Confidence-scored (use the confidence rubric from the system prompt)
 
+  === CRITICAL: source_elements RULES ===
+  - source_elements MUST contain ONLY the exact function/class/method names as they appear in source code.
+  - NEVER concatenate or composite names. E.g. if a function is named "create" in the code, use ["create"], NOT ["create_prepare_for_new_conversation"].
+  - Each element must be a single identifier directly found in the AST or source.
+  - If a function does multiple things, describe it in the "description" field, but keep source_elements as the actual function name.
+  - Every value in source_elements must appear exactly as a def/class name in the codebase — no prefixing, no suffixing, no appending descriptions.
+  - **Use the `find_element_name` tool** to look up the exact element name before writing it to source_elements. Call it with your approximate/descriptive name and use the returned actual name. Example: call `find_element_name(search_term="prepare_for_new_conversation")` → returns `["create"]`, then use `"create"` in source_elements.
+
   Output as a JSON array of TechnicalFact objects:
   [
     {

@@ -457,8 +457,9 @@ def run_analysis_pipeline(
             kb_manager.save_metadata(analysis_id, metadata)
             logger.info(f"User context saved: {user_context}")
 
-    # Configure pipeline stages based on semantic_diff flag
-    if not semantic_diff:
+    # Configure pipeline stages based on semantic_diff flag (CLI flag + config)
+    effective_semantic_diff = semantic_diff and config.features.semantic_diff
+    if not effective_semantic_diff:
         logger.info(
             "Semantic diff disabled - skipping base AST parsing and semantic diff stages"
         )

@@ -314,7 +314,7 @@ class TestToolDefinitions:
     """Tests for the built-in tool definitions."""
 
     def test_all_tools_exported(self) -> None:
-        """Test that all 6 tools are in TOOL_DEFINITIONS."""
+        """Test that all tools are in TOOL_DEFINITIONS."""
         tool_names = {tool.name for tool in TOOL_DEFINITIONS}
         expected = {
             "get_changed_files",
@@ -323,6 +323,7 @@ class TestToolDefinitions:
             "validate_reference",
             "get_ast_elements",
             "get_element_source",
+            "find_element_name",
         }
         assert tool_names == expected
 

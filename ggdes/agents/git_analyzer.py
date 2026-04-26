@@ -93,6 +93,7 @@ class GitAnalyzer:
 
         # Use config.analysis.enable_thinking instead of config.model.enable_thinking
         enable_thinking = getattr(config.analysis, "enable_thinking", False)
+        logger.info(f"Git analysis thinking mode: {'enabled' if enable_thinking else 'disabled'} (config.analysis.enable_thinking={enable_thinking})")
         kwargs["enable_thinking"] = enable_thinking
 
         return LLMFactory.create(

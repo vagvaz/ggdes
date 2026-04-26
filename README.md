@@ -152,7 +152,7 @@ output:
 
 # Optional: Feature flags
 features:
-  dual_state_analysis: false      # Compare before/after in detail
+  semantic_diff: true             # Compare before/after in detail (disable for faster analysis)
   auto_cleanup: true              # Clean up worktrees after analysis
   worktree_retention_days: 7      # How long to keep worktrees
 ```

@@ -542,7 +542,7 @@ paths:
   output: "~/ggdes-output"
 
 features:
-  dual_state_analysis: false
+  semantic_diff: true
   auto_cleanup: true
   worktree_retention_days: 7
 

@@ -64,7 +64,7 @@ class PathsConfig(BaseModel):
 class FeaturesConfig(BaseModel):
     """Feature flags configuration."""
 
-    dual_state_analysis: bool = False
+    semantic_diff: bool = True
     auto_cleanup: bool = True
     worktree_retention_days: int = 7
 

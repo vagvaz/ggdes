@@ -374,48 +374,35 @@ def generate_flow_diagram(
 ) -> str:
     """Generate PlantUML code for a flow/process diagram.
 
+    Uses PlantUML activity diagram (beta) syntax. Steps are connected
+    linearly in order. The 'next' field in steps is ignored since
+    activity diagrams chain sequentially by default.
+
     Args:
         steps: List of dicts with 'id', 'label', 'type' (start, process, decision, end)
         title: Diagram title
-        direction: Flow direction (TB, LR, BT, RL)
+        direction: Flow direction (TB, LR, BT, RL) — not used in activity syntax,
+                   provided for backward compatibility
 
     Returns:
         PlantUML code string
     """
-    lines = ["@startuml", f"title {title}", f"{direction}", ""]
+    lines = ["@startuml", f"title {title}", ""]
 
-    type_map = {
-        "start": "(:",
-        "end": ":)",
-        "process": ":",
-        "decision": "<:",
-        "input": "(:",
-        "output": ":)",
-    }
-
-    # Define nodes
     for step in steps:
-        step_id = step["id"].replace(" ", "_")
         step_label = step.get("label", step["id"])
-        step_type = type_map.get(step.get("type", "process"), ":")
+        step_type = step.get("type", "process")
 
-        if step.get("type") == "decision":
-            lines.append(f"{step_id} {step_type} {step_label} :>")
+        if step_type == "start":
+            lines.append("start")
+        elif step_type == "end":
+            lines.append("stop")
+        elif step_type == "decision":
+            # Decision nodes shown as regular activities (no branch info available)
+            lines.append(f":{step_label};")
+            lines.append("note right: Decision point")
         else:
-            lines.append(f"{step_id} {step_type}{step_label}{step_type}")
-
-    lines.append("")
-
-    # Add connections from step definitions if provided
-    for step in steps:
-        if "next" in step:
-            step_id = step["id"].replace(" ", "_")
-            next_ids = (
-                step["next"] if isinstance(step["next"], list) else [step["next"]]
-            )
-            for next_id in next_ids:
-                next_clean = next_id.replace(" ", "_")
-                lines.append(f"{step_id} --> {next_clean}")
+            lines.append(f":{step_label};")
 
     lines.append("")
     lines.append("@enduml")
@@ -532,4 +519,4 @@ def generate_sequence_diagram(
     return "\n".join(lines)
 
 
-from ggdes.diagrams.llm_generator import LLMDiagramGenerator
+from ggdes.diagrams.llm_generator import LLMDiagramGenerator  # noqa: E402

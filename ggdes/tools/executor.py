@@ -109,6 +109,7 @@ class ToolExecutor:
             "validate_reference": self._validate_reference,
             "get_ast_elements": self._get_ast_elements,
             "get_element_source": self._get_element_source,
+            "find_element_name": self._find_element_name,
         }.get(call.tool_name)
 
         if not handler:
@@ -592,6 +593,35 @@ class ToolExecutor:
                         break
 
         return suggestions
+
+    def _find_element_name(self, search_term: str) -> list[str]:
+        """Find the exact code element name in the AST matching a search term.
+
+        This is a direct tool call — the LLM uses it to look up the actual
+        function/class/method name before writing source_elements in a fact.
+        Uses substring matching: if the search term contains a known name
+        or vice versa, it's returned as a match.
+
+        Args:
+            search_term: Descriptive or approximate name to search for
+
+        Returns:
+            List of actual element names from the AST that match.
+            Empty list if nothing matched.
+        """
+        matches: list[str] = []
+        search_lower = search_term.lower()
+
+        for existing_name in self._element_names:
+            if (
+                search_lower in existing_name.lower()
+                or existing_name.lower() in search_lower
+            ):
+                matches.append(existing_name)
+                if len(matches) >= 5:
+                    break
+
+        return matches
 
     def _get_ast_elements(
         self,

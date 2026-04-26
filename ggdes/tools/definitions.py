@@ -324,6 +324,27 @@ TOOL_GET_ELEMENT_SOURCE = ToolDefinition(
     "Returns an error if the element is not found.",
 )
 
+TOOL_FIND_ELEMENT_NAME = ToolDefinition(
+    name="find_element_name",
+    description=(
+        "Look up the exact code element name (function, class, method) in the codebase. "
+        "Use this BEFORE adding any name to a fact's source_elements field. "
+        "Give a descriptive search term and get back the actual element name as it appears "
+        "in the source code. This prevents hallucinating names that don't exist. "
+        "Example: searching 'create_prepare_for_new_conversation' returns 'create'."
+    ),
+    parameters=[
+        ToolParameter(
+            name="search_term",
+            type="string",
+            description="A descriptive or approximate name to search for in the codebase AST",
+            required=True,
+        ),
+    ],
+    returns="List of matching code element names as they appear in source code. "
+    "Empty list if no matches found.",
+)
+
 # All available tools
 TOOL_DEFINITIONS: list[ToolDefinition] = [
     TOOL_GET_CHANGED_FILES,
@@ -332,6 +353,7 @@ TOOL_DEFINITIONS: list[ToolDefinition] = [
     TOOL_VALIDATE_REFERENCE,
     TOOL_GET_AST_ELEMENTS,
     TOOL_GET_ELEMENT_SOURCE,
+    TOOL_FIND_ELEMENT_NAME,
 ]
 
 # Lookup by name

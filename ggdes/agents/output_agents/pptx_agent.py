@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from ggdes.agents.output_agents.base import OutputAgent
 from ggdes.config import GGDesConfig, get_kb_path
 
@@ -62,19 +64,21 @@ class PptxAgent(OutputAgent):
         """Extract content from markdown or plan for PPTX generation."""
         import glob
 
-        # Try to find markdown file
-        md_path = self.repo_path / "docs" / f"{self.analysis_id}-*.md"
+        # Try to find markdown file in output directory (like PDF/DOCX agents do)
+        md_path = self.output_dir / f"{self.analysis_id}-*.md"
         md_files = glob.glob(str(md_path))
 
         if md_files:
             content: str = Path(md_files[0]).read_text()
+            # Log info for debugging
+            logger.info(f"Found markdown file for PPTX content: {md_files[0]}")
             return content
 
-        # Fallback: use plan content
+        # Fallback: build markdown from plan sections (plan has no "content" field)
         plan = self._load_plan()
         if plan:
-            plan_content: str = plan.get("content", "")
-            return plan_content
+            logger.info("No markdown file found, building PPTX content from plan sections")
+            return self._build_content_from_plan(plan)
 
         return ""
 
@@ -144,6 +148,10 @@ class PptxAgent(OutputAgent):
         # Parse content into slides
         slides = self._parse_content_to_slides(content)
 
+        if not slides:
+            console.print("  [yellow]⚠ No slides generated from content - presentation will be empty[/yellow]")
+            logger.warning(f"Empty slides list for PPTX (content length: {len(content)} chars)")
+
         # Generate diagrams
         diagrams_dir = self.output_dir / "diagrams"
         diagrams_dir.mkdir(parents=True, exist_ok=True)
@@ -192,15 +200,19 @@ class PptxAgent(OutputAgent):
 
         try:
             # Run pptxgenjs script
-            subprocess.run(
+            result = subprocess.run(
                 ["node", str(js_file)],
                 check=True,
                 capture_output=True,
                 text=True,
             )
+            if result.stdout:
+                logger.debug(f"Node.js stdout: {result.stdout.strip()}")
             console.print(f"  [green]✓ Presentation saved:[/green] {output_file}")
 
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Node.js script failed (exit {e.returncode}): stderr={e.stderr[:500]}")
+            console.print(f"  [yellow]⚠ Node.js error: {e.stderr[:200]}[/yellow]")
             console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except FileNotFoundError:
