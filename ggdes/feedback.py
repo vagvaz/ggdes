@@ -83,6 +83,7 @@ class FeedbackManager:
 
     def _get_output_base(self) -> Path:
         from ggdes.config import get_output_path
+
         return get_output_path(self.config, self.analysis_id)
 
     # ── index ops ──────────────────────────────────────────────────────
@@ -214,21 +215,21 @@ class FeedbackManager:
                     outputs[fmt] = f
 
         # 7. Index the new revision
-        index["revisions"].append({
-            "id": rev_id,
-            "parent": batch.parent_revision,
-            "created_at": datetime.now().isoformat(),
-            "summary": summary or f"Regeneration {rev_id}",
-            "outputs": {fmt: str(p) for fmt, p in outputs.items()},
-        })
+        index["revisions"].append(
+            {
+                "id": rev_id,
+                "parent": batch.parent_revision,
+                "created_at": datetime.now().isoformat(),
+                "summary": summary or f"Regeneration {rev_id}",
+                "outputs": {fmt: str(p) for fmt, p in outputs.items()},
+            }
+        )
         if success:
             index["current"] = rev_id
         self._save_index(index)
 
         if success:
-            console.print(
-                f"\n[green]✓ Created revision {rev_id}[/green]"
-            )
+            console.print(f"\n[green]✓ Created revision {rev_id}[/green]")
             for fmt, path in outputs.items():
                 console.print(f"  [dim]{fmt}: {path}[/dim]")
         else:
@@ -268,14 +269,16 @@ class FeedbackManager:
                 for f in output_base.iterdir():
                     if f.is_file() and f.suffix in {".md", ".docx", ".pdf", ".pptx"}:
                         outputs[f.suffix.lstrip(".")] = f
-            result.append(Revision(
-                revision_id=rev_id,
-                parent=entry.get("parent"),
-                created_at=created,
-                feedback_summary=entry.get("summary", ""),
-                feedback_batch=batch,
-                outputs=outputs,
-            ))
+            result.append(
+                Revision(
+                    revision_id=rev_id,
+                    parent=entry.get("parent"),
+                    created_at=created,
+                    feedback_summary=entry.get("summary", ""),
+                    feedback_batch=batch,
+                    outputs=outputs,
+                )
+            )
         return result
 
     def get_revision(self, revision_id: str) -> Revision | None:

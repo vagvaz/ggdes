@@ -30,7 +30,5 @@ def config(
         console.print(f"  KB Path: {config_obj.paths.knowledge_base}")
         console.print(f"  Worktrees Path: {config_obj.paths.worktrees}")
         console.print(f"  Default Format: {config_obj.output.default_format}")
-        console.print(
-            f"  Semantic Diff: {config_obj.features.semantic_diff}"
-        )
+        console.print(f"  Semantic Diff: {config_obj.features.semantic_diff}")
         console.print(f"  Auto Cleanup: {config_obj.features.auto_cleanup}")

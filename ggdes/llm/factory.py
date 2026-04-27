@@ -476,7 +476,7 @@ def _repair_json(text: str) -> str | None:
     repaired = re.sub(r"/\*.*?\*/", "", repaired, flags=re.DOTALL)
 
     # 4. Quote unquoted keys: { key: "value" } -> { "key": "value" }
-    repaired = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', repaired)
+    repaired = re.sub(r"(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r' "\1":', repaired)
 
     # 5. Try parsing after basic repairs
     try:
@@ -491,7 +491,9 @@ def _repair_json(text: str) -> str | None:
     if extracted is not None:
         # Apply repairs to extracted content
         extracted = re.sub(r",\s*([}\]])", r"\1", extracted)
-        extracted = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', extracted)
+        extracted = re.sub(
+            r"(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r' "\1":', extracted
+        )
         try:
             json.loads(extracted)
             return extracted
@@ -782,9 +784,13 @@ class LLMProvider(ABC):
                     # Build schema hint from model fields
                     schema = response_model.model_json_schema()
                     required_fields = schema.get("required", [])
-                    schema_hint = ", ".join(required_fields) if required_fields else None
+                    schema_hint = (
+                        ", ".join(required_fields) if required_fields else None
+                    )
                     correction_prompt = _create_correction_prompt(
-                        previous_response, str(last_error), output_format,
+                        previous_response,
+                        str(last_error),
+                        output_format,
                         schema_hint=schema_hint,
                     )
                     current_prompt = correction_prompt

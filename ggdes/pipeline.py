@@ -597,8 +597,7 @@ class AnalysisPipeline:
 
             # Save the filtered summary to change_filter directory (derived artifact)
             change_filter_dir = (
-                self.kb_manager.get_analysis_path(self.analysis_id)
-                / "change_filter"
+                self.kb_manager.get_analysis_path(self.analysis_id) / "change_filter"
             )
             change_filter_dir.mkdir(parents=True, exist_ok=True)
             filtered_path = change_filter_dir / "summary.json"

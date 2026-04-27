@@ -93,7 +93,9 @@ class GitAnalyzer:
 
         # Use config.analysis.enable_thinking instead of config.model.enable_thinking
         enable_thinking = getattr(config.analysis, "enable_thinking", False)
-        logger.info(f"Git analysis thinking mode: {'enabled' if enable_thinking else 'disabled'} (config.analysis.enable_thinking={enable_thinking})")
+        logger.info(
+            f"Git analysis thinking mode: {'enabled' if enable_thinking else 'disabled'} (config.analysis.enable_thinking={enable_thinking})"
+        )
         kwargs["enable_thinking"] = enable_thinking
 
         return LLMFactory.create(
@@ -492,7 +494,10 @@ class GitAnalyzer:
 
         # Check if diff needs chunking
         diff_tokens = estimate_tokens(diff)
-        use_chunked = self.config.analysis.enable_chunked_diff and diff_tokens > self.max_diff_tokens
+        use_chunked = (
+            self.config.analysis.enable_chunked_diff
+            and diff_tokens > self.max_diff_tokens
+        )
 
         if use_chunked:
             # Multi-chunk analysis
@@ -639,9 +644,7 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
         path = self._get_chunk_summaries_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(summaries, indent=2))
-        console.print(
-            f"  [dim]Saved {len(summaries)} chunk summaries to {path}[/dim]"
-        )
+        console.print(f"  [dim]Saved {len(summaries)} chunk summaries to {path}[/dim]")
 
     async def _analyze_chunked(
         self, diff: str, files: list[dict[str, Any]], commits: list[dict[str, Any]]

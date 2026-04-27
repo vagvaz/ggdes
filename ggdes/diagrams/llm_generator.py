@@ -181,7 +181,9 @@ class LLMDiagramGenerator:
 
         # Render to image
         diagram_path = self._render_plantuml(
-            plantuml_code, output_dir, "architecture",
+            plantuml_code,
+            output_dir,
+            "architecture",
             save_failed_to=failed_path,
         )
         if diagram_path is None:
@@ -226,7 +228,9 @@ class LLMDiagramGenerator:
         if plantuml_code is None:
             return None
         diagram_path = self._render_plantuml(
-            plantuml_code, output_dir, "flow",
+            plantuml_code,
+            output_dir,
+            "flow",
             save_failed_to=failed_path,
         )
         if diagram_path is None:
@@ -270,7 +274,9 @@ class LLMDiagramGenerator:
         if plantuml_code is None:
             return None
         diagram_path = self._render_plantuml(
-            plantuml_code, output_dir, "class",
+            plantuml_code,
+            output_dir,
+            "class",
             save_failed_to=failed_path,
         )
         if diagram_path is None:
@@ -472,7 +478,10 @@ class LLMDiagramGenerator:
         if llm is not None:
             try:
                 return self._generate_with_llm(
-                    llm, diagram_type, spec, facts,
+                    llm,
+                    diagram_type,
+                    spec,
+                    facts,
                     save_failed_to=save_failed_to,
                 )
             except Exception as e:
@@ -627,7 +636,10 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
             return None
 
     def _render_plantuml(
-        self, plantuml_code: str, output_dir: Path, diagram_type: str,
+        self,
+        plantuml_code: str,
+        output_dir: Path,
+        diagram_type: str,
         save_failed_to: Path | None = None,
     ) -> Path | None:
         """Render PlantUML code to an image file."""
@@ -715,9 +727,7 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
 
         return None
 
-    def _generate_template_class_diagram(
-        self, spec: ClassDiagramSpec
-    ) -> str | None:
+    def _generate_template_class_diagram(self, spec: ClassDiagramSpec) -> str | None:
         """Generate a class diagram using AST data for methods and relationships."""
         from ggdes.diagrams import generate_class_diagram
 
@@ -803,22 +813,26 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
                 if not signature.startswith(name):
                     signature = f"{name}{signature}"
 
-                methods.append({
-                    "name": name,
-                    "signature": signature,
-                    "visibility": visibility,
-                })
+                methods.append(
+                    {
+                        "name": name,
+                        "signature": signature,
+                        "visibility": visibility,
+                    }
+                )
 
             # Extract attributes from method parameters (especially __init__)
             attributes = self._extract_attributes_from_ast(
                 class_name, methods_by_class.get(class_name, [])
             )
 
-            classes.append({
-                "name": class_name,
-                "attributes": attributes,
-                "methods": methods,
-            })
+            classes.append(
+                {
+                    "name": class_name,
+                    "attributes": attributes,
+                    "methods": methods,
+                }
+            )
 
         return classes
 
@@ -863,11 +877,13 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
 
         # Create attributes from parameters
         for param in params:
-            attributes.append({
-                "name": param,
-                "type": "",
-                "visibility": "private",
-            })
+            attributes.append(
+                {
+                    "name": param,
+                    "type": "",
+                    "visibility": "private",
+                }
+            )
 
         return attributes
 
@@ -907,14 +923,12 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
                     base_name = base.split(".")[-1].strip()
                     if base_name in class_name_set and base_name != class_name:
                         # Check if it's an ABC or protocol (implements vs extends)
-                        if base_name.endswith("Mixin") or base_name.endswith("Protocol"):
-                            relationships.append(
-                                (class_name, base_name, "implements")
-                            )
+                        if base_name.endswith("Mixin") or base_name.endswith(
+                            "Protocol"
+                        ):
+                            relationships.append((class_name, base_name, "implements"))
                         else:
-                            relationships.append(
-                                (class_name, base_name, "extends")
-                            )
+                            relationships.append((class_name, base_name, "extends"))
 
         # Infer composition/dependency from method signatures
         methods_by_class: dict[str, list[dict[str, Any]]] = {}

@@ -198,7 +198,9 @@ class TestFeedbackManager:
         assert index["revisions"][0]["summary"] == "Fix overview"
 
     @patch("ggdes.pipeline.AnalysisPipeline")
-    def test_regenerate_increments_revision(self, mock_pipeline_class, config, analysis) -> None:
+    def test_regenerate_increments_revision(
+        self, mock_pipeline_class, config, analysis
+    ) -> None:
         mock_pipeline = MagicMock()
         mock_pipeline.run_all_pending.return_value = True
         mock_pipeline_class.return_value = mock_pipeline
@@ -282,7 +284,9 @@ class TestFeedbackManager:
         assert index["current"] == "v1"
 
     @patch("ggdes.pipeline.AnalysisPipeline")
-    def test_collect_after_regenerate(self, mock_pipeline_class, config, analysis) -> None:
+    def test_collect_after_regenerate(
+        self, mock_pipeline_class, config, analysis
+    ) -> None:
         """collect() should load the latest revision's feedback for editing."""
         mock_pipeline = MagicMock()
         mock_pipeline.run_all_pending.return_value = True
@@ -356,7 +360,9 @@ class TestFeedbackManagerIntegration:
         return "integ-test"
 
     @patch("ggdes.pipeline.AnalysisPipeline")
-    def test_revision_persistence_across_instances(self, mock_pipeline_cls, config, analysis) -> None:
+    def test_revision_persistence_across_instances(
+        self, mock_pipeline_cls, config, analysis
+    ) -> None:
         """Revisions should persist when creating a new FeedbackManager."""
         mgr1 = FeedbackManager(config, analysis)
         mgr1.regenerate(
@@ -372,7 +378,9 @@ class TestFeedbackManagerIntegration:
         assert revisions[0].feedback_summary == "Gen 1"
 
     @patch("ggdes.pipeline.AnalysisPipeline")
-    def test_multiple_revisions_persist(self, mock_pipeline_cls, config, analysis) -> None:
+    def test_multiple_revisions_persist(
+        self, mock_pipeline_cls, config, analysis
+    ) -> None:
         mgr = FeedbackManager(config, analysis)
         for i in range(3):
             mgr.regenerate(
@@ -389,7 +397,9 @@ class TestFeedbackManagerIntegration:
         assert summaries == ["Round 3", "Round 2", "Round 1"]
 
     @patch("ggdes.pipeline.AnalysisPipeline")
-    def test_metadata_updated_on_regenerate(self, mock_pipeline_cls, config, analysis) -> None:
+    def test_metadata_updated_on_regenerate(
+        self, mock_pipeline_cls, config, analysis
+    ) -> None:
         mgr = FeedbackManager(config, analysis)
         mgr.regenerate(
             FeedbackBatch(analysis_id=analysis),

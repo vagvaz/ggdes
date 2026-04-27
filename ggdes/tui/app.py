@@ -179,7 +179,9 @@ class AnalysisDetailView(VerticalScroll):
                 )
 
             yield Label("")
-            yield Label(f"[dim]Formats: {', '.join(metadata.target_formats) or 'markdown'}[/dim]")
+            yield Label(
+                f"[dim]Formats: {', '.join(metadata.target_formats) or 'markdown'}[/dim]"
+            )
 
             yield Label("")
 
@@ -838,10 +840,18 @@ class FormatResumeDialog(Screen[None]):
             yield Label("")
             yield Label("Output Formats:", classes="field-label")
             with Horizontal(id="formats-row"):
-                yield Checkbox("Markdown", id="fmt-markdown", value="markdown" in self.current_formats)
-                yield Checkbox("DOCX", id="fmt-docx", value="docx" in self.current_formats)
+                yield Checkbox(
+                    "Markdown",
+                    id="fmt-markdown",
+                    value="markdown" in self.current_formats,
+                )
+                yield Checkbox(
+                    "DOCX", id="fmt-docx", value="docx" in self.current_formats
+                )
                 yield Checkbox("PDF", id="fmt-pdf", value="pdf" in self.current_formats)
-                yield Checkbox("PPTX", id="fmt-pptx", value="pptx" in self.current_formats)
+                yield Checkbox(
+                    "PPTX", id="fmt-pptx", value="pptx" in self.current_formats
+                )
 
             yield Label("")
             with Horizontal(id="dialog-buttons"):
@@ -1494,7 +1504,9 @@ class GGDesTUI(App[None]):
             self.notify("Analysis not found", severity="error")
             return
         current = metadata.target_formats or ["markdown"]
-        self.push_screen(FormatResumeDialog(analysis_id=analysis_id, current_formats=current))
+        self.push_screen(
+            FormatResumeDialog(analysis_id=analysis_id, current_formats=current)
+        )
 
     def _regenerate_with_formats(self, analysis_id: str, formats: list[str]) -> None:
         """Regenerate documents with (possibly changed) formats on a completed analysis."""

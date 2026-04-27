@@ -32,7 +32,9 @@ def save_failed_plantuml(
     Returns:
         Path to the saved .puml file
     """
-    failed_dir = output_dir / "diagrams" if output_dir.name != "diagrams" else output_dir
+    failed_dir = (
+        output_dir / "diagrams" if output_dir.name != "diagrams" else output_dir
+    )
     failed_dir.mkdir(parents=True, exist_ok=True)
     safe_id = f"{analysis_id}_" if analysis_id else ""
     failed_path = failed_dir / f"failed_{safe_id}{diagram_type}.puml"

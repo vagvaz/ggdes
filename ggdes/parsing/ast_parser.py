@@ -49,7 +49,9 @@ class ASTParser:
             self._languages["python"] = Language(python_language())
             self._parsers["python"] = Parser(self._languages["python"])
         except ImportError:
-            print("  ⚠ tree-sitter Python parser not installed — Python AST analysis disabled")
+            print(
+                "  ⚠ tree-sitter Python parser not installed — Python AST analysis disabled"
+            )
             print("    Install: uv pip install tree-sitter-python")
 
         # C++ support - will be loaded dynamically if available
@@ -69,7 +71,9 @@ class ASTParser:
                 self._parsers["cpp"] = Parser(self._languages["cpp"])
                 return self._parsers["cpp"]
             except ImportError:
-                print("  ⚠ tree-sitter C++ parser not installed — C++ AST analysis disabled")
+                print(
+                    "  ⚠ tree-sitter C++ parser not installed — C++ AST analysis disabled"
+                )
                 print("    Install: uv pip install tree-sitter-cpp")
                 return None
 

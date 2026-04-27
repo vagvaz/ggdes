@@ -73,7 +73,9 @@ class ChunkAnalysisMode(str, Enum):
     """How diff chunks are analyzed."""
 
     INDEPENDENT = "independent"  # Each chunk analyzed separately (fast)
-    ACCUMULATED = "accumulated"  # Each chunk sees all previous context (slower, more coherent)
+    ACCUMULATED = (
+        "accumulated"  # Each chunk sees all previous context (slower, more coherent)
+    )
 
 
 class AnalysisConfig(BaseModel):

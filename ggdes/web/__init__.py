@@ -211,11 +211,14 @@ async def get_analysis(analysis_id: str) -> dict[str, Any]:
 
 class ResumeRequest(BaseModel):
     """Request body for resuming an analysis."""
+
     formats: list[str] | None = None
 
 
 @app.post("/api/analyses/{analysis_id}/resume")  # type: ignore[untyped-decorator]
-async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -> dict[str, Any]:
+async def resume_analysis(
+    analysis_id: str, body: ResumeRequest | None = None
+) -> dict[str, Any]:
     """Resume an analysis. Optionally accepts new formats to regenerate documents."""
     config = get_config()
     kb = get_kb()
@@ -234,11 +237,13 @@ async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -
 
             for stage_name in metadata.stages:
                 stage = metadata.stages[stage_name]
-                should_reset = (
-                    stage_name == "output_generation"
-                    or (formats_changed and stage_name == "coordinator_plan")
+                should_reset = stage_name == "output_generation" or (
+                    formats_changed and stage_name == "coordinator_plan"
                 )
-                if should_reset and stage.status in (StageStatus.COMPLETED, StageStatus.FAILED):
+                if should_reset and stage.status in (
+                    StageStatus.COMPLETED,
+                    StageStatus.FAILED,
+                ):
                     stage.status = StageStatus.PENDING
                     stage.output_path = None
                     stage.error_message = None
@@ -269,6 +274,7 @@ async def resume_analysis(analysis_id: str, body: ResumeRequest | None = None) -
 
 class RegenerateRequest(BaseModel):
     """Request body for feedback-driven regeneration."""
+
     section_feedback: dict[str, str] = {}  # section_title -> feedback text
     stage_feedback: str | None = None
     affects_structure: bool = False
@@ -277,6 +283,7 @@ class RegenerateRequest(BaseModel):
 
 class SetRevisionRequest(BaseModel):
     """Request body for setting the current revision."""
+
     revision_id: str
 
 
@@ -290,13 +297,15 @@ async def list_revisions(analysis_id: str) -> dict[str, Any]:
         mgr = FeedbackManager(config, analysis_id)
         revisions = []
         for rev in mgr.list_revisions():
-            revisions.append({
-                "id": rev.revision_id,
-                "parent": rev.parent,
-                "created_at": rev.created_at.isoformat(),
-                "summary": rev.feedback_summary,
-                "outputs": {fmt: str(p) for fmt, p in rev.outputs.items()},
-            })
+            revisions.append(
+                {
+                    "id": rev.revision_id,
+                    "parent": rev.parent,
+                    "created_at": rev.created_at.isoformat(),
+                    "summary": rev.feedback_summary,
+                    "outputs": {fmt: str(p) for fmt, p in rev.outputs.items()},
+                }
+            )
         kb = get_kb()
         metadata = kb.load_metadata(analysis_id)
         current = getattr(metadata, "current_revision", None) if metadata else None
@@ -339,11 +348,13 @@ async def regenerate_from_feedback(
         rev_id = mgr.regenerate(batch, summary=body.summary)
 
         # Broadcast update
-        await manager.broadcast({
-            "type": "analysis_updated",
-            "analysis_id": analysis_id,
-            "status": "completed" if rev_id else "incomplete",
-        })
+        await manager.broadcast(
+            {
+                "type": "analysis_updated",
+                "analysis_id": analysis_id,
+                "status": "completed" if rev_id else "incomplete",
+            }
+        )
 
         return {
             "success": rev_id is not None,
@@ -365,7 +376,11 @@ async def set_current_revision(
 
         mgr = FeedbackManager(config, analysis_id)
         success = mgr.set_current(body.revision_id)
-        return {"success": success, "analysis_id": analysis_id, "revision_id": body.revision_id}
+        return {
+            "success": success,
+            "analysis_id": analysis_id,
+            "revision_id": body.revision_id,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

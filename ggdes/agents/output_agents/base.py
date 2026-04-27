@@ -61,6 +61,7 @@ class OutputAgent(ABC):
         # Check if metadata has a current_revision set
         try:
             from ggdes.kb import KnowledgeBaseManager
+
             kb = KnowledgeBaseManager(self.config)
             meta = kb.load_metadata(self.analysis_id)
             if meta and getattr(meta, "current_revision", None):
@@ -148,8 +149,12 @@ class OutputAgent(ABC):
         # Sections
         sections = plan.get("sections", [])
         for section in sections:
-            section_title = section.get("title", "") if isinstance(section, dict) else ""
-            section_desc = section.get("description", "") if isinstance(section, dict) else ""
+            section_title = (
+                section.get("title", "") if isinstance(section, dict) else ""
+            )
+            section_desc = (
+                section.get("description", "") if isinstance(section, dict) else ""
+            )
             if section_title:
                 lines.append(f"## {section_title}")
                 lines.append("")
@@ -163,7 +168,9 @@ class OutputAgent(ABC):
             lines.append("## Diagrams")
             lines.append("")
             for d in diagrams:
-                d_title = d.get("title", "Diagram") if isinstance(d, dict) else "Diagram"
+                d_title = (
+                    d.get("title", "Diagram") if isinstance(d, dict) else "Diagram"
+                )
                 lines.append(f"- {d_title}")
             lines.append("")
 
@@ -682,7 +689,9 @@ class OutputAgent(ABC):
             failed_path = output_dir / f"failed_{self.analysis_id}_architecture.puml"
             if failed_path.exists():
                 failed_msg = f" — saved to {failed_path} for debugging"
-            console.print(f"  [yellow]⚠ Could not generate architecture diagram: {e}{failed_msg}[/yellow]")
+            console.print(
+                f"  [yellow]⚠ Could not generate architecture diagram: {e}{failed_msg}[/yellow]"
+            )
             return None
 
     def _generate_flow_diagram(
@@ -776,7 +785,9 @@ class OutputAgent(ABC):
             failed_path = output_dir / f"failed_{self.analysis_id}_flow.puml"
             if failed_path.exists():
                 failed_msg = f" — saved to {failed_path} for debugging"
-            console.print(f"  [yellow]⚠ Could not generate flow diagram: {e}{failed_msg}[/yellow]")
+            console.print(
+                f"  [yellow]⚠ Could not generate flow diagram: {e}{failed_msg}[/yellow]"
+            )
             return None
 
     def _generate_class_diagram(
@@ -914,7 +925,9 @@ class OutputAgent(ABC):
             failed_path = output_dir / f"failed_{self.analysis_id}_class.puml"
             if failed_path.exists():
                 failed_msg = f" — saved to {failed_path} for debugging"
-            console.print(f"  [yellow]⚠ Could not generate class diagram: {e}{failed_msg}[/yellow]")
+            console.print(
+                f"  [yellow]⚠ Could not generate class diagram: {e}{failed_msg}[/yellow]"
+            )
             return None
 
     @abstractmethod

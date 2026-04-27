@@ -20,14 +20,62 @@ class PptxAgent(OutputAgent):
 
     # Color palettes from the pptx skill
     COLOR_PALETTES = {
-        "midnight": {"primary": "1E2761", "secondary": "CADCFC", "accent": "FFFFFF", "text": "36454F", "light_bg": "F0F4FF"},
-        "forest": {"primary": "2C5F2D", "secondary": "97BC62", "accent": "F5F5F5", "text": "2D3436", "light_bg": "F0F7F0"},
-        "coral": {"primary": "F96167", "secondary": "F9E795", "accent": "2F3C7E", "text": "2D3436", "light_bg": "FFF5F5"},
-        "terracotta": {"primary": "B85042", "secondary": "E7E8D1", "accent": "A7BEAE", "text": "2D3436", "light_bg": "FDF8F6"},
-        "ocean": {"primary": "065A82", "secondary": "1C7293", "accent": "21295C", "text": "2D3436", "light_bg": "E8F4F8"},
-        "charcoal": {"primary": "36454F", "secondary": "F2F2F2", "accent": "212121", "text": "2D3436", "light_bg": "F5F5F5"},
-        "teal": {"primary": "028090", "secondary": "00A896", "accent": "02C39A", "text": "2D3436", "light_bg": "E8F8F8"},
-        "berry": {"primary": "6D2E46", "secondary": "A26769", "accent": "ECE2D0", "text": "2D3436", "light_bg": "F8F0F0"},
+        "midnight": {
+            "primary": "1E2761",
+            "secondary": "CADCFC",
+            "accent": "FFFFFF",
+            "text": "36454F",
+            "light_bg": "F0F4FF",
+        },
+        "forest": {
+            "primary": "2C5F2D",
+            "secondary": "97BC62",
+            "accent": "F5F5F5",
+            "text": "2D3436",
+            "light_bg": "F0F7F0",
+        },
+        "coral": {
+            "primary": "F96167",
+            "secondary": "F9E795",
+            "accent": "2F3C7E",
+            "text": "2D3436",
+            "light_bg": "FFF5F5",
+        },
+        "terracotta": {
+            "primary": "B85042",
+            "secondary": "E7E8D1",
+            "accent": "A7BEAE",
+            "text": "2D3436",
+            "light_bg": "FDF8F6",
+        },
+        "ocean": {
+            "primary": "065A82",
+            "secondary": "1C7293",
+            "accent": "21295C",
+            "text": "2D3436",
+            "light_bg": "E8F4F8",
+        },
+        "charcoal": {
+            "primary": "36454F",
+            "secondary": "F2F2F2",
+            "accent": "212121",
+            "text": "2D3436",
+            "light_bg": "F5F5F5",
+        },
+        "teal": {
+            "primary": "028090",
+            "secondary": "00A896",
+            "accent": "02C39A",
+            "text": "2D3436",
+            "light_bg": "E8F8F8",
+        },
+        "berry": {
+            "primary": "6D2E46",
+            "secondary": "A26769",
+            "accent": "ECE2D0",
+            "text": "2D3436",
+            "light_bg": "F8F0F0",
+        },
     }
 
     def __init__(
@@ -77,7 +125,9 @@ class PptxAgent(OutputAgent):
         # Fallback: build markdown from plan sections (plan has no "content" field)
         plan = self._load_plan()
         if plan:
-            logger.info("No markdown file found, building PPTX content from plan sections")
+            logger.info(
+                "No markdown file found, building PPTX content from plan sections"
+            )
             return self._build_content_from_plan(plan)
 
         return ""
@@ -85,7 +135,9 @@ class PptxAgent(OutputAgent):
     def _select_palette(self, content: str) -> dict[str, str]:
         """Select a color palette based on content keywords."""
         content_lower = content.lower()
-        if any(kw in content_lower for kw in ["security", "auth", "encrypt", "privacy"]):
+        if any(
+            kw in content_lower for kw in ["security", "auth", "encrypt", "privacy"]
+        ):
             return self.COLOR_PALETTES["ocean"]
         if any(kw in content_lower for kw in ["performance", "optimization", "speed"]):
             return self.COLOR_PALETTES["coral"]
@@ -149,8 +201,12 @@ class PptxAgent(OutputAgent):
         slides = self._parse_content_to_slides(content)
 
         if not slides:
-            console.print("  [yellow]⚠ No slides generated from content - presentation will be empty[/yellow]")
-            logger.warning(f"Empty slides list for PPTX (content length: {len(content)} chars)")
+            console.print(
+                "  [yellow]⚠ No slides generated from content - presentation will be empty[/yellow]"
+            )
+            logger.warning(
+                f"Empty slides list for PPTX (content length: {len(content)} chars)"
+            )
 
         # Generate diagrams
         diagrams_dir = self.output_dir / "diagrams"
@@ -187,7 +243,9 @@ class PptxAgent(OutputAgent):
                 )
 
         # Collect diagram file paths for integration
-        diagram_files = list(diagrams_dir.glob("*.png")) if diagrams_dir.exists() else []
+        diagram_files = (
+            list(diagrams_dir.glob("*.png")) if diagrams_dir.exists() else []
+        )
 
         # Generate pptx using pptxgenjs via Node.js
         pptx_js_script = self._generate_pptx_script(
@@ -211,7 +269,9 @@ class PptxAgent(OutputAgent):
             console.print(f"  [green]✓ Presentation saved:[/green] {output_file}")
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Node.js script failed (exit {e.returncode}): stderr={e.stderr[:500]}")
+            logger.error(
+                f"Node.js script failed (exit {e.returncode}): stderr={e.stderr[:500]}"
+            )
             console.print(f"  [yellow]⚠ Node.js error: {e.stderr[:200]}[/yellow]")
             console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
@@ -292,7 +352,9 @@ class PptxAgent(OutputAgent):
         # Classify slides into rich layouts
         return self._classify_slide_layouts(slides)
 
-    def _classify_slide_layouts(self, slides: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _classify_slide_layouts(
+        self, slides: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Classify slides into rich layout types based on content."""
         for i, slide in enumerate(slides):
             if slide["type"] == "title":
@@ -359,8 +421,15 @@ class PptxAgent(OutputAgent):
                 slide_defs.append(self._bullets_with_accent_slide(i, slide, p))
 
             # Add diagram to slide if available (rotate through diagrams)
-            if diagram_files and i > 0 and i % 3 == 0 and diagram_idx < len(diagram_files):
-                slide_defs.append(self._diagram_overlay_slide(i, diagram_files[diagram_idx], p))
+            if (
+                diagram_files
+                and i > 0
+                and i % 3 == 0
+                and diagram_idx < len(diagram_files)
+            ):
+                slide_defs.append(
+                    self._diagram_overlay_slide(i, diagram_files[diagram_idx], p)
+                )
                 diagram_idx += 1
 
         # Add remaining diagrams as dedicated slides
@@ -371,11 +440,11 @@ class PptxAgent(OutputAgent):
         # Build the complete script
         palettes_js = f"""
 const COLORS = {{
-    primary: "{p['primary']}",
-    secondary: "{p['secondary']}",
-    accent: "{p['accent']}",
-    text: "{p['text']}",
-    lightBg: "{p['light_bg']}",
+    primary: "{p["primary"]}",
+    secondary: "{p["secondary"]}",
+    accent: "{p["accent"]}",
+    text: "{p["text"]}",
+    lightBg: "{p["light_bg"]}",
 }};
 """
 
@@ -424,10 +493,10 @@ pres.writeFile({{ fileName: "{output_file}" }})
         if subtitle:
             subtitle_js = (
                 f'slide{idx}.addText("{subtitle}", {{\n'
-                f'    x: 1.5, y: 3.8, w: 7, h: 0.8,\n'
+                f"    x: 1.5, y: 3.8, w: 7, h: 0.8,\n"
                 f'    fontSize: 18, color: COLORS.secondary, align: "center",\n'
                 f'    fontFace: "Calibri", margin: 0\n'
-                f'}});'
+                f"}});"
             )
 
         return f"""
@@ -458,7 +527,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     }});
 """
 
-    def _icon_text_rows_slide(self, idx: int, slide: dict[str, Any], p: dict[str, str]) -> str:
+    def _icon_text_rows_slide(
+        self, idx: int, slide: dict[str, Any], p: dict[str, str]
+    ) -> str:
         """Icon + text rows layout — colored circle with icon, bold header, description."""
         title = self._esc(slide["title"])
         bullets = slide.get("bullets", [])[:6]
@@ -506,7 +577,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     {bullet_rows}
 '''
 
-    def _two_column_slide(self, idx: int, slide: dict[str, Any], p: dict[str, str]) -> str:
+    def _two_column_slide(
+        self, idx: int, slide: dict[str, Any], p: dict[str, str]
+    ) -> str:
         """Two-column layout — text left, visual accent right."""
         title = self._esc(slide["title"])
         bullets = slide.get("bullets", [])[:5]
@@ -516,13 +589,13 @@ pres.writeFile({{ fileName: "{output_file}" }})
         y_pos = 1.5
         for bullet in bullets:
             text = self._esc(bullet[:70])
-            left_content += f'''
+            left_content += f"""
     slide{idx}.addText("▸ {text}", {{
         x: 0.6, y: {y_pos}, w: 4.5, h: 0.5,
         fontSize: 15, color: COLORS.text,
         fontFace: "Calibri", margin: 0
     }});
-'''
+"""
             y_pos += 0.55
 
         # Add text content on right side
@@ -576,7 +649,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     {right_content}
 '''
 
-    def _grid_cards_slide(self, idx: int, slide: dict[str, Any], p: dict[str, str]) -> str:
+    def _grid_cards_slide(
+        self, idx: int, slide: dict[str, Any], p: dict[str, str]
+    ) -> str:
         """2x2 or 2x3 grid of content cards."""
         title = self._esc(slide["title"])
         subheadings = slide.get("subheadings", [])[:6]
@@ -609,19 +684,19 @@ pres.writeFile({{ fileName: "{output_file}" }})
             if heading:
                 heading_js = (
                     f'slide{idx}.addText("{heading}", {{\n'
-                    f'    x: {x_pos + 0.25}, y: {y_pos + 0.1}, w: 4, h: 0.4,\n'
-                    f'    fontSize: 16, bold: true, color: COLORS.primary,\n'
+                    f"    x: {x_pos + 0.25}, y: {y_pos + 0.1}, w: 4, h: 0.4,\n"
+                    f"    fontSize: 16, bold: true, color: COLORS.primary,\n"
                     f'    fontFace: "Georgia", margin: 0\n'
-                    f'}});'
+                    f"}});"
                 )
             body_js = ""
             if body:
                 body_js = (
                     f'slide{idx}.addText("{body}", {{\n'
-                    f'    x: {x_pos + 0.25}, y: {y_pos + 0.55}, w: 4, h: 0.7,\n'
-                    f'    fontSize: 13, color: COLORS.text,\n'
+                    f"    x: {x_pos + 0.25}, y: {y_pos + 0.55}, w: 4, h: 0.7,\n"
+                    f"    fontSize: 13, color: COLORS.text,\n"
                     f'    fontFace: "Calibri", margin: 0\n'
-                    f'}});'
+                    f"}});"
                 )
 
             card_js += f"""
@@ -665,7 +740,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     {card_js}
 '''
 
-    def _stat_callouts_slide(self, idx: int, slide: dict[str, Any], p: dict[str, str]) -> str:
+    def _stat_callouts_slide(
+        self, idx: int, slide: dict[str, Any], p: dict[str, str]
+    ) -> str:
         """Large stat callouts — big numbers with small labels."""
         title = self._esc(slide["title"])
         bullets = slide.get("bullets", [])[:4]
@@ -693,10 +770,10 @@ pres.writeFile({{ fileName: "{output_file}" }})
             if label_text:
                 label_js = (
                     f'slide{idx}.addText("{label_text}", {{\n'
-                    f'    x: {x_pos + 0.3}, y: {y_pos + 1.0}, w: 3.8, h: 0.5,\n'
-                    f'    fontSize: 13, color: COLORS.secondary,\n'
+                    f"    x: {x_pos + 0.3}, y: {y_pos + 1.0}, w: 3.8, h: 0.5,\n"
+                    f"    fontSize: 13, color: COLORS.secondary,\n"
                     f'    fontFace: "Calibri", margin: 0, align: "center"\n'
-                    f'}});'
+                    f"}});"
                 )
 
             stat_js += f"""
@@ -739,7 +816,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     {stat_js}
 '''
 
-    def _bullets_with_accent_slide(self, idx: int, slide: dict[str, Any], p: dict[str, str]) -> str:
+    def _bullets_with_accent_slide(
+        self, idx: int, slide: dict[str, Any], p: dict[str, str]
+    ) -> str:
         """Clean bullets with left accent bar — improved version of basic layout."""
         title = self._esc(slide["title"])
         bullets = slide.get("bullets", [])[:6]
@@ -785,7 +864,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
     {bullet_js}
 '''
 
-    def _diagram_overlay_slide(self, idx: int, diagram_path: Path, p: dict[str, str]) -> str:
+    def _diagram_overlay_slide(
+        self, idx: int, diagram_path: Path, p: dict[str, str]
+    ) -> str:
         """Slide with diagram image as visual element."""
         return f'''
     // Diagram Slide

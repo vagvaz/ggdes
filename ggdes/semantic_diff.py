@@ -274,8 +274,12 @@ class SemanticDiffAnalyzer:
 
                 self._ast_parser = ASTParser()
             except ImportError:
-                console.print("  ⚠ tree-sitter parser not available — semantic diff AST analysis disabled")
-                console.print("    Install: uv pip install tree-sitter tree-sitter-python tree-sitter-cpp")
+                console.print(
+                    "  ⚠ tree-sitter parser not available — semantic diff AST analysis disabled"
+                )
+                console.print(
+                    "    Install: uv pip install tree-sitter tree-sitter-python tree-sitter-cpp"
+                )
                 self._ast_parser = None
         return self._ast_parser
 
@@ -1038,7 +1042,12 @@ class SemanticDiffAnalyzer:
                 elem_type_str = str(elem.element_type).lower()
                 if elem_type_str in ("class", "struct", "interface"):
                     elem_type = "class"
-                elif elem_type_str in ("function", "method", "constructor", "destructor"):
+                elif elem_type_str in (
+                    "function",
+                    "method",
+                    "constructor",
+                    "destructor",
+                ):
                     elem_type = "function"
                 else:
                     continue  # Skip other element types
@@ -1159,13 +1168,25 @@ def _validate_semantic_diff_data(data: dict[str, Any]) -> None:
     Ensures required fields are present and types are correct.
     Raises ValueError if validation fails.
     """
-    required_top = {"schema_version", "base_commit", "head_commit", "semantic_changes", "summary"}
+    required_top = {
+        "schema_version",
+        "base_commit",
+        "head_commit",
+        "semantic_changes",
+        "summary",
+    }
     missing = required_top - set(data.keys())
     if missing:
         raise ValueError(f"Missing required top-level fields: {missing}")
 
     for i, change in enumerate(data["semantic_changes"]):
-        required_change = {"change_type", "description", "file_path", "confidence", "impact_score"}
+        required_change = {
+            "change_type",
+            "description",
+            "file_path",
+            "confidence",
+            "impact_score",
+        }
         missing_change = required_change - set(change.keys())
         if missing_change:
             raise ValueError(f"Change at index {i} missing fields: {missing_change}")
