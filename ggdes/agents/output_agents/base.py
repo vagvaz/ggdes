@@ -660,10 +660,12 @@ class OutputAgent(ABC):
                 title="System Architecture",
             )
 
+            failed_path = output_dir / f"failed_{self.analysis_id}_architecture.puml"
             diagram_path = generator.generate(
                 plantuml_code,
                 output_dir / f"{self.analysis_id}_architecture",
                 format="png",
+                save_failed_to=failed_path,
             )
 
             # Cache the diagram
@@ -676,7 +678,11 @@ class OutputAgent(ABC):
             return ("System Architecture", diagram_path, "architecture")
 
         except Exception as e:
-            console.print(f"  [dim]Could not generate architecture diagram: {e}[/dim]")
+            failed_msg = ""
+            failed_path = output_dir / f"failed_{self.analysis_id}_architecture.puml"
+            if failed_path.exists():
+                failed_msg = f" — saved to {failed_path} for debugging"
+            console.print(f"  [yellow]⚠ Could not generate architecture diagram: {e}{failed_msg}[/yellow]")
             return None
 
     def _generate_flow_diagram(
@@ -750,10 +756,12 @@ class OutputAgent(ABC):
                 direction="TB",
             )
 
+            failed_path = output_dir / f"failed_{self.analysis_id}_flow.puml"
             diagram_path = generator.generate(
                 plantuml_code,
                 output_dir / f"{self.analysis_id}_flow",
                 format="png",
+                save_failed_to=failed_path,
             )
 
             # Cache the diagram
@@ -764,7 +772,11 @@ class OutputAgent(ABC):
             return ("Process Flow", diagram_path, "flow")
 
         except Exception as e:
-            console.print(f"  [dim]Could not generate flow diagram: {e}[/dim]")
+            failed_msg = ""
+            failed_path = output_dir / f"failed_{self.analysis_id}_flow.puml"
+            if failed_path.exists():
+                failed_msg = f" — saved to {failed_path} for debugging"
+            console.print(f"  [yellow]⚠ Could not generate flow diagram: {e}{failed_msg}[/yellow]")
             return None
 
     def _generate_class_diagram(
@@ -882,10 +894,12 @@ class OutputAgent(ABC):
                 title="Class Structure",
             )
 
+            failed_path = output_dir / f"failed_{self.analysis_id}_class.puml"
             diagram_path = generator.generate(
                 plantuml_code,
                 output_dir / f"{self.analysis_id}_class",
                 format="png",
+                save_failed_to=failed_path,
             )
 
             # Cache the diagram
@@ -896,7 +910,11 @@ class OutputAgent(ABC):
             return ("Class Structure", diagram_path, "class")
 
         except Exception as e:
-            console.print(f"  [dim]Could not generate class diagram: {e}[/dim]")
+            failed_msg = ""
+            failed_path = output_dir / f"failed_{self.analysis_id}_class.puml"
+            if failed_path.exists():
+                failed_msg = f" — saved to {failed_path} for debugging"
+            console.print(f"  [yellow]⚠ Could not generate class diagram: {e}{failed_msg}[/yellow]")
             return None
 
     @abstractmethod

@@ -532,6 +532,30 @@ Write the section content now:"""
                     md_parts.append("```")
                     md_parts.append("")
 
+            # Check for failed diagrams saved for manual debugging
+            failed_diagrams = sorted(
+                (self.output_dir / "diagrams").glob("failed_*.puml")
+            ) if (self.output_dir / "diagrams").exists() else []
+            if failed_diagrams:
+                md_parts.append("### ⚠ Diagrams Needing Debugging")
+                md_parts.append("")
+                md_parts.append(
+                    "The following diagrams could not be rendered automatically. "
+                    "Their PlantUML source has been saved for manual inspection and fixing:"
+                )
+                md_parts.append("")
+                for fd in failed_diagrams:
+                    diagram_name = fd.stem.replace("failed_", "").replace(
+                        f"{self.analysis_id}_", ""
+                    )
+                    md_parts.append(f"- **{diagram_name}**: `{fd.relative_to(self.output_dir)}`")
+                md_parts.append("")
+                md_parts.append(
+                    "Fix the PlantUML code and render with: "
+                    "`java -jar plantuml.jar <file>`"
+                )
+                md_parts.append("")
+
         # Add footer
         md_parts.append("---")
         md_parts.append("")

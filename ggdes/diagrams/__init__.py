@@ -15,6 +15,31 @@ __all__ = [
 ]
 
 
+def save_failed_plantuml(
+    plantuml_code: str,
+    output_dir: Path,
+    diagram_type: str,
+    analysis_id: str = "",
+) -> Path:
+    """Save failed PlantUML code to a .puml file for manual debugging.
+
+    Args:
+        plantuml_code: The PlantUML code that failed validation
+        output_dir: Directory to save the file in (diagrams subdirectory)
+        diagram_type: Type of diagram (architecture, flow, class)
+        analysis_id: Optional analysis ID for the filename
+
+    Returns:
+        Path to the saved .puml file
+    """
+    failed_dir = output_dir / "diagrams" if output_dir.name != "diagrams" else output_dir
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    safe_id = f"{analysis_id}_" if analysis_id else ""
+    failed_path = failed_dir / f"failed_{safe_id}{diagram_type}.puml"
+    failed_path.write_text(plantuml_code)
+    return failed_path
+
+
 class PlantUMLGenerator:
     """Generate diagrams using PlantUML."""
 
@@ -56,6 +81,7 @@ class PlantUMLGenerator:
         output_path: Path,
         format: Literal["png", "svg", "pdf"] = "png",
         validate_and_repair: bool = True,
+        save_failed_to: Path | None = None,
     ) -> Path:
         """Generate diagram from PlantUML code.
 
@@ -64,6 +90,8 @@ class PlantUMLGenerator:
             output_path: Output file path (without extension)
             format: Output format (png, svg, or pdf)
             validate_and_repair: Whether to validate and attempt to repair code
+            save_failed_to: If validation fails, save the original code to this
+                           .puml file for manual debugging (in addition to raising)
 
         Returns:
             Path to the generated diagram file
@@ -72,6 +100,9 @@ class PlantUMLGenerator:
         if validate_and_repair:
             repaired_code, is_valid, error = self.validate_and_repair(plantuml_code)
             if not is_valid:
+                if save_failed_to:
+                    save_failed_to.parent.mkdir(parents=True, exist_ok=True)
+                    save_failed_to.write_text(plantuml_code)
                 raise RuntimeError(
                     f"PlantUML code validation failed and could not be repaired: {error}"
                 )

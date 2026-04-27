@@ -169,16 +169,21 @@ class LLMDiagramGenerator:
                 return None
 
         # Generate PlantUML
+        failed_path = output_dir / f"failed_{self.analysis_id}_architecture.puml"
         plantuml_code = self._generate_plantuml(
             diagram_type="architecture",
             spec=spec,
             facts=facts,
+            save_failed_to=failed_path,
         )
         if plantuml_code is None:
             return None
 
         # Render to image
-        diagram_path = self._render_plantuml(plantuml_code, output_dir, "architecture")
+        diagram_path = self._render_plantuml(
+            plantuml_code, output_dir, "architecture",
+            save_failed_to=failed_path,
+        )
         if diagram_path is None:
             return None
 
@@ -211,15 +216,19 @@ class LLMDiagramGenerator:
             if spec is None:
                 return None
 
+        failed_path = output_dir / f"failed_{self.analysis_id}_flow.puml"
         plantuml_code = self._generate_plantuml(
             diagram_type="flow",
             spec=spec,
             facts=facts,
+            save_failed_to=failed_path,
         )
         if plantuml_code is None:
             return None
-
-        diagram_path = self._render_plantuml(plantuml_code, output_dir, "flow")
+        diagram_path = self._render_plantuml(
+            plantuml_code, output_dir, "flow",
+            save_failed_to=failed_path,
+        )
         if diagram_path is None:
             return None
 
@@ -251,15 +260,19 @@ class LLMDiagramGenerator:
             if spec is None:
                 return None
 
+        failed_path = output_dir / f"failed_{self.analysis_id}_class.puml"
         plantuml_code = self._generate_plantuml(
             diagram_type="class",
             spec=spec,
             facts=facts,
+            save_failed_to=failed_path,
         )
         if plantuml_code is None:
             return None
-
-        diagram_path = self._render_plantuml(plantuml_code, output_dir, "class")
+        diagram_path = self._render_plantuml(
+            plantuml_code, output_dir, "class",
+            save_failed_to=failed_path,
+        )
         if diagram_path is None:
             return None
 
@@ -452,12 +465,16 @@ class LLMDiagramGenerator:
         diagram_type: str,
         spec: Any,
         facts: list[TechnicalFact],
+        save_failed_to: Path | None = None,
     ) -> str | None:
         """Generate PlantUML code using LLM or template fallback."""
         llm = self.llm_provider
         if llm is not None:
             try:
-                return self._generate_with_llm(llm, diagram_type, spec, facts)
+                return self._generate_with_llm(
+                    llm, diagram_type, spec, facts,
+                    save_failed_to=save_failed_to,
+                )
             except Exception as e:
                 logger.warning(
                     f"LLM diagram generation failed, falling back to template: {e}"
@@ -472,6 +489,7 @@ class LLMDiagramGenerator:
         diagram_type: str,
         spec: Any,
         facts: list[TechnicalFact],
+        save_failed_to: Path | None = None,
     ) -> str | None:
         """Generate PlantUML using LLM structured output."""
         system_prompt = self._build_system_prompt(diagram_type)
@@ -486,7 +504,9 @@ class LLMDiagramGenerator:
         )
 
         # Validate the generated PlantUML
-        validated_code = self._validate_and_repair_plantuml(result.plantuml_code)
+        validated_code = self._validate_and_repair_plantuml(
+            result.plantuml_code, save_failed_to=save_failed_to
+        )
         if validated_code is None:
             return None
 
@@ -574,22 +594,41 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
 
         return "\n".join(lines)
 
-    def _validate_and_repair_plantuml(self, code: str) -> str | None:
-        """Validate PlantUML code and attempt repair."""
+    def _validate_and_repair_plantuml(
+        self, code: str, save_failed_to: Path | None = None
+    ) -> str | None:
+        """Validate PlantUML code and attempt repair.
+
+        Args:
+            code: PlantUML code to validate
+            save_failed_to: If validation fails, save the original code to
+                           this .puml file for manual debugging
+
+        Returns:
+            Validated code, or None if validation failed
+        """
         try:
             validated, is_valid, error = self._plantuml_generator.validate_and_repair(
                 code
             )
             if is_valid:
                 return validated
-            logger.warning(f"PlantUML validation failed after repair: {error}")
+            if save_failed_to:
+                save_failed_to.parent.mkdir(parents=True, exist_ok=True)
+                save_failed_to.write_text(code)
+                logger.warning(
+                    f"PlantUML validation failed — saved to {save_failed_to} for debugging"
+                )
+            else:
+                logger.warning(f"PlantUML validation failed after repair: {error}")
             return None
         except Exception as e:
             logger.warning(f"PlantUML validation error: {e}")
             return None
 
     def _render_plantuml(
-        self, plantuml_code: str, output_dir: Path, diagram_type: str
+        self, plantuml_code: str, output_dir: Path, diagram_type: str,
+        save_failed_to: Path | None = None,
     ) -> Path | None:
         """Render PlantUML code to an image file."""
         try:
@@ -599,8 +638,10 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
                 plantuml_code,
                 output_path,
                 format="png",
+                save_failed_to=save_failed_to,
             )
         except Exception as e:
+            # Already saved by generate() if save_failed_to was set
             logger.warning(f"PlantUML rendering failed: {e}")
             return None
 
