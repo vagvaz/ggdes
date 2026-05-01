@@ -17,7 +17,19 @@ from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
 from ggdes.review import ReviewSession
 from ggdes.schemas import ChangeSummary, CodeElement
-from ggdes.stages import StageResult as StageResultData, get_stage
+from ggdes.stages import (
+    StageResult as StageResultData,
+    get_stage,
+    STAGE_GIT_ANALYSIS,
+    STAGE_CHANGE_FILTER,
+    STAGE_AST_PARSING_BASE,
+    STAGE_AST_PARSING_HEAD,
+    STAGE_SEMANTIC_DIFF,
+    STAGE_TECHNICAL_AUTHOR,
+    STAGE_COORDINATOR_PLAN,
+    STAGE_OUTPUT_GENERATION,
+    STAGE_WORKTREE_SETUP,
+)
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
@@ -169,21 +181,21 @@ class AnalysisPipeline:
                 # (end of with self._metadata_lock)
 
             # --- LEGACY DISPATCH (non-extracted stages) ---
-            if stage_name == self.kb_manager.STAGE_GIT_ANALYSIS:
+            if stage_name == STAGE_GIT_ANALYSIS:
                 success = self._run_git_analysis()
-            elif stage_name == self.kb_manager.STAGE_CHANGE_FILTER:
+            elif stage_name == STAGE_CHANGE_FILTER:
                 success = self._run_change_filter()
-            elif stage_name == self.kb_manager.STAGE_AST_PARSING_BASE:
+            elif stage_name == STAGE_AST_PARSING_BASE:
                 success = self._run_ast_parsing("base")
-            elif stage_name == self.kb_manager.STAGE_AST_PARSING_HEAD:
+            elif stage_name == STAGE_AST_PARSING_HEAD:
                 success = self._run_ast_parsing("head")
-            elif stage_name == self.kb_manager.STAGE_TECHNICAL_AUTHOR:
+            elif stage_name == STAGE_TECHNICAL_AUTHOR:
                 success = self._run_technical_author()
-            elif stage_name == self.kb_manager.STAGE_COORDINATOR_PLAN:
+            elif stage_name == STAGE_COORDINATOR_PLAN:
                 success = self._run_coordinator_plan()
-            elif stage_name == self.kb_manager.STAGE_OUTPUT_GENERATION:
+            elif stage_name == STAGE_OUTPUT_GENERATION:
                 success = self._run_output_generation()
-            elif stage_name == self.kb_manager.STAGE_SEMANTIC_DIFF:
+            elif stage_name == STAGE_SEMANTIC_DIFF:
                 success = self._run_semantic_diff()
             else:
                 console.print(
@@ -314,15 +326,15 @@ class AnalysisPipeline:
         """
 
         stage_order = [
-            self.kb_manager.STAGE_WORKTREE_SETUP,
-            self.kb_manager.STAGE_GIT_ANALYSIS,
-            self.kb_manager.STAGE_CHANGE_FILTER,
-            self.kb_manager.STAGE_AST_PARSING_BASE,
-            self.kb_manager.STAGE_AST_PARSING_HEAD,
-            self.kb_manager.STAGE_SEMANTIC_DIFF,
-            self.kb_manager.STAGE_TECHNICAL_AUTHOR,
-            self.kb_manager.STAGE_COORDINATOR_PLAN,
-            self.kb_manager.STAGE_OUTPUT_GENERATION,
+            STAGE_WORKTREE_SETUP,
+            STAGE_GIT_ANALYSIS,
+            STAGE_CHANGE_FILTER,
+            STAGE_AST_PARSING_BASE,
+            STAGE_AST_PARSING_HEAD,
+            STAGE_SEMANTIC_DIFF,
+            STAGE_TECHNICAL_AUTHOR,
+            STAGE_COORDINATOR_PLAN,
+            STAGE_OUTPUT_GENERATION,
         ]
 
         try:
@@ -388,8 +400,8 @@ class AnalysisPipeline:
         # semantic_diff depends on git_analysis output and should run after AST parsing,
         # so it's NOT in the parallel group.
         parallel_group = {
-            self.kb_manager.STAGE_AST_PARSING_BASE,
-            self.kb_manager.STAGE_AST_PARSING_HEAD,
+            STAGE_AST_PARSING_BASE,
+            STAGE_AST_PARSING_HEAD,
         }
 
         # Acquire lock for entire pipeline run
@@ -803,7 +815,7 @@ class AnalysisPipeline:
         user_context = getattr(self.metadata, "user_context", None)
 
         # Get feedback for this stage (from review session)
-        feedback = self._get_feedback_for_stage(self.kb_manager.STAGE_TECHNICAL_AUTHOR)
+        feedback = self._get_feedback_for_stage(STAGE_TECHNICAL_AUTHOR)
         if feedback:
             console.print(
                 f"  [yellow]Applying review feedback: {feedback[:100]}...[/yellow]"
@@ -896,7 +908,7 @@ class AnalysisPipeline:
         user_context = getattr(self.metadata, "user_context", None)
 
         # Get feedback for this stage (from review session)
-        feedback = self._get_feedback_for_stage(self.kb_manager.STAGE_COORDINATOR_PLAN)
+        feedback = self._get_feedback_for_stage(STAGE_COORDINATOR_PLAN)
         if feedback:
             console.print(
                 f"  [yellow]Applying review feedback: {feedback[:100]}...[/yellow]"

@@ -180,4 +180,4 @@ This is a **shallow mistake**: both sides describe "what changed," but a one-cha
 | 6 | Diagram generation merge | Medium | Medium | Low — internal refactor |
 | 7 | Schema mismatch fix | ✅ **Done** | — | — |
 | 8 | Diff caching | ✅ **Done** | — | — |
-| 9 | KB stage name decoupling | Small | Low | Low — path abstraction |
+| 9 | KB stage name decoupling | ✅ **Done** | — | — |

@@ -16,6 +16,12 @@ import yaml
 from rich.prompt import Prompt
 
 from ggdes.kb import KnowledgeBaseManager, StageStatus
+from ggdes.stages import (
+    STAGE_WORKTREE_SETUP,
+    STAGE_AST_PARSING_BASE,
+    STAGE_CHANGE_FILTER,
+    STAGE_SEMANTIC_DIFF,
+)
 
 
 # Import console from the cli package (set in __init__.py)
@@ -419,7 +425,7 @@ def run_analysis_pipeline(
 
     # Step 1: Setup worktrees (always needed)
     logger.info("Setting up worktrees...")
-    success = pipeline.run_stage(kb_manager.STAGE_WORKTREE_SETUP)
+    success = pipeline.run_stage(STAGE_WORKTREE_SETUP)
     if not success:
         logger.error("Worktree setup failed")
         console.print("\n[red]✗ Setup failed[/red]")
@@ -465,8 +471,8 @@ def run_analysis_pipeline(
         )
         console.print("[dim]Semantic diff disabled - running faster analysis[/dim]")
 
-        metadata.stages[kb_manager.STAGE_AST_PARSING_BASE].status = StageStatus.SKIPPED
-        metadata.stages[kb_manager.STAGE_SEMANTIC_DIFF].status = StageStatus.SKIPPED
+        metadata.stages[STAGE_AST_PARSING_BASE].status = StageStatus.SKIPPED
+        metadata.stages[STAGE_SEMANTIC_DIFF].status = StageStatus.SKIPPED
         kb_manager.save_metadata(analysis_id, metadata)
 
     # Configure change filter stage
@@ -474,7 +480,7 @@ def run_analysis_pipeline(
         logger.info("Semantic change filtering disabled - skipping change filter stage")
         console.print("[dim]Change filtering disabled - analyzing all changes[/dim]")
 
-        metadata.stages[kb_manager.STAGE_CHANGE_FILTER].status = StageStatus.SKIPPED
+        metadata.stages[STAGE_CHANGE_FILTER].status = StageStatus.SKIPPED
         kb_manager.save_metadata(analysis_id, metadata)
 
     # Step 2: Run full analysis

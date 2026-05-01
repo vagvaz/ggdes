@@ -13,6 +13,7 @@ from ggdes.cli.utils import (
 )
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
+from ggdes.stages import STAGE_COORDINATOR_PLAN, STAGE_OUTPUT_GENERATION
 
 
 @app.command()
@@ -87,17 +88,17 @@ def resume(
 
         # Reset coordinator_plan and output_generation stages to regenerate plans for new formats
         stages_to_reset = []
-        coordinator_stage = found_metadata.get_stage(kb_manager.STAGE_COORDINATOR_PLAN)
+        coordinator_stage = found_metadata.get_stage(STAGE_COORDINATOR_PLAN)
         if coordinator_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
             coordinator_stage.status = StageStatus.PENDING
             coordinator_stage.output_path = None
-            stages_to_reset.append(kb_manager.STAGE_COORDINATOR_PLAN)
+            stages_to_reset.append(STAGE_COORDINATOR_PLAN)
 
-        output_stage = found_metadata.get_stage(kb_manager.STAGE_OUTPUT_GENERATION)
+        output_stage = found_metadata.get_stage(STAGE_OUTPUT_GENERATION)
         if output_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
             output_stage.status = StageStatus.PENDING
             output_stage.output_path = None
-            stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
+            stages_to_reset.append(STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
             kb_manager.save_metadata(found_id, found_metadata)
@@ -161,17 +162,17 @@ def resume(
 
         # Reset coordinator_plan and output_generation stages to regenerate with new context
         stages_to_reset = []
-        coordinator_stage = found_metadata.get_stage(kb_manager.STAGE_COORDINATOR_PLAN)
+        coordinator_stage = found_metadata.get_stage(STAGE_COORDINATOR_PLAN)
         if coordinator_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
             coordinator_stage.status = StageStatus.PENDING
             coordinator_stage.output_path = None
-            stages_to_reset.append(kb_manager.STAGE_COORDINATOR_PLAN)
+            stages_to_reset.append(STAGE_COORDINATOR_PLAN)
 
-        output_stage = found_metadata.get_stage(kb_manager.STAGE_OUTPUT_GENERATION)
+        output_stage = found_metadata.get_stage(STAGE_OUTPUT_GENERATION)
         if output_stage.status in [StageStatus.COMPLETED, StageStatus.FAILED]:
             output_stage.status = StageStatus.PENDING
             output_stage.output_path = None
-            stages_to_reset.append(kb_manager.STAGE_OUTPUT_GENERATION)
+            stages_to_reset.append(STAGE_OUTPUT_GENERATION)
 
         if stages_to_reset:
             kb_manager.save_metadata(found_id, found_metadata)

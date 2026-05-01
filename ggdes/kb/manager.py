@@ -174,7 +174,8 @@ class AnalysisMetadata(BaseModel):
 class KnowledgeBaseManager:
     """Manage the knowledge base for analyses."""
 
-    # Standard stage names
+    # Stage name constants — set from canonical source below to avoid circular import.
+    # Canonical source: ggdes.stages.
     STAGE_WORKTREE_SETUP = "worktree_setup"
     STAGE_GIT_ANALYSIS = "git_analysis"
     STAGE_CHANGE_FILTER = "change_filter"
