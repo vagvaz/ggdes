@@ -648,35 +648,119 @@ class TestGetChangedFilesDetailed:
 
                     assert result == []
 
-    def test_get_changed_files_detailed_invalid_json(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
+
+class TestLoadChangedClasses:
+    """Tests for OutputAgent._load_changed_classes."""
+
+    def test_finds_class_with_change_category_removed(
+        self, tmp_path: Path
     ) -> None:
-        """Test _get_changed_files_detailed with invalid JSON."""
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_instance.get_analysis_path.return_value = Path(
-                "/test/kb/test_analysis_001"
-            )
-            mock_kb_class.return_value = mock_kb_instance
+        """_load_changed_classes should detect 'removed' change_category.
 
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
+        Regression test: producer (semantic_diff.py) writes 'removed' but
+        consumer checked for 'deleted', silently missing removed classes.
+        """
+        from ggdes.agents.output_agents.base import OutputAgent
 
-                with (
-                    patch("ggdes.pipeline.Path.exists", return_value=True),
-                    patch(
-                        "builtins.open",
-                        mock_open(read_data="invalid json"),
-                    ),
-                    patch(
-                        "ggdes.pipeline.json.loads",
-                        side_effect=json.JSONDecodeError("test", "", 0),
-                    ),
-                ):
-                    result = pipeline._get_changed_files_detailed()
+        # Create semantic diff data matching the producer format
+        semantic_diff_dir = tmp_path / "semantic_diff"
+        semantic_diff_dir.mkdir(parents=True)
+        result_json = {
+            "semantic_changes": [
+                {
+                    "element": {
+                        "element_type": "class",
+                        "name": "DeletedClass",
+                        "parent": None,
+                        "change_category": "removed",
+                    },
+                    "is_doc_only": False,
+                },
+                {
+                    "element": {
+                        "element_type": "class",
+                        "name": "ModifiedClass",
+                        "parent": None,
+                        "change_category": "modified",
+                    },
+                    "is_doc_only": False,
+                },
+                {
+                    "element": {
+                        "element_type": "class",
+                        "name": "DocOnlyClass",
+                        "parent": None,
+                        "change_category": "modified",
+                    },
+                    "is_doc_only": True,
+                },
+                {
+                    "element": {
+                        "element_type": "method",
+                        "name": "some_method",
+                        "parent": "ParentClass",
+                        "change_category": "removed",
+                    },
+                    "is_doc_only": False,
+                },
+            ]
+        }
+        (semantic_diff_dir / "result.json").write_text(
+            json.dumps(result_json)
+        )
 
-                    assert result == []
+        agent = _make_minimal_output_agent(tmp_path)
+
+        with patch(
+            "ggdes.agents.output_agents.base.get_kb_path",
+            return_value=tmp_path,
+        ):
+            changed_classes = agent._load_changed_classes()
+
+        assert "DeletedClass" in changed_classes, (
+            "Class with change_category='removed' should be found"
+        )
+        assert "ModifiedClass" in changed_classes
+        assert "DocOnlyClass" not in changed_classes, (
+            "Doc-only change should be excluded"
+        )
+        assert "ParentClass" in changed_classes, (
+            "Parent of a removed method should be found"
+        )
+
+
+def _make_minimal_output_agent(kb_path: Path) -> "OutputAgent":
+    """Build a minimal concrete OutputAgent subclass for testing."""
+    from typing import Any
+    from ggdes.agents.output_agents.base import OutputAgent
+    from ggdes.config import GGDesConfig
+
+    class _TestAgent(OutputAgent):
+        format_name = "test"
+        file_extension = ".test"
+
+        def _load_plan(self) -> dict[str, Any] | None:
+            return None
+
+        def _convert(
+            self,
+            content: Any,
+            output_file: Path,
+            diagrams_dir: Path,
+        ) -> Path:
+            return output_file
+
+    config = MagicMock(spec=GGDesConfig)
+    config.paths = MagicMock()
+    config.paths.knowledge_base = str(kb_path)
+    config.paths.output = str(kb_path)
+    config.paths.worktrees = str(kb_path)
+
+    return _TestAgent(
+        repo_path=Path("/fake/repo"),
+        config=config,
+        analysis_id="test_analysis_001",
+    )
 
 
 class TestBuildToolExecutor:

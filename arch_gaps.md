@@ -174,7 +174,7 @@ This is a **shallow mistake**: both sides describe "what changed," but a one-cha
 |---|-------------|--------|----------|------|
 | 1 | Pipeline stage extraction | Medium | High | Low — mechanical extract |
 | 2 | Web module split | Medium | High | Low — route organization |
-| 3 | Output agent consolidation | Medium | Medium | Low — shared infra |
+| 3 | Output agent consolidation | ✅ **Done** | — | — |
 | 4 | Playwright browser reuse | Small | Medium | Low — singleton pattern |
 | 5 | Semantic diff language adapters | Medium | High | Medium — changes detection |
 | 6 | Diagram generation merge | Medium | Medium | Low — internal refactor |

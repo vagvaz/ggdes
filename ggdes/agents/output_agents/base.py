@@ -333,7 +333,7 @@ class OutputAgent(ABC):
                         if parent and element.get("change_category") in (
                             "added",
                             "modified",
-                            "deleted",
+                            "removed",
                         ):
                             changed_classes.add(parent)
                 except Exception:
