@@ -211,22 +211,39 @@ class TechnicalAuthor:
 
         return elements
 
-    def _find_changed_elements(
-        self, change_summary: ChangeSummary, ast_elements: list[CodeElement]
+    def _load_changed_ast_data(
+        self, which: str, changed_files: list[str]
     ) -> list[CodeElement]:
-        """Find code elements that appear in changed files."""
-        changed_files = {f.path for f in change_summary.files_changed}
+        """Load AST data for specific changed files only.
 
-        changed_elements = []
-        for elem in ast_elements:
-            # Check if element's file is in changed files
-            if any(
-                elem.file_path.endswith(f) or f.endswith(elem.file_path)
-                for f in changed_files
-            ):
-                changed_elements.append(elem)
+        Avoids loading all AST files and then filtering — reads only the
+        JSON files that correspond to changed file paths.
 
-        return changed_elements
+        Args:
+            which: ``"base"`` or ``"head"``
+            changed_files: List of file paths relative to repo root
+
+        Returns:
+            List of code elements for changed files
+        """
+        ast_dir = get_kb_path(self.config, self.analysis_id) / f"ast_{which}"
+        if not ast_dir.exists():
+            return []
+
+        expected = {f"{path.replace('/', '_')}.json" for path in changed_files}
+
+        elements = []
+        for json_file in ast_dir.glob("*.json"):
+            if json_file.name not in expected:
+                continue
+            try:
+                data = json.loads(json_file.read_text())
+                for elem_data in data.get("elements", []):
+                    elements.append(CodeElement(**elem_data))
+            except Exception:
+                continue
+
+        return elements
 
     def _build_source_code_context(
         self,
@@ -672,39 +689,19 @@ class TechnicalAuthor:
             f"  [dim]Git analysis found {len(change_summary.files_changed)} changed files[/dim]"
         )
 
-        base_elements = self._load_ast_data("base")
-        head_elements = self._load_ast_data("head")
+        # Extract changed file paths from git analysis
+        changed_file_paths = [f.path for f in change_summary.files_changed]
+
+        # Load AST data for changed files only (avoids loading all files then filtering)
+        changed_base = self._load_changed_ast_data("base", changed_file_paths)
+        changed_head = self._load_changed_ast_data("head", changed_file_paths)
 
         console.print(
-            f"  [dim]Loaded {len(base_elements)} AST elements from base[/dim]"
+            f"  [dim]Loaded {len(changed_base)} base AST elements from changed files[/dim]"
         )
         console.print(
-            f"  [dim]Loaded {len(head_elements)} AST elements from head[/dim]"
+            f"  [dim]Loaded {len(changed_head)} head AST elements from changed files[/dim]"
         )
-
-        # Find elements in changed files
-        changed_base = self._find_changed_elements(change_summary, base_elements)
-        changed_head = self._find_changed_elements(change_summary, head_elements)
-
-        console.print(
-            f"  [dim]Found {len(changed_base)} changed elements in base[/dim]"
-        )
-        console.print(
-            f"  [dim]Found {len(changed_head)} changed elements in head[/dim]"
-        )
-
-        # Drop non-changed elements and log
-        non_changed_base = len(base_elements) - len(changed_base)
-        non_changed_head = len(head_elements) - len(changed_head)
-
-        if non_changed_base > 0:
-            console.print(
-                f"  [dim]Dropping {non_changed_base} base AST elements not in changed files[/dim]"
-            )
-        if non_changed_head > 0:
-            console.print(
-                f"  [dim]Dropping {non_changed_head} head AST elements not in changed files[/dim]"
-            )
 
         # Compute source code diffs between base and head
         source_diffs = self._compute_source_diffs(changed_base, changed_head)

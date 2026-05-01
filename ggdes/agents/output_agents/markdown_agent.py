@@ -1,5 +1,6 @@
 """Markdown output agent for generating markdown documentation."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -220,12 +221,13 @@ title {diagram.title}
             f"\n[bold blue]Generating Markdown Document:[/bold blue] {plan.title}"
         )
 
-        # Generate document content
-        sections_content = []
-
-        for section in plan.sections:
-            content = asyncio.run(self._generate_section(section))
-            sections_content.append((section.title, content))
+        # Generate document content — all sections in parallel
+        sections_content = list(
+            zip(
+                [s.title for s in plan.sections],
+                asyncio.run(self._generate_sections_parallel(plan.sections)),
+            )
+        )
 
         # Generate diagrams directory
         output_dir = self.output_dir / "diagrams"
@@ -291,6 +293,24 @@ title {diagram.title}
             self.conversation.save(kb_path)
 
         return output_path
+
+    async def _generate_sections_parallel(
+        self, sections: list[SectionPlan]
+    ) -> list[str]:
+        """Generate all document sections in parallel.
+
+        Each section is an independent LLM call with its own facts and
+        code references. Running them concurrently cuts document
+        generation time from N×latency to 1×latency.
+
+        Args:
+            sections: List of section plans to generate
+
+        Returns:
+            List of markdown content strings, one per section (same order)
+        """
+        tasks = [self._generate_section(s) for s in sections]
+        return await asyncio.gather(*tasks)
 
     async def _generate_section(self, section: SectionPlan) -> str:
         """Generate content for a document section."""

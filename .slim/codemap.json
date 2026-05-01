@@ -1,7 +1,7 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "last_run": "2026-05-01T05:45:01.239Z",
+    "last_run": "2026-05-01T08:48:02.096Z",
     "root": "/home/vagvaz/Projects/ai/ggdes",
     "include_patterns": [
       "ggdes/**/*.py",
@@ -27,10 +27,10 @@
     "ggdes/agents/git_analyzer.py": "3b92011edc92293253c3a04e27c1c8a2",
     "ggdes/agents/output_agents/__init__.py": "e169a1cb50835bdc475806686a5f9205",
     "ggdes/agents/output_agents/base.py": "80efcc3e8cfcadec8a0646f5c50650ce",
-    "ggdes/agents/output_agents/docx_agent.py": "8d42c48d1dcfccec3d8a1d1ca2a8d157",
+    "ggdes/agents/output_agents/docx_agent.py": "23f0a4d45540e9c73c5aeea78a6976bf",
     "ggdes/agents/output_agents/markdown_agent.py": "1647cd51c52407a24b52e359f7b0b132",
     "ggdes/agents/output_agents/pdf_agent.py": "ce8914e53340072d48c6bee13026f685",
-    "ggdes/agents/output_agents/pptx_agent.py": "f04fb1c49aa58fed20924592115ce5d0",
+    "ggdes/agents/output_agents/pptx_agent.py": "ab02dd2b1d7e48db153a5718083267c9",
     "ggdes/agents/skill_utils.py": "159067605f6498929061abca97f1b471",
     "ggdes/agents/technical_author.py": "0b27fbd7afd921a0749003333c4f729f",
     "ggdes/cli/__init__.py": "8a0ceb146180a74db9c0a0226bcc1d9b",
@@ -38,7 +38,7 @@
     "ggdes/cli/commands/analyze.py": "55a2f7e909ddeb1e4860d49e71dae853",
     "ggdes/cli/commands/compare.py": "78040e601a8b70c15799038c455184c8",
     "ggdes/cli/commands/config_cmd.py": "a5c407e7720522dee382a83b76edf744",
-    "ggdes/cli/commands/doctor.py": "1d5d87708ed96d4eb1a311f4118790b2",
+    "ggdes/cli/commands/doctor.py": "4fbf93626f612b4150fcab48b6dd4942",
     "ggdes/cli/commands/export_cmd.py": "2412a6becb280a8e76451375f5df39af",
     "ggdes/cli/commands/manage.py": "6fb19674056eb14b59d3f07a05efa911",
     "ggdes/cli/commands/resume.py": "7effb0a7842c6b724d5255eaba891c3f",
@@ -140,15 +140,15 @@
     "ggdes/worktree/__init__.py": "d3f9c59177620dd16d4824a53c81e072",
     "ggdes/worktree/manager.py": "e3ac957cca99b3c2f9b2eb5864708e46",
     "main.py": "cd4d84eb6ee1c2bb9cbf3d2843563597",
-    "pyproject.toml": "bf0f1f932466f306f71b660c5ba57572"
+    "pyproject.toml": "9f4fb576c40a97ce0acd8fa743e20f04"
   },
   "folder_hashes": {
-    ".": "d9f7daba0c4e7273c428af2b5924375c",
-    "ggdes": "e594bc7d021e209b211f27375db1c6a1",
-    "ggdes/agents": "7718188f63672de9b3f64f3e38254eed",
-    "ggdes/agents/output_agents": "6448336f00563ca4144300f2a7508b19",
-    "ggdes/cli": "8f2e7798e255b14a591ccb50cb431f11",
-    "ggdes/cli/commands": "479ab9e9982fafcf152b8c6a4cbc6f13",
+    ".": "0dd2510fe875a9d9811aa1aa60eb7579",
+    "ggdes": "43fd5c9c8ad3e8ea90432947dd5fb639",
+    "ggdes/agents": "c52486925b47b2e7e362e3c2458a93d2",
+    "ggdes/agents/output_agents": "3e83b12989e446d870f84b4aefb440c9",
+    "ggdes/cli": "af5434ec4f067557418256551ef32c5d",
+    "ggdes/cli/commands": "c5592e606c1e805f03f3490fc6afb622",
     "ggdes/config": "566c98422c488eeb3b8d6da697da2366",
     "ggdes/diagrams": "c8ee44fd6b261f1b4a8cd2e148d17db6",
     "ggdes/kb": "5d400299ff84fb1028e03704a76e2fb3",

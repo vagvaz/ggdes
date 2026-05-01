@@ -99,3 +99,4 @@ Git Commits
 - **Diff caching**: Git diff cached to KB after git analysis; change_filter reads cache.
 - **Stage name constants**: Canonical source in `ggdes/stages/__init__.py`; callers import from there.
 - **Web module**: Split from 2198-line monolith into 9 files with APIRouter per concern.
+- **Doctor command**: Extended `ggdes doctor` with comprehensive system-level dependency checks (Java, Graphviz, Node.js, npm packages, LibreOffice, Poppler, Tesseract, Pandoc) organized by subsystem.

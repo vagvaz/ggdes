@@ -14,7 +14,7 @@ The core Python package for GGDes (Get from Git Design Documentation). Orchestra
 | `agents/` | LLM-powered agents: GitAnalyzer, TechnicalAuthor, Coordinator, output agents |
 | `kb/` | Knowledge base — persistent analysis artifacts on disk |
 | `parsing/` | AST parsing of source files |
-| `cli/` | Command-line interface (`ggdes analyze`, `ggdes resume`, etc.) |
+| `cli/` | Command-line interface (`ggdes analyze`, `ggdes resume`, `ggdes doctor`, etc.) |
 | `web/` | Web UI (FastAPI + WebSocket) |
 | `tui/` | Terminal UI (Textual) |
 | `schemas/` | Pydantic schemas for LLM structured output |
@@ -227,6 +227,6 @@ AnalysisPipeline.run_all_pending()
 - **LLM providers** (`ggdes/llm/`): All agent calls go through the provider abstraction with retry logic, structured output parsing, and thinking mode support
 - **Knowledge base** (`ggdes/kb/`): Every stage reads inputs and writes outputs to the KB on disk. Enables resume, comparison, and inspection
 - **Validation** (`ggdes/validation/`): Code references in LLM outputs are validated against parsed AST and git diff to prevent hallucinations
-- **Diagrams** (`ggdes/diagrams/`): PlantUML diagrams are auto-generated from technical facts and embedded in all output formats
+- **Diagrams** (`ggdes/diagrams/`): PlantUML diagrams are auto-generated from technical facts and embedded in all output formats (requires Java + Graphviz at runtime; verified by `ggdes doctor`)
 - **Review** (`ggdes/review/`): Interactive review sessions pause the pipeline after key stages, accumulating feedback for regeneration
 - **Worktrees** (`ggdes/worktree/`): Isolated git worktrees for base and head commits enable safe parallel AST parsing

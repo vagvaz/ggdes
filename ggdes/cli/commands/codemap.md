@@ -63,13 +63,21 @@ argument/option handling and orchestration logic.
 #### `doctor` (`doctor.py`)
 
 - **Options:** `--fix` — Attempt automatic fixes for issues found
-- **Checks performed:**
-  1. Python version
-  2. Required packages (typer, rich, pydantic, pyyaml, tree_sitter, anthropic, openai)
-  3. External tools (git, pandoc, node, java) via `shutil.which()`
-  4. PlantUML jar availability
-  5. Knowledge base directory existence
-- **Fixes:** Creates KB directory if missing; prints install instructions for PlantUML.
+- **Output sections** (printed with bold headers in order):
+  1. **Python Environment** — Python version; core package imports (`typer`, `rich`, `pydantic`, `pyyaml`, `tree_sitter`, `loguru`)
+  2. **Diagram Generation** — PlantUML jar presence; Java runtime (required); Graphviz `dot` with additional layout engines (`neato`, `twopi`, `circo`) checked via `_check_dot_features()`; notes which PlantUML diagram types require Graphviz
+  3. **Document Generation** — Node.js runtime; npm packages (`pptxgenjs`, `docx`) via `require.resolve()` using `_check_npm_package()`; Pandoc fallback
+  4. **PDF & Image Processing** — LibreOffice (`soffice`); Poppler (`pdftoppm`, `pdfimages`); Tesseract OCR
+  5. **Knowledge Base & Git** — Git availability (required); knowledge base directory existence (with analysis count)
+- **Helper functions:**
+  - `_check_exec(name, description, required=False)` — Checks if an executable is on `PATH` via `shutil.which()`. Prints green checkmark (`✓`) on success, red cross (`✗`) for missing required executables, yellow warning (`⚠`) for missing optional ones. Returns `bool`.
+  - `_check_npm_package(name)` — Checks if a global npm package is available by spawning `node -e "require.resolve('...')"` and inspecting the exit code. Prints green checkmark with resolved path, or yellow warning. Returns `bool`. Gracefully handles `FileNotFoundError` (Node.js not installed) and timeouts.
+  - `_check_dot_features()` — When `dot` is found, probes `dot -?` and checks `PATH` for additional Graphviz layout engines (`neato`, `twopi`, `circo`). Prints discovered layouts and documents which PlantUML diagram types require `dot` (activity, component, deployment, usecase). Silently handles missing `dot` or timeouts.
+- **Auto-fixes** (`--fix` flag):
+  - PlantUML jar missing → downloads `plantuml-1.2024.7.jar` from GitHub to `ggdes/diagrams/plantuml.jar`
+  - Knowledge base directory missing → creates it (including parents)
+  - Other issues (missing executables, npm packages) are reported but not auto-fixed
+- **Counting:** Tracks `issues` (red, typically missing required items), `warnings` (yellow, missing optional items), and `fixes` (green, auto-resolved). Prints a summary line at the end. When issues exist and `--fix` was not used, suggests `ggdes doctor --fix`.
 - **Pipeline stages triggered:** None.
 
 #### `export` (`export_cmd.py`)
@@ -169,5 +177,5 @@ CLI invocation → Typer dispatches to registered command
 - `analyze` and `resume` use `LockContext` from `ggdes.utils.lock`.
 - `server.py` commands import from `ggdes.tui`, `ggdes.tui.debug_view`, and `ggdes.web`.
 - `compare.py` imports `AnalysisComparator` from `ggdes.comparison`.
-- `doctor.py` imports `PlantUMLGenerator` from `ggdes.diagrams`.
+- `doctor.py` imports `PlantUMLGenerator` from `ggdes.diagrams` and `load_config` from `ggdes.config`.
 - `manage.py` imports `WorktreeManager` from `ggdes.worktree`.

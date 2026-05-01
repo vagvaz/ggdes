@@ -37,6 +37,9 @@ Git History
    (ggdes/agents/output_agents/)
 
 * Optional: ChangeFilter may run between GitAnalyzer and TechnicalAuthor
+* Output agents that invoke Node.js (DocxAgent, PptxAgent) set `NODE_PATH` in the subprocess
+  environment so that npm modules (`docx`, `pptxgenjs`) resolve correctly regardless of
+  working directory.
 ```
 
 ---

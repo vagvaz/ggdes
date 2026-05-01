@@ -184,7 +184,10 @@ fallback. Skill documentation loaded from `ggdes/skills/docx/SKILL.md`.
      docx-js `Paragraph` objects handling H1/H2/H3, bullets, numbered lists, and
      body text.
    - Diagram embedding: up to 3 PNG images embedded via `ImageRun`.
-2. Writes script to temp `.js` file and runs `node <script>`.
+2. Writes script to temp `.js` file and runs `node <script>` with
+   `env={**os.environ, "NODE_PATH": str(self.repo_path / "node_modules")}` so
+   Node.js can resolve the `docx` module from the project's `node_modules`
+   regardless of the working directory (`import os` added at module top).
 3. On success, validates with optional skill validation script.
 4. On failure (missing Node.js, script error, or non-zero exit), falls back to pandoc.
 
@@ -272,7 +275,10 @@ pandoc fallback. Skill documentation loaded from `ggdes/skills/pptx/SKILL.md`.
    - Iterates through slides, generating JavaScript for each based on layout type.
    - Rotates diagram images: every 3rd content slide gets a diagram overlay.
    - Remaining diagrams get dedicated full-slide dark-background slides.
-2. Writes script to temp `.js` file and runs `node <script>`.
+2. Writes script to temp `.js` file and runs `node <script>` with
+   `env={**os.environ, "NODE_PATH": str(self.repo_path / "node_modules")}` so
+   Node.js can resolve the `pptxgenjs` module from the project's `node_modules`
+   regardless of the working directory (`import os` added at module top).
 3. On failure, falls back to pandoc.
 
 **Slide layout generators (all in `pptx_agent.py`):**
