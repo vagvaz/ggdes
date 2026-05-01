@@ -503,6 +503,12 @@ class AnalysisPipeline:
         )
         output_path.write_text(json.dumps(change_summary.model_dump(), indent=2))
 
+        # Cache the raw diff for reuse by change_filter and other stages
+        raw_diff = getattr(analyzer, "_current_diff", None)
+        if raw_diff:
+            diff_path = output_path.parent / "diff.txt"
+            diff_path.write_text(raw_diff)
+
         console.print(
             f"  [dim]Analyzed {len(change_summary.files_changed)} files in {len(focus_commits) if focus_commits else 'full range'}[/dim]"
         )
@@ -559,22 +565,35 @@ class AnalysisPipeline:
             console.print("  [dim]Changes already filtered, skipping[/dim]")
             return True
 
-        # Get the git diff for classification
-        from ggdes.agents import GitAnalyzer
-
-        user_context = getattr(self.metadata, "user_context", None)
-        analyzer = GitAnalyzer(
-            self.repo_path, self.config, self.analysis_id, user_context=user_context
+        # Get the git diff for classification — prefer cached diff
+        diff_path = (
+            self.kb_manager.get_analysis_path(self.analysis_id)
+            / "git_analysis"
+            / "diff.txt"
         )
+        if diff_path.exists():
+            diff = diff_path.read_text()
+            console.print("  [dim]Using cached git diff[/dim]")
+        else:
+            # Fallback: compute diff (e.g. for resumed analyses before caching was added)
+            from ggdes.agents import GitAnalyzer
 
-        commit_range = self.metadata.commit_range
-        focus_commits = self.metadata.focus_commits
+            user_context = getattr(self.metadata, "user_context", None)
+            analyzer = GitAnalyzer(
+                self.repo_path,
+                self.config,
+                self.analysis_id,
+                user_context=user_context,
+            )
 
-        try:
-            diff = analyzer.get_diff(commit_range, focus_commits)
-        except Exception as e:
-            console.print(f"  [red]Error getting git diff:[/red] {e}")
-            return False
+            commit_range = self.metadata.commit_range
+            focus_commits = self.metadata.focus_commits
+
+            try:
+                diff = analyzer.get_diff(commit_range, focus_commits)
+            except Exception as e:
+                console.print(f"  [red]Error getting git diff:[/red] {e}")
+                return False
 
         # Run the change filter
         from ggdes.agents.change_filter import ChangeFilter

@@ -1250,3 +1250,75 @@ class TestGetChangedFilesFromAnalysis:
                     result = pipeline._get_changed_files_from_analysis()
 
                     assert result == []
+
+
+class TestDiffCaching:
+    """Tests for git diff caching between stages."""
+
+    def test_git_analysis_caches_diff(
+        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata, tmp_path: Path
+    ) -> None:
+        """_run_git_analysis should save the diff to git_analysis/diff.txt."""
+        mock_metadata.commit_range = "abc123..def456"
+        mock_metadata.focus_commits = None
+        mock_metadata.storage_policy = StoragePolicy.SUMMARY
+        mock_metadata.user_context = None
+
+        git_analysis_dir = tmp_path / "git_analysis"
+        git_analysis_dir.mkdir(parents=True)
+
+        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
+            mock_kb_instance = MagicMock()
+            mock_kb_instance.load_metadata.return_value = mock_metadata
+            mock_kb_instance.get_analysis_path.return_value = tmp_path
+            mock_kb_class.return_value = mock_kb_instance
+
+            with patch("ggdes.pipeline.WorktreeManager"):
+                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
+
+                analyzer = MagicMock()
+                analyzer._current_diff = "cached diff content"
+                fake_summary = MagicMock()
+                fake_summary.files_changed = []
+                fake_summary.change_type = "refactor"
+                fake_summary.impact = "low"
+                fake_summary.model_dump.return_value = {
+                    "files_changed": [],
+                    "change_type": "refactor",
+                    "impact": "low",
+                }
+                analyzer.analyze = AsyncMock(return_value=fake_summary)
+
+                with (
+                    patch(
+                        "ggdes.validation.validators.InputValidator"
+                    ) as mock_validator_class,
+                    patch("ggdes.pipeline.GitAnalyzer", return_value=analyzer),
+                    patch.object(
+                        pipeline.metadata, "start_stage", return_value=None
+                    ),
+                    patch.object(
+                        pipeline.metadata, "complete_stage", return_value=None
+                    ),
+                    patch.object(
+                        pipeline.metadata,
+                        "is_stage_completed",
+                        return_value=False,
+                    ),
+                ):
+                    mock_validator = MagicMock()
+                    mock_validator_class.return_value = mock_validator
+                    mock_validation = MagicMock()
+                    mock_validation.passed = True
+                    mock_validation.errors = []
+                    mock_validation.warnings = []
+                    mock_validator.validate_commit_range.return_value = (
+                        mock_validation
+                    )
+
+                    result = pipeline._run_git_analysis()
+
+                    assert result is True
+                    diff_file = git_analysis_dir / "diff.txt"
+                    assert diff_file.exists()
+                    assert diff_file.read_text() == "cached diff content"
