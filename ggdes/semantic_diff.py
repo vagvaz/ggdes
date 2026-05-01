@@ -720,6 +720,9 @@ class SemanticDiffAnalyzer:
         - Return types
         - Access modifiers (public/private)
         """
+        if self._is_cpp_file(file_path):
+            return self._detect_cpp_signature_changes(base_content, head_content, file_path)
+
         changes = []
 
         # Parse ASTs for both versions
@@ -854,6 +857,49 @@ class SemanticDiffAnalyzer:
 
         return changes
 
+    def _detect_cpp_signature_changes(
+        self, base_content: str, head_content: str, file_path: str
+    ) -> list[SemanticChange]:
+        """Detect function signature changes in C++ code using tree-sitter."""
+        changes: list[SemanticChange] = []
+        base_elems = self._parse_cpp_elements(base_content, file_path)
+        head_elems = self._parse_cpp_elements(head_content, file_path)
+
+        base_map = {e["name"]: e for e in base_elems if e["type"] == "function"}
+        head_map = {e["name"]: e for e in head_elems if e["type"] == "function"}
+
+        for name, head_elem in head_map.items():
+            base_elem = base_map.get(name)
+            if base_elem is None:
+                continue
+            if head_elem.get("parameters") != base_elem.get("parameters"):
+                changes.append(self._make_cpp_change(name, base_elem, head_elem, file_path))
+
+        return changes
+
+    def _make_cpp_change(
+        self, name: str, base_elem: dict, head_elem: dict, file_path: str
+    ) -> SemanticChange:
+        """Create a SemanticChange for a C++ signature modification."""
+        base_params = ", ".join(base_elem.get("parameters", []))
+        head_params = ", ".join(head_elem.get("parameters", []))
+        return SemanticChange(
+            change_type=SemanticChangeType.API_MODIFIED,
+            description=f"Function '{name}' parameters changed: ({base_params}) \u2192 ({head_params})",
+            file_path=file_path,
+            line_start=head_elem.get("line_start", 1),
+            line_end=head_elem.get("line_end", 1),
+            related_symbols=[name],
+            confidence=0.7,
+            impact_score=0.5,
+            element=SemanticChangeElement(
+                element_type="function",
+                name=name,
+                parent=None,
+                change_category="modified",
+            ),
+        )
+
     def _detect_documentation_changes(
         self,
         base_content: str,
@@ -864,8 +910,8 @@ class SemanticDiffAnalyzer:
         changes = []
 
         # Simple heuristic: count docstrings and comments
-        base_docstrings = self._count_docstrings(base_content)
-        head_docstrings = self._count_docstrings(head_content)
+        base_docstrings = self._count_docstrings(base_content, file_path)
+        head_docstrings = self._count_docstrings(head_content, file_path)
 
         # DOCUMENTATION_ADDED: when going from 0 to >0 docstrings
         if base_docstrings == 0 and head_docstrings > 0:
@@ -908,8 +954,8 @@ class SemanticDiffAnalyzer:
         changes = []
 
         # Count control flow constructs
-        base_control = self._count_control_structures(base_content)
-        head_control = self._count_control_structures(head_content)
+        base_control = self._count_control_structures(base_content, file_path)
+        head_control = self._count_control_structures(head_content, file_path)
 
         # Get threshold from config if available, default to 2
         config_sd = getattr(self.config, "semantic_diff", None)
@@ -948,8 +994,8 @@ class SemanticDiffAnalyzer:
         changes = []
 
         # Count try-except blocks using AST
-        base_try = self._count_try_blocks(base_content)
-        head_try = self._count_try_blocks(head_content)
+        base_try = self._count_try_blocks(base_content, file_path)
+        head_try = self._count_try_blocks(head_content, file_path)
 
         if head_try > base_try:
             confidence = self._calculate_confidence(
@@ -981,8 +1027,10 @@ class SemanticDiffAnalyzer:
 
         return changes
 
-    def _count_try_blocks(self, content: str) -> int:
+    def _count_try_blocks(self, content: str, file_path: str = "") -> int:
         """Count try/except blocks using AST parsing."""
+        if file_path and self._is_cpp_file(file_path):
+            return self._count_cpp_error_handling(content)
         try:
             import ast
 
@@ -1026,54 +1074,158 @@ class SemanticDiffAnalyzer:
             - parent: parent class/namespace if applicable
         """
         elements: list[dict[str, Any]] = []
-
-        parser = self._get_ast_parser()
-        if parser is None:
+        tree = self._get_cpp_tree(content)
+        if tree is None:
             return elements
-
         try:
-            # Parse the content
-            result = parser.parse_file_content(content, file_path)
-            if not result or not result.elements:
+            from tree_sitter import Query
+
+            cpp_lang = self._get_ast_parser()._languages.get("cpp")
+            if cpp_lang is None:
                 return elements
 
-            for elem in result.elements:
-                # Map element_type to our format
-                elem_type_str = str(elem.element_type).lower()
-                if elem_type_str in ("class", "struct", "interface"):
-                    elem_type = "class"
-                elif elem_type_str in (
-                    "function",
-                    "method",
-                    "constructor",
-                    "destructor",
-                ):
-                    elem_type = "function"
-                else:
-                    continue  # Skip other element types
+            source_bytes = content.encode("utf-8")
 
-                # Extract parameter names from children or signature
-                parameters: list[str] = []
-                if elem.children:
-                    for child in elem.children:
-                        if str(child.element_type).lower() == "parameter":
-                            parameters.append(child.name)
+            query = Query(
+                cpp_lang,
+                """
+                (function_definition
+                  declarator: (function_declarator
+                    declarator: (identifier) @func.name
+                    parameters: (parameter_list) @func.params)) @func.def
+                (class_specifier
+                  name: (type_identifier) @class.name) @class.def
+            """,
+            )
+            captures = query.captures(tree.root_node)
 
-                elements.append(
-                    {
-                        "name": elem.name,
-                        "type": elem_type,
-                        "parameters": parameters,
-                        "line_start": elem.start_line,
-                        "line_end": elem.end_line,
-                        "parent": None,  # Could extract from nested structure if needed
-                    }
-                )
-
+            func_name = None
+            func_params: list[str] = []
+            for node, tag in captures:
+                if tag == "func.name":
+                    func_name = source_bytes[
+                        node.start_byte : node.end_byte
+                    ].decode("utf-8")
+                elif tag == "func.params":
+                    # Extract parameter names from the parameter list node
+                    param_cursor = node.walk()
+                    param_cursor.goto_first_child()
+                    while True:
+                        if param_cursor.node.type == "parameter_declaration":
+                            # Find identifier in the parameter
+                            id_node = _find_identifier(param_cursor.node)
+                            if id_node:
+                                param_name = source_bytes[
+                                    id_node.start_byte : id_node.end_byte
+                                ].decode("utf-8")
+                                func_params.append(param_name)
+                        if not param_cursor.goto_next_sibling():
+                            break
+                elif tag == "func.def":
+                    if func_name:
+                        elements.append(
+                            {
+                                "name": func_name,
+                                "type": "function",
+                                "parameters": func_params,
+                                "line_start": node.start_point[0],
+                                "line_end": node.end_point[0],
+                                "parent": None,
+                            }
+                        )
+                        func_name = None
+                        func_params = []
+                elif tag == "class.name":
+                    name = source_bytes[
+                        node.start_byte : node.end_byte
+                    ].decode("utf-8")
+                    elements.append(
+                        {
+                            "name": name,
+                            "type": "class",
+                            "parameters": [],
+                            "line_start": node.start_point[0],
+                            "line_end": node.end_point[0],
+                            "parent": None,
+                        }
+                    )
         except Exception:
             pass
 
         return elements
+
+    def _get_cpp_tree(self, content: str) -> Any | None:
+        """Parse C++ content with tree-sitter and return the syntax tree.
+
+        Returns None if tree-sitter C++ parser is unavailable.
+        """
+        parser = self._get_ast_parser()
+        if parser is None:
+            return None
+        try:
+            cpp_lang = parser._languages.get("cpp")
+            if cpp_lang is None:
+                # Try to initialize C++ language
+                try:
+                    from tree_sitter_cpp import language as cpp_language
+                    from tree_sitter import Language, Parser
+
+                    lang = Language(cpp_language())
+                    parser._languages["cpp"] = lang
+                    parser._parsers["cpp"] = Parser(lang)
+                    cpp_lang = lang
+                except ImportError:
+                    return None
+            cpp_parser = parser._parsers.get("cpp")
+            if cpp_parser is None:
+                return None
+            return cpp_parser.parse(bytes(content, "utf-8"))
+        except Exception:
+            return None
+
+    def _count_cpp_docstrings(self, content: str) -> int:
+        """Count comment blocks in C++ code (approximation of documentation)."""
+        import re
+
+        single_line = len(re.findall(r"^\s*//", content, re.MULTILINE))
+        multi_line = len(re.findall(r"/\*.*?\*/", content, re.DOTALL))
+        return single_line + multi_line
+
+    def _count_cpp_control_structures(self, content: str) -> int:
+        """Count control flow structures in C++ code using tree-sitter."""
+        tree = self._get_cpp_tree(content)
+        if tree is None:
+            return 0
+        try:
+            from tree_sitter import Query
+
+            cpp_lang = self._get_ast_parser()._languages["cpp"]
+            query = Query(
+                cpp_lang,
+                "(if_statement) @if; (for_statement) @for; (while_statement) @while; (switch_statement) @switch",
+            )
+            captures = query.captures(tree.root_node)
+            return len(captures)
+        except Exception:
+            return 0
+
+    def _count_cpp_error_handling(self, content: str) -> int:
+        """Count error handling constructs in C++ code using tree-sitter."""
+        tree = self._get_cpp_tree(content)
+        if tree is None:
+            return 0
+        try:
+            from tree_sitter import Query
+
+            cpp_lang = self._get_ast_parser()._languages["cpp"]
+            query = Query(
+                cpp_lang,
+                "(try_statement) @try; (catch_clause) @catch; (throw_statement) @throw",
+            )
+            captures = query.captures(tree.root_node)
+            return len(captures)
+        except Exception:
+            return 0
 
     def _parse_ast_elements(self, content: str, file_path: str) -> list[dict[str, Any]]:
         """Parse AST elements from code content.
@@ -1127,8 +1279,10 @@ class SemanticDiffAnalyzer:
 
         return elements
 
-    def _count_docstrings(self, content: str) -> int:
+    def _count_docstrings(self, content: str, file_path: str = "") -> int:
         """Count docstrings in code."""
+        if file_path and self._is_cpp_file(file_path):
+            return self._count_cpp_docstrings(content)
         try:
             import ast
 
@@ -1145,8 +1299,10 @@ class SemanticDiffAnalyzer:
         except (SyntaxError, ValueError):
             return 0
 
-    def _count_control_structures(self, content: str) -> int:
+    def _count_control_structures(self, content: str, file_path: str = "") -> int:
         """Count control flow structures (if, for, while)."""
+        if file_path and self._is_cpp_file(file_path):
+            return self._count_cpp_control_structures(content)
         try:
             import ast
 
@@ -1160,6 +1316,23 @@ class SemanticDiffAnalyzer:
             return count
         except (SyntaxError, ValueError):
             return 0
+
+
+def _find_identifier(node: Any) -> Any | None:
+    """Find the identifier node within a tree-sitter AST node.
+
+    Walks children looking for an identifier or type_identifier node.
+    Used to extract parameter names from C++ function declarations.
+    """
+    if node is None:
+        return None
+    if node.type in ("identifier", "type_identifier"):
+        return node
+    for child in node.children:
+        result = _find_identifier(child)
+        if result is not None:
+            return result
+    return None
 
 
 def _validate_semantic_diff_data(data: dict[str, Any]) -> None:
