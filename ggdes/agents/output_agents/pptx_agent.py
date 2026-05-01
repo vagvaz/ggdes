@@ -228,7 +228,7 @@ class PptxAgent(OutputAgent):
 
         for attempt in range(2):
             try:
-                response = self.llm.chat(
+                response: str = self.llm.chat(
                     messages=context,
                     temperature=0.4,
                     max_tokens=4096,

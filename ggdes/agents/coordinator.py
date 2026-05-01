@@ -259,7 +259,7 @@ class Coordinator:
         ctx_file = kb_path / "shared_context" / "context.json"
         if not ctx_file.exists():
             return None
-        return json.loads(ctx_file.read_text())
+        return json.loads(ctx_file.read_text())  # type: ignore[no-any-return]
 
     @classmethod
     def load_plan(cls, kb_path: Path, fmt: str) -> dict[str, Any] | None:
@@ -271,7 +271,7 @@ class Coordinator:
         plan_file = kb_path / "plans" / f"plan_{fmt}.json"
         if not plan_file.exists():
             return None
-        return json.loads(plan_file.read_text())
+        return json.loads(plan_file.read_text())  # type: ignore[no-any-return]
 
     @classmethod
     def list_available_formats(cls, kb_path: Path) -> list[str]:
@@ -280,4 +280,4 @@ class Coordinator:
         if not index_file.exists():
             return []
         data: dict[str, Any] = json.loads(index_file.read_text())
-        return data.get("available_formats", [])
+        return data.get("available_formats", [])  # type: ignore[no-any-return]

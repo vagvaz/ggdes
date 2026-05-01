@@ -141,6 +141,15 @@ class OutputConfig(BaseModel):
     formats: list[str] = Field(
         default_factory=lambda: ["markdown", "docx", "pptx", "pdf"]
     )
+    max_section_tokens: int = 28000
+    """Approximate token budget per section generation prompt.
+
+    When the estimated prompt size exceeds this threshold and the
+    section contains more than 3 facts, the facts are split into
+    batches and generated as separate chunks.  The value is a rough
+    character-count estimate (~4 chars/token); adjust for your
+    model's context window minus expected response length.
+    """
 
 
 class RepoConfig(BaseModel):

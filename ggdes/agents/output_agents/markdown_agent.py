@@ -219,10 +219,10 @@ class MarkdownAgent(OutputAgent):
         )
 
         # Call LLM
-        from ggdes.schemas import StoragePolicy as _SP
+        from ggdes.schemas import StoragePolicy
 
         self._init_conversation(
-            shared.get("storage_policy", _SP.SUMMARY) or _SP.SUMMARY
+            shared.get("storage_policy", StoragePolicy.SUMMARY) or StoragePolicy.SUMMARY
         )
         if not self.conversation:
             raise RuntimeError("Conversation not initialized")
@@ -275,7 +275,7 @@ class MarkdownAgent(OutputAgent):
             diagrams.append(
                 DiagramSpec(
                     diagram_type=diag_data.get("type", "architecture"),
-                    title=diag_data.get("title", f"Diagram"),
+                    title=diag_data.get("title", "Diagram"),
                     description=diag_data.get("description", ""),
                     elements_to_include=diag_data.get("elements", []),
                     format="plantuml",
@@ -322,7 +322,7 @@ class MarkdownAgent(OutputAgent):
 
         # Strategy 1: raw
         try:
-            return json.loads(text)
+            return json.loads(text)  # type: ignore[no-any-return]
         except json.JSONDecodeError:
             pass
 
@@ -332,7 +332,7 @@ class MarkdownAgent(OutputAgent):
             end = text.find("```", start)
             if end != -1:
                 try:
-                    return json.loads(text[start:end].strip())
+                    return json.loads(text[start:end].strip())  # type: ignore[no-any-return]
                 except json.JSONDecodeError:
                     pass
 
@@ -347,7 +347,7 @@ class MarkdownAgent(OutputAgent):
                     depth -= 1
                     if depth == 0:
                         try:
-                            return json.loads(text[brace_start : i + 1])
+                            return json.loads(text[brace_start : i + 1])  # type: ignore[no-any-return]
                         except json.JSONDecodeError:
                             break
         return None
@@ -511,6 +511,7 @@ title {diagram.title}
             zip(
                 [s.title for s in plan.sections],
                 asyncio.run(self._generate_sections_parallel(plan.sections)),
+                strict=False,
             )
         )
 
@@ -601,9 +602,6 @@ title {diagram.title}
                → validate with CodeReferenceValidator → cache → return
         """
         import hashlib
-        import json
-
-        from ggdes.validation.code_references import CodeReferenceValidator
 
         logger.info(
             "MarkdownAgent: generating section | title={} facts={} model={}",
@@ -680,15 +678,15 @@ title {diagram.title}
 
         # --- 5. Estimate token count & chunk if necessary ---
         estimated_tokens = len(full_prompt) // 4  # rough: ~4 chars/token
-        MAX_SECTION_TOKENS = 28000  # leave room for response
-        if estimated_tokens > MAX_SECTION_TOKENS and len(facts) > 3:
+        max_tok = self.config.output.max_section_tokens  # from ggdes.yaml
+        if estimated_tokens > max_tok and len(facts) > 3:
             logger.warning(
                 "MarkdownAgent: section prompt ~{} tokens, chunking | title={}",
                 estimated_tokens,
                 section.title,
             )
             return await self._generate_section_chunked(
-                section, facts, MAX_SECTION_TOKENS
+                section, facts, max_tok
             )
 
         # --- 6. Call LLM with error handling ---
@@ -915,13 +913,13 @@ title {diagram.title}
         model it's part N of M.  Results are concatenated with chunk
         separators.
         """
-        CHUNK_SIZE = 4  # facts per chunk
+        chunk_size = 4  # facts per chunk
         chunks: list[str] = []
-        n_chunks = (len(facts) + CHUNK_SIZE - 1) // CHUNK_SIZE
+        n_chunks = (len(facts) + chunk_size - 1) // chunk_size
 
-        for i in range(0, len(facts), CHUNK_SIZE):
-            chunk_num = (i // CHUNK_SIZE) + 1
-            sub_facts = facts[i : i + CHUNK_SIZE]
+        for i in range(0, len(facts), chunk_size):
+            chunk_num = (i // chunk_size) + 1
+            sub_facts = facts[i : i + chunk_size]
 
             fact_lines: list[str] = []
             for fact in sub_facts:
