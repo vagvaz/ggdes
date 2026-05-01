@@ -293,7 +293,7 @@ class PptxAgent(OutputAgent):
         """
         return super().generate(**kwargs)
 
-    def _prepare_content(self, content: str) -> dict:
+    def _prepare_content(self, content: str) -> dict[str, Any]:
         """Preprocess markdown content into slides with a color palette.
 
         Returns a dict with 'slides', 'palette', and 'content' keys.
@@ -312,7 +312,7 @@ class PptxAgent(OutputAgent):
             "content": content,
         }
 
-    def _convert(self, content: dict, output_file: Path, diagrams_dir: Path) -> Path:
+    def _convert(self, content: dict[str, Any], output_file: Path, diagrams_dir: Path) -> Path:
         """Convert slides to PPTX using pptxgenjs (Node.js) with pandoc fallback."""
         from rich.console import Console
 

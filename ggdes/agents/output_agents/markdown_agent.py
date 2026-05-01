@@ -109,7 +109,7 @@ class MarkdownAgent(OutputAgent):
         data = json.loads(facts_file.read_text())
         return [TechnicalFact(**fact_data) for fact_data in data]
 
-    def _load_plan(self) -> DocumentPlan | None:
+    def _load_plan(self) -> DocumentPlan | None:  # type: ignore[override]
         """Load document plan from KB."""
         import json
 
