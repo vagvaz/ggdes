@@ -31,6 +31,7 @@ class DocxAgent(OutputAgent):
             repo_path, config, analysis_id, review_feedback=review_feedback
         )
         self.format_name = "docx"
+        self.file_extension = ".docx"
         self.skill_content = self._load_skill("docx")
 
         # Load user context from document plan
@@ -49,129 +50,42 @@ class DocxAgent(OutputAgent):
         result: dict[str, Any] = json.loads(plan_file.read_text())
         return result
 
-    def _get_content_for_docx(self) -> str:
-        """Extract content from markdown or plan for docx generation."""
-        import glob
-
-        # Try to find markdown file
-        md_path = self.output_dir / f"{self.analysis_id}-*.md"
-        md_files = glob.glob(str(md_path))
-
-        if md_files:
-            content: str = Path(md_files[0]).read_text()
-            return content
-
-        # Fallback: build content from plan sections (plan has no "content" field)
-        plan = self._load_plan()
-        if plan:
-            logger.info("No markdown file found, building content from plan sections")
-            return self._build_content_from_plan(plan)
-
-        return ""
-
     def generate(self, **kwargs: Any) -> Path:
         """Generate Word document.
 
-        Args:
-            **kwargs: Additional arguments including auto_generate_diagrams
-
-        Returns:
-            Path to generated docx file
+        Delegates to the base class template method.
         """
-        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
-        """Generate Word document using docx skill patterns with integrated diagrams.
+        return super().generate(**kwargs)
 
-        Args:
-            auto_generate_diagrams: Whether to auto-generate diagrams from facts
-
-        Returns:
-            Path to generated docx file
-        """
+    def _convert(self, content: str, output_file: Path, diagrams_dir: Path) -> Path:
+        """Convert markdown content to DOCX using docx-js (Node.js) with pandoc fallback."""
         from rich.console import Console
 
         console = Console()
 
-        # Setup output path
-        output_dir = self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{self.analysis_id}-document.docx"
-
-        console.print("\n[bold blue]Generating Word Document...[/bold blue]")
-
-        # Get content
-        content = self._get_content_for_docx()
-
-        # Inject review feedback if available
-        section_fb = self._build_section_feedback_block()
-        if self.review_feedback or section_fb:
-            feedback_parts = []
-            if section_fb:
-                feedback_parts.append(section_fb)
-            if self.review_feedback:
-                feedback_parts.append(
-                    "╔══════════════════════════════════════════════════════════════════╗\n"
-                    "║         ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️             ║\n"
-                    "╚══════════════════════════════════════════════════════════════════╝\n\n"
-                    f"{self.review_feedback}"
-                )
-            feedback_block = (
-                "\n\n## User Feedback (MUST INCORPORATE)\n\n"
-                + "\n\n".join(feedback_parts)
-                + "\n\nThe document above must be updated to incorporate this feedback.\n"
-            )
-            content += feedback_block
-
-        # Generate diagrams
-        diagrams_dir = output_dir / "diagrams"
-        diagrams_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load facts for diagram generation
-        all_facts = []
-        plan = self._load_plan()
-        if plan and auto_generate_diagrams:
-            console.print("  [dim]Generating diagrams...[/dim]")
-            all_facts = self._load_technical_facts()
-
-            # Generate diagrams
-            if all_facts:
-                diagram_list = self._generate_diagrams_for_facts(
-                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
-                )
-                console.print(
-                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
-                )
-
-        # Generate docx using docx-js via Node.js
+        # Generate docx-js script
         docx_js_script = self._generate_docx_script(content, diagrams_dir, output_file)
 
         # Write temporary JS file
-        js_file = output_dir / f"{self.analysis_id}_generate_docx.js"
+        js_file = output_file.parent / f"{self.analysis_id}_generate_docx.js"
         js_file.write_text(docx_js_script)
 
         try:
-            # Run docx-js script
             subprocess.run(
                 ["node", str(js_file)],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-
             console.print(f"  [green]✓ Document generated:[/green] {output_file}")
-
-            # Validate output if validation script exists
             self._validate_docx(output_file)
-
         except subprocess.CalledProcessError:
-            # Fallback to pandoc if docx-js fails
             console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except FileNotFoundError:
-            # Node not available, use pandoc
             console.print("  [yellow]⚠ Node.js not available, using pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         finally:
-            # Cleanup temp file
             if js_file.exists():
                 js_file.unlink()
 

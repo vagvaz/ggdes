@@ -70,3 +70,26 @@ Use these terms (from LANGUAGE.md conventions):
 7. **technical_author** — Synthesize technical facts
 8. **coordinator_plan** — Create document generation plans
 9. **output_generation** — Generate documents in target formats
+
+## Output Agents
+
+### Template Method Pattern
+Each format agent (docx, pdf, pptx) uses the **Template Method** pattern:
+
+- `OutputAgent.generate()` is a concrete template method in the base class
+- It orchestrates: content loading → feedback injection → preprocessing → diagram generation → format conversion
+- Each subclass implements only `_convert(content, output_file, diagrams_dir)` for format-specific work
+- Optionally overrides `_prepare_content(content)` for preprocessing (e.g., pptx slide parsing)
+
+### Content Source
+All output agents read markdown content from the pre-rendered markdown file
+(via `_get_content()` in the base class), rather than generating content independently.
+Fallback: build content from the document plan. This separates content generation
+from format rendering.
+
+### Vocabulary
+- **OutputAgent** — base class with template method `generate()` and abstract `_convert()`
+- **Template Method** — the shared preparation pipeline in `OutputAgent.generate()`
+- **_convert** — the format-specific seam that each adapter implements
+- **_prepare_content** — optional preprocessing hook (e.g., pptx palette + slide parsing)
+- **format_name / file_extension** — class-level metadata set by each agent

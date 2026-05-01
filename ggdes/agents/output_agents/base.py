@@ -930,14 +930,180 @@ class OutputAgent(ABC):
             )
             return None
 
-    @abstractmethod
+    # --- Template method for document generation ---
+
+    format_name: str = ""
+    """Display name used in console output (e.g. \"docx\", \"pdf\")."""
+
+    file_extension: str = ""
+    """File extension including dot (e.g. \".docx\", \".pdf\")."""
+
     def generate(self, **kwargs: Any) -> Path:
-        """Generate output document.
+        """Template method for document generation.
+
+        Orchestrates the shared preparation pipeline (content loading, feedback
+        injection, diagram generation) and delegates format-specific conversion
+        to :meth:`_convert`.
+
+        Subclasses should implement :meth:`_convert` and may optionally override
+        :meth:`_prepare_content` for format-specific preprocessing.
 
         Args:
-            **kwargs: Additional arguments for document generation
+            **kwargs: May include ``auto_generate_diagrams`` (bool).
 
         Returns:
-            Path to generated file
+            Path to generated file.
         """
-        pass
+        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
+
+        output_dir = self.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / f"{self.analysis_id}-document{self.file_extension}"
+
+        console.print(
+            f"\n[bold blue]Generating {self.format_name.title()} Document..."
+            f"[/bold blue]"
+        )
+
+        # 1. Get markdown content (from pre-rendered markdown or plan)
+        content = self._get_content()
+
+        # 2. Inject review feedback
+        content = self._append_feedback(content)
+
+        # 3. Optional preprocessing (pptx: palette + slide parsing)
+        prepared = self._prepare_content(content)
+
+        # 4. Generate diagrams from technical facts
+        diagrams_dir = output_dir / "diagrams"
+        diagrams_dir.mkdir(parents=True, exist_ok=True)
+
+        if auto_generate_diagrams:
+            self._generate_and_log_diagrams(diagrams_dir)
+
+        # 5. Format-specific conversion
+        return self._convert(prepared, output_file, diagrams_dir)
+
+    def _get_content(self) -> str:
+        """Get markdown content from the pre-rendered markdown file or build
+        from the document plan.
+
+        Returns:
+            Markdown-formatted content string.
+        """
+        import glob
+
+        md_path = self.output_dir / f"{self.analysis_id}-*.md"
+        md_files = glob.glob(str(md_path))
+
+        if md_files:
+            return Path(md_files[0]).read_text()
+
+        # Fallback: build content from plan sections
+        plan = self._load_plan()
+        if plan:
+            from loguru import logger
+
+            logger.info(
+                "No markdown file found, building content from plan sections"
+            )
+            return self._build_content_from_plan(plan)
+
+        return ""
+
+    def _append_feedback(self, content: str) -> str:
+        """Append review feedback marker blocks to content if any feedback
+        is available.
+
+        Args:
+            content: Existing markdown content.
+
+        Returns:
+            Content with feedback appended (unchanged if no feedback).
+        """
+        section_fb = self._build_section_feedback_block()
+        if not self.review_feedback and not section_fb:
+            return content
+
+        feedback_parts: list[str] = []
+        if section_fb:
+            feedback_parts.append(section_fb)
+        if self.review_feedback:
+            feedback_parts.append(
+                "╔══════════════════════════════════════════════════════════════════╗\n"
+                "║         ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️             ║\n"
+                "╚══════════════════════════════════════════════════════════════════╝\n\n"
+                f"{self.review_feedback}"
+            )
+
+        feedback_block = (
+            "\n\n## User Feedback (MUST INCORPORATE)\n\n"
+            + "\n\n".join(feedback_parts)
+            + "\n\nThe document above must be updated to incorporate this feedback.\n"
+        )
+        return content + feedback_block
+
+    def _generate_and_log_diagrams(self, diagrams_dir: Path) -> None:
+        """Load technical facts and generate architecture / flow / class diagrams.
+
+        Args:
+            diagrams_dir: Directory to write diagram images into.
+        """
+        plan = self._load_plan()
+        if not plan:
+            return
+
+        console.print("  [dim]Generating diagrams...[/dim]")
+        all_facts = self._load_technical_facts()
+
+        if all_facts:
+            diagram_list = self._generate_diagrams_for_facts(
+                all_facts, diagrams_dir, ["architecture", "flow", "class"]
+            )
+            if diagram_list:
+                console.print(
+                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
+                )
+
+    def _prepare_content(self, content: str) -> Any:
+        """Optional preprocessing hook called after feedback injection.
+
+        Override in subclasses that need to transform the markdown content
+        before conversion (e.g. PPTX parses slides and selects a palette).
+
+        Args:
+            content: Markdown content with feedback appended.
+
+        Returns:
+            The value that will be passed as the first argument to
+            :meth:`_convert`. Default: the original content string.
+        """
+        return content
+
+    @abstractmethod
+    def _load_plan(self) -> dict[str, Any] | None:
+        """Load the document plan from the knowledge base.
+
+        Each format loads its own plan (e.g. ``plan_docx.json``).
+
+        Returns:
+            Plan dict or ``None`` if unavailable.
+        """
+        ...
+
+    @abstractmethod
+    def _convert(self, content: Any, output_file: Path, diagrams_dir: Path) -> Path:
+        """Format-specific document conversion.
+
+        Implement in each subclass.
+
+        Args:
+            content: The value returned by :meth:`_prepare_content` (by default
+                the markdown content string).
+            output_file: Path where the output file should be written.
+            diagrams_dir: Directory containing generated diagram images.
+
+        Returns:
+            Path to the generated file.
+        """
+        ...

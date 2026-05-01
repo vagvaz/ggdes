@@ -30,6 +30,7 @@ class PdfAgent(OutputAgent):
             repo_path, config, analysis_id, review_feedback=review_feedback
         )
         self.format_name = "pdf"
+        self.file_extension = ".pdf"
         self.skill_content = self._load_skill("pdf")
 
         # Load user context from document plan
@@ -48,108 +49,26 @@ class PdfAgent(OutputAgent):
         result: dict[str, Any] = json.loads(plan_file.read_text())
         return result
 
-    def _get_content_for_pdf(self) -> str:
-        """Extract content from markdown or plan for PDF generation."""
-        import glob
-
-        # Try to find markdown file
-        md_path = self.output_dir / f"{self.analysis_id}-*.md"
-        md_files = glob.glob(str(md_path))
-
-        if md_files:
-            content: str = Path(md_files[0]).read_text()
-            return content
-
-        # Fallback: build content from plan sections (plan has no "content" field)
-        plan = self._load_plan()
-        if plan:
-            logger.info("No markdown file found, building content from plan sections")
-            return self._build_content_from_plan(plan)
-
-        return ""
-
     def generate(self, **kwargs: Any) -> Path:
         """Generate PDF document.
 
-        Args:
-            **kwargs: Additional arguments including auto_generate_diagrams
-
-        Returns:
-            Path to generated pdf file
+        Delegates to the base class template method.
         """
-        auto_generate_diagrams = kwargs.get("auto_generate_diagrams", True)
-        """Generate PDF document using pdf skill patterns with integrated diagrams.
+        return super().generate(**kwargs)
 
-        Args:
-            auto_generate_diagrams: Whether to auto-generate diagrams from facts
-
-        Returns:
-            Path to generated pdf file
-        """
+    def _convert(self, content: str, output_file: Path, diagrams_dir: Path) -> Path:
+        """Convert markdown content to PDF using reportlab with pandoc fallback."""
         from rich.console import Console
 
         console = Console()
 
-        # Setup output path
-        output_dir = self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{self.analysis_id}-document.pdf"
-
-        console.print("\n[bold blue]Generating PDF Document...[/bold blue]")
-
-        # Get content
-        content = self._get_content_for_pdf()
-
-        # Inject review feedback if available
-        section_fb = self._build_section_feedback_block()
-        if self.review_feedback or section_fb:
-            feedback_parts = []
-            if section_fb:
-                feedback_parts.append(section_fb)
-            if self.review_feedback:
-                feedback_parts.append(
-                    "╔══════════════════════════════════════════════════════════════════╗\n"
-                    "║         ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️             ║\n"
-                    "╚══════════════════════════════════════════════════════════════════╝\n\n"
-                    f"{self.review_feedback}"
-                )
-            feedback_block = (
-                "\n\n## User Feedback (MUST INCORPORATE)\n\n"
-                + "\n\n".join(feedback_parts)
-                + "\n\nThe document above must be updated to incorporate this feedback.\n"
-            )
-            content += feedback_block
-
-        # Generate diagrams
-        diagrams_dir = output_dir / "diagrams"
-        diagrams_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load facts for diagram generation
-        all_facts = []
-        plan = self._load_plan()
-        if plan and auto_generate_diagrams:
-            console.print("  [dim]Generating diagrams...[/dim]")
-            all_facts = self._load_technical_facts()
-
-            # Generate diagrams
-            if all_facts:
-                diagram_list = self._generate_diagrams_for_facts(
-                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
-                )
-                console.print(
-                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
-                )
-
         try:
-            # Try reportlab first with diagram integration
             self._generate_with_reportlab(content, output_file, diagrams_dir)
             console.print(f"  [green]✓ Document saved:[/green] {output_file}")
         except ImportError:
-            # Fallback to pandoc
             console.print("  [yellow]⚠ Using pandoc fallback[/yellow]")
             self._fallback_to_pandoc(content, output_file)
         except Exception as e:
-            # Any other error, try pandoc
             console.print(f"  [yellow]⚠ Reportlab failed ({e}), using pandoc[/yellow]")
             self._fallback_to_pandoc(content, output_file)
 

@@ -90,6 +90,7 @@ class PptxAgent(OutputAgent):
             repo_path, config, analysis_id, review_feedback=review_feedback
         )
         self.format_name = "pptx"
+        self.file_extension = ".pptx"
         self.skill_content = self._load_skill("pptx")
 
         # Load user context from document plan
@@ -107,30 +108,6 @@ class PptxAgent(OutputAgent):
 
         result: dict[str, Any] = json.loads(plan_file.read_text())
         return result
-
-    def _get_content_for_pptx(self) -> str:
-        """Extract content from markdown or plan for PPTX generation."""
-        import glob
-
-        # Try to find markdown file in output directory (like PDF/DOCX agents do)
-        md_path = self.output_dir / f"{self.analysis_id}-*.md"
-        md_files = glob.glob(str(md_path))
-
-        if md_files:
-            content: str = Path(md_files[0]).read_text()
-            # Log info for debugging
-            logger.info(f"Found markdown file for PPTX content: {md_files[0]}")
-            return content
-
-        # Fallback: build markdown from plan sections (plan has no "content" field)
-        plan = self._load_plan()
-        if plan:
-            logger.info(
-                "No markdown file found, building PPTX content from plan sections"
-            )
-            return self._build_content_from_plan(plan)
-
-        return ""
 
     def _select_palette(self, content: str) -> dict[str, str]:
         """Select a color palette based on content keywords."""
@@ -153,111 +130,58 @@ class PptxAgent(OutputAgent):
     def generate(self, **kwargs: Any) -> Path:
         """Generate PowerPoint presentation.
 
-        Args:
-            **kwargs: Additional arguments including auto_generate_diagrams
+        Delegates to the base class template method.
+        """
+        return super().generate(**kwargs)
 
-        Returns:
-            Path to generated pptx file
+    def _prepare_content(self, content: str) -> dict:
+        """Preprocess markdown content into slides with a color palette.
+
+        Returns a dict with 'slides', 'palette', and 'content' keys.
         """
         from rich.console import Console
 
         console = Console()
 
-        # Setup output path
-        output_dir = self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{self.analysis_id}-presentation.pptx"
-
-        console.print("\n[bold blue]Generating PowerPoint Presentation...[/bold blue]")
-
-        # Get content
-        content = self._get_content_for_pptx()
-
-        # Select color palette based on content
         palette = self._select_palette(content)
         console.print(f"  [dim]Using {palette['primary']} color palette[/dim]")
 
-        # Inject review feedback if available
-        section_fb = self._build_section_feedback_block()
-        if self.review_feedback or section_fb:
-            feedback_parts = []
-            if section_fb:
-                feedback_parts.append(section_fb)
-            if self.review_feedback:
-                feedback_parts.append(
-                    "╔══════════════════════════════════════════════════════════════════╗\n"
-                    "║         ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️             ║\n"
-                    "╚══════════════════════════════════════════════════════════════════╝\n\n"
-                    f"{self.review_feedback}"
-                )
-            feedback_block = (
-                "\n\n## User Feedback (MUST INCORPORATE)\n\n"
-                + "\n\n".join(feedback_parts)
-                + "\n\nThe presentation above must be updated to incorporate this feedback.\n"
-            )
-            content += feedback_block
-
-        # Parse content into slides
         slides = self._parse_content_to_slides(content)
+        return {
+            "slides": slides,
+            "palette": palette,
+            "content": content,
+        }
+
+    def _convert(self, content: dict, output_file: Path, diagrams_dir: Path) -> Path:
+        """Convert slides to PPTX using pptxgenjs (Node.js) with pandoc fallback."""
+        from rich.console import Console
+
+        console = Console()
+        slides = content["slides"]
+        palette = content["palette"]
+
+        # Collect diagram files
+        diagram_files = (
+            list(diagrams_dir.glob("*.png")) if diagrams_dir.exists() else []
+        )
 
         if not slides:
             console.print(
                 "  [yellow]⚠ No slides generated from content - presentation will be empty[/yellow]"
             )
             logger.warning(
-                f"Empty slides list for PPTX (content length: {len(content)} chars)"
+                f"Empty slides list for PPTX (content length: {len(content.get('content', ''))} chars)"
             )
 
-        # Generate diagrams
-        diagrams_dir = self.output_dir / "diagrams"
-        diagrams_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load facts for diagram generation
-        all_facts = []
-        plan = self._load_plan()
-
-        if kwargs.get("auto_generate_diagrams", True) and plan:
-            console.print("  [dim]Generating diagrams...[/dim]")
-
-            # Try to load technical facts from KB
-            try:
-                from ggdes.schemas import TechnicalFact
-
-                facts_dir = (
-                    get_kb_path(self.config, self.analysis_id) / "technical_facts"
-                )
-                if facts_dir.exists():
-                    for fact_file in facts_dir.glob("*.json"):
-                        data = json.loads(fact_file.read_text())
-                        all_facts.append(TechnicalFact(**data))
-            except Exception as e:
-                console.print(f"  [dim]Could not load facts: {e}[/dim]")
-
-            # Generate diagrams
-            if all_facts:
-                diagram_list = self._generate_diagrams_for_facts(
-                    all_facts, diagrams_dir, ["architecture", "flow", "class"]
-                )
-                console.print(
-                    f"  [green]✓ Generated {len(diagram_list)} diagrams[/green]"
-                )
-
-        # Collect diagram file paths for integration
-        diagram_files = (
-            list(diagrams_dir.glob("*.png")) if diagrams_dir.exists() else []
-        )
-
-        # Generate pptx using pptxgenjs via Node.js
         pptx_js_script = self._generate_pptx_script(
             slides, output_file, diagrams_dir, diagram_files, palette
         )
 
-        # Write temporary JS file
-        js_file = output_dir / f"{self.analysis_id}_generate_pptx.js"
+        js_file = output_file.parent / f"{self.analysis_id}_generate_pptx.js"
         js_file.write_text(pptx_js_script)
 
         try:
-            # Run pptxgenjs script
             result = subprocess.run(
                 ["node", str(js_file)],
                 check=True,
@@ -266,20 +190,18 @@ class PptxAgent(OutputAgent):
             )
             if result.stdout:
                 logger.debug(f"Node.js stdout: {result.stdout.strip()}")
-            console.print(f"  [green]✓ Presentation saved:[/green] {output_file}")
-
+            console.print(f"  [green]✓ Presentation generated:[/green] {output_file}")
         except subprocess.CalledProcessError as e:
             logger.error(
                 f"Node.js script failed (exit {e.returncode}): stderr={e.stderr[:500]}"
             )
             console.print(f"  [yellow]⚠ Node.js error: {e.stderr[:200]}[/yellow]")
             console.print("  [yellow]⚠ Falling back to pandoc[/yellow]")
-            self._fallback_to_pandoc(content, output_file)
+            self._fallback_to_pandoc(content.get("content", ""), output_file)
         except FileNotFoundError:
             console.print("  [yellow]⚠ Node.js not available, using pandoc[/yellow]")
-            self._fallback_to_pandoc(content, output_file)
+            self._fallback_to_pandoc(content.get("content", ""), output_file)
         finally:
-            # Cleanup temp file
             if js_file.exists():
                 js_file.unlink()
 
