@@ -173,7 +173,7 @@ This is a **shallow mistake**: both sides describe "what changed," but a one-cha
 | # | Opportunity | Effort | Leverage | Risk |
 |---|-------------|--------|----------|------|
 | 1 | Pipeline stage extraction | ✅ **Done** | — | — |
-| 2 | Web module split | Medium | High | Low — route organization |
+| 2 | Web module split | ✅ **Done** | — | — |
 | 3 | Output agent consolidation | ✅ **Done** | — | — |
 | 4 | Playwright browser reuse | ✅ **Done** | — | — |
 | 5 | Semantic diff language adapters | ✅ **Done** | — | — |
