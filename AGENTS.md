@@ -596,3 +596,14 @@ Technical Facts → Document Plans → Output Generation
 - **PPTX** - PowerPoint presentations (requires Node.js + pptxgenjs)
 
 All formats support diagram integration and follow medium-specific best practices.
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.
