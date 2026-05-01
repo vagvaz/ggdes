@@ -172,12 +172,12 @@ This is a **shallow mistake**: both sides describe "what changed," but a one-cha
 
 | # | Opportunity | Effort | Leverage | Risk |
 |---|-------------|--------|----------|------|
-| 1 | Pipeline stage extraction | Medium | High | Low — mechanical extract |
+| 1 | Pipeline stage extraction | ✅ **Done** | — | — |
 | 2 | Web module split | Medium | High | Low — route organization |
 | 3 | Output agent consolidation | ✅ **Done** | — | — |
 | 4 | Playwright browser reuse | Small | Medium | Low — singleton pattern |
 | 5 | Semantic diff language adapters | Medium | High | Medium — changes detection |
 | 6 | Diagram generation merge | Medium | Medium | Low — internal refactor |
-| 7 | Schema mismatch fix | Trivial | Medium | None — string change |
+| 7 | Schema mismatch fix | ✅ **Done** | — | — |
 | 8 | Diff caching | Small | Low | None — additive cache |
 | 9 | KB stage name decoupling | Small | Low | Low — path abstraction |
