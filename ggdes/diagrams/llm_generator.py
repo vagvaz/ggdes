@@ -665,9 +665,9 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
     ) -> str | None:
         """Fallback to template-based generation."""
         from ggdes.diagrams import (
-            generate_architecture_diagram,
-            generate_flow_diagram,
-            generate_sequence_diagram,
+            _generate_architecture_plantuml as generate_architecture_diagram,
+            _generate_flow_plantuml as generate_flow_diagram,
+            _generate_sequence_plantuml as generate_sequence_diagram,
         )
 
         try:
@@ -729,7 +729,7 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
 
     def _generate_template_class_diagram(self, spec: ClassDiagramSpec) -> str | None:
         """Generate a class diagram using AST data for methods and relationships."""
-        from ggdes.diagrams import generate_class_diagram
+        from ggdes.diagrams import _generate_class_plantuml as generate_class_diagram
 
         ast_data = self._load_ast_class_data()
         if not ast_data:

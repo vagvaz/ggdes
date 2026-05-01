@@ -8,10 +8,6 @@ from typing import Any, Literal
 __all__ = [
     "LLMDiagramGenerator",
     "PlantUMLGenerator",
-    "generate_architecture_diagram",
-    "generate_class_diagram",
-    "generate_flow_diagram",
-    "generate_sequence_diagram",
 ]
 
 
@@ -351,7 +347,7 @@ class PlantUMLGenerator:
         return "\n".join(fixed_lines)
 
 
-def generate_architecture_diagram(
+def _generate_architecture_plantuml(
     components: list[dict[str, Any]],
     relationships: list[tuple[str, str, str]],
     title: str = "System Architecture",
@@ -400,7 +396,7 @@ def generate_architecture_diagram(
     return "\n".join(lines)
 
 
-def generate_flow_diagram(
+def _generate_flow_plantuml(
     steps: list[dict[str, Any]],
     title: str = "Process Flow",
     direction: str = "TB",
@@ -443,7 +439,7 @@ def generate_flow_diagram(
     return "\n".join(lines)
 
 
-def generate_class_diagram(
+def _generate_class_plantuml(
     classes: list[dict[str, Any]],
     relationships: list[tuple[str, str, str]] | None = None,
     title: str = "Class Diagram",
@@ -509,7 +505,7 @@ def generate_class_diagram(
     return "\n".join(lines)
 
 
-def generate_sequence_diagram(
+def _generate_sequence_plantuml(
     participants: list[str],
     messages: list[dict[str, Any]],
     title: str = "Sequence Diagram",

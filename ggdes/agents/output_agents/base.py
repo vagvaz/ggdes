@@ -606,7 +606,7 @@ class OutputAgent(ABC):
         Returns:
             Tuple of (title, path, type) or None if generation failed/skipped
         """
-        from ggdes.diagrams import generate_architecture_diagram
+        from ggdes.diagrams import _generate_architecture_plantuml as _fmt_arch
 
         # Check cache first
         if cache:
@@ -661,7 +661,7 @@ class OutputAgent(ABC):
             if not components:
                 return None
 
-            plantuml_code = generate_architecture_diagram(
+            plantuml_code = _fmt_arch(
                 components=components,
                 relationships=relationships,
                 title="System Architecture",
@@ -708,7 +708,7 @@ class OutputAgent(ABC):
         Extracts meaningful process flows from behavior and data flow facts,
         using before/after context to show how flows have changed.
         """
-        from ggdes.diagrams import generate_flow_diagram
+        from ggdes.diagrams import _generate_flow_plantuml as _fmt_flow
 
         # Check cache first
         if cache:
@@ -759,7 +759,7 @@ class OutputAgent(ABC):
             if not steps:
                 return None
 
-            plantuml_code = generate_flow_diagram(
+            plantuml_code = _fmt_flow(
                 steps=steps,
                 title="Process Flow",
                 direction="TB",
@@ -803,7 +803,7 @@ class OutputAgent(ABC):
         with facts providing context for which classes are relevant to the changes.
         Only includes changed classes and their direct dependencies to keep diagrams focused.
         """
-        from ggdes.diagrams import generate_class_diagram
+        from ggdes.diagrams import _generate_class_plantuml as _fmt_class
 
         # Check cache first
         if cache:
@@ -899,7 +899,7 @@ class OutputAgent(ABC):
                     if base in class_names:
                         relationships.append((cls_name, base, "extends"))
 
-            plantuml_code = generate_class_diagram(
+            plantuml_code = _fmt_class(
                 classes=plantuml_classes,
                 relationships=relationships,
                 title="Class Structure",

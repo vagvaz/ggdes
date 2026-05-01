@@ -177,7 +177,7 @@ This is a **shallow mistake**: both sides describe "what changed," but a one-cha
 | 3 | Output agent consolidation | ✅ **Done** | — | — |
 | 4 | Playwright browser reuse | ✅ **Done** | — | — |
 | 5 | Semantic diff language adapters | ✅ **Done** | — | — |
-| 6 | Diagram generation merge | Medium | Medium | Low — internal refactor |
+| 6 | Diagram generation merge | ✅ **Done** | — | — |
 | 7 | Schema mismatch fix | ✅ **Done** | — | — |
 | 8 | Diff caching | ✅ **Done** | — | — |
 | 9 | KB stage name decoupling | ✅ **Done** | — | — |
