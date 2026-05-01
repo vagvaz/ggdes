@@ -585,157 +585,400 @@ title {diagram.title}
         """Generate all document sections in parallel.
 
         Each section is an independent LLM call with its own facts and
-        code references. Running them concurrently cuts document
-        generation time from N×latency to 1×latency.
-
-        Args:
-            sections: List of section plans to generate
-
-        Returns:
-            List of markdown content strings, one per section (same order)
+        code references. When the provider supports ``async_chat`` this
+        provides real concurrency — N sections in ~1× latency.
         """
         tasks = [self._generate_section(s) for s in sections]
         return await asyncio.gather(*tasks)
 
     async def _generate_section(self, section: SectionPlan) -> str:
-        """Generate content for a document section."""
+        """Generate content for a document section.
+
+        Pipeline::
+
+            load facts → build prompt chunks → check cache (hash)
+            └→ if miss: estimate tokens → chunk if needed → call LLM
+               → validate with CodeReferenceValidator → cache → return
+        """
+        import hashlib
+        import json
+
+        from ggdes.validation.code_references import CodeReferenceValidator
+
         logger.info(
             "MarkdownAgent: generating section | title={} facts={} model={}",
             section.title,
             len(section.technical_facts),
             self.llm.model_name,
         )
-        # Load relevant facts
+
+        # --- 1. Load facts ---
         facts = self._load_facts(section.technical_facts)
 
-        # Build prompt
-        prompt = f"""Write the "{section.title}" section for a design document.
-
-Section Description: {section.description}
-
-Technical Facts to Include:
-"""
+        # --- 2. Build the fact summary block (shared between cache key & prompt) ---
+        fact_lines: list[str] = []
         for fact in facts:
-            prompt += f"- [{fact.category}] {fact.description}\n"
-            # Include source code snippets from facts
+            fact_lines.append(f"- [{fact.category}] {fact.description}\n")
             if fact.code_snippets:
                 for elem_name, code in list(fact.code_snippets.items())[:3]:
                     truncated = code[:500] + "..." if len(code) > 500 else code
-                    prompt += (
+                    fact_lines.append(
                         f"  Actual source ({elem_name}):\n  ```\n  {truncated}\n  ```\n"
                     )
+        fact_summaries = "".join(fact_lines)
 
-        if section.code_references:
-            prompt += f"\nCode References: {', '.join(section.code_references)}\n"
+        code_references_block = (
+            f"\nCode References: {', '.join(section.code_references)}\n"
+            if section.code_references
+            else ""
+        )
 
-        # Include source code from section plan (passed through from coordinator)
-        if section.source_code:
-            prompt += (
-                "\n=== ACTUAL SOURCE CODE (use ONLY this code for references) ===\n"
-            )
-            for elem_name, code in list(section.source_code.items())[:5]:
-                truncated = code[:500] + "..." if len(code) > 500 else code
-                prompt += f"\n{elem_name}:\n```\n{truncated}\n```\n"
-            prompt += "\n=== END SOURCE CODE ===\n"
+        source_code_block = self._build_source_code_block(section, max_chars=2500)
+        before_after_block = self._build_before_after_block(section, max_chars=2000)
+        usage_examples_block = self._build_usage_examples_block(section, max_chars=1500)
 
-        # Include before/after code comparisons from section plan
-        if section.before_after_code:
-            prompt += (
-                "\n=== CODE CHANGES (before/after comparisons) ===\n"
-                "Use these to accurately describe what changed. Reference the actual code.\n"
-            )
-            for elem_name, ba in list(section.before_after_code.items())[:5]:
-                before = ba.get("before", "")
-                after = ba.get("after", "")
-                diff_text = ba.get("diff", "")
-                if before and after:
-                    # Modified element
-                    before_trunc = before[:400] + "..." if len(before) > 400 else before
-                    after_trunc = after[:400] + "..." if len(after) > 400 else after
-                    prompt += f"\n--- {elem_name} (MODIFIED) ---\n"
-                    prompt += f"BEFORE:\n```\n{before_trunc}\n```\n"
-                    prompt += f"AFTER:\n```\n{after_trunc}\n```\n"
-                    if diff_text:
-                        diff_trunc = (
-                            diff_text[:300] + "..."
-                            if len(diff_text) > 300
-                            else diff_text
-                        )
-                        prompt += f"DIFF:\n```diff\n{diff_trunc}\n```\n"
-                elif after and not before:
-                    # New element
-                    after_trunc = after[:400] + "..." if len(after) > 400 else after
-                    prompt += f"\n--- {elem_name} (NEW) ---\n```\n{after_trunc}\n```\n"
-                elif before and not after:
-                    # Deleted element
-                    before_trunc = before[:400] + "..." if len(before) > 400 else before
-                    prompt += (
-                        f"\n--- {elem_name} (DELETED) ---\n```\n{before_trunc}\n```\n"
-                    )
-            prompt += "\n=== END CODE CHANGES ===\n"
-
-        # Include usage examples (before and after call sites)
-        if section.usages:
-            prompt += (
-                "\n=== USAGE EXAMPLES (real call sites from codebase) ===\n"
-                "These show how the changed APIs are actually called in the codebase.\n"
-            )
-            for elem_name, usage_data in list(section.usages.items())[:5]:
-                before_usages = usage_data.get("before_usages", [])
-                after_usages = usage_data.get("after_usages", [])
-                if before_usages:
-                    prompt += f"\n--- {elem_name}: BEFORE CHANGE ---\n"
-                    for usage in before_usages[:3]:
-                        usage_trunc = usage[:300] + "..." if len(usage) > 300 else usage
-                        prompt += f"```\n{usage_trunc}\n```\n"
-                if after_usages:
-                    prompt += f"\n--- {elem_name}: AFTER CHANGE ---\n"
-                    for usage in after_usages[:3]:
-                        usage_trunc = usage[:300] + "..." if len(usage) > 300 else usage
-                        prompt += f"```\n{usage_trunc}\n```\n"
-            prompt += "\n=== END USAGE EXAMPLES ===\n"
-
-        # Inject section-specific feedback from TUI
         section_feedback = self._get_section_feedback(section.title)
-        if section_feedback:
-            prompt += (
+        section_feedback_block = (
+            (
                 "\n╔══════════════════════════════════════════════════════════════════╗\n"
                 "║         ⚠️  SECTION FEEDBACK (MUST INCORPORATE)  ⚠️              ║\n"
                 "╚══════════════════════════════════════════════════════════════════╝\n\n"
-                f"The following feedback was provided for this section. You MUST incorporate it:\n\n"
                 f"{section_feedback}\n\n"
             )
+            if section_feedback
+            else ""
+        )
 
-        prompt += """
-Requirements:
-- Write in clear, technical prose
-- Use markdown formatting (headers, lists, code blocks)
-- Include specific details from the facts
-- Explain the "why" not just the "what"
-- Keep it concise but comprehensive
-- Use hierarchical headers (## for section title, ### for subsections)
-- Keep paragraphs to 3-5 sentences maximum
-- Use fenced code blocks with language identifiers
-- IMPORTANT: Only include code blocks that match the ACTUAL SOURCE CODE provided above. Do NOT fabricate or hallucinate code. If you reference code, use the exact code shown in the source sections above.
-- IMPORTANT: Only reference files, functions, and classes that are explicitly provided in your context. Never invent function names or file paths.
+        # --- 3. Check content cache ---
+        cache_key_raw = (
+            section.title
+            + "|"
+            + "|".join(sorted(fact.fact_id for fact in facts))
+            + "|"
+            + "|".join(section.code_references or [])
+        )
+        cache_key = hashlib.sha256(cache_key_raw.encode()).hexdigest()[:20]
+        cached = self._load_cached_section(cache_key)
+        if cached:
+            logger.info(
+                "MarkdownAgent: using cached section | title={}", section.title
+            )
+            return cached
 
-Write the section content now:"""
+        # --- 4. Format via YAML template ---
+        prompt_template = get_prompt("output", "markdown_section")
+        full_prompt = prompt_template.format(
+            section_title=section.title,
+            section_description=section.description,
+            fact_summaries=fact_summaries,
+            code_references_block=code_references_block,
+            source_code_block=source_code_block,
+            before_after_block=before_after_block,
+            usage_examples_block=usage_examples_block,
+            section_feedback_block=section_feedback_block,
+        )
+
+        # --- 5. Estimate token count & chunk if necessary ---
+        estimated_tokens = len(full_prompt) // 4  # rough: ~4 chars/token
+        MAX_SECTION_TOKENS = 28000  # leave room for response
+        if estimated_tokens > MAX_SECTION_TOKENS and len(facts) > 3:
+            logger.warning(
+                "MarkdownAgent: section prompt ~{} tokens, chunking | title={}",
+                estimated_tokens,
+                section.title,
+            )
+            return await self._generate_section_chunked(
+                section, facts, MAX_SECTION_TOKENS
+            )
+
+        # --- 6. Call LLM with error handling ---
+        response = await self._call_llm_with_remediation(
+            full_prompt, section.title
+        )
+
+        # --- 7. Validate with CodeReferenceValidator ---
+        response = await self._validate_section_output(response, section)
+
+        # --- 8. Cache ---
+        self._save_cached_section(cache_key, response)
+
+        return response
+
+    async def _call_llm_with_remediation(
+        self, prompt: str, section_title: str
+    ) -> str:
+        """Call the LLM with retry and fallback.
+
+        Uses the provider's ``chat()`` (or ``async_chat()`` if available).
+        On failure: retries once with a correction prompt.
+        On double failure: returns a minimal fact summary instead of crashing.
+        """
+        import time
 
         if not self.conversation:
-            raise RuntimeError("Conversation not initialized")
+            raise RuntimeError("Conversation not initialised")
 
         self.conversation.add_user_message(prompt)
         context = self.conversation.get_context_for_llm()
 
-        response = self.llm.chat(
-            messages=context,
-            temperature=0.4,
-            max_tokens=4096,
+        for attempt in range(2):
+            try:
+                if hasattr(self.llm, "async_chat"):
+                    response = await self.llm.async_chat(
+                        messages=context,
+                        temperature=0.4,
+                        max_tokens=4096,
+                    )
+                else:
+                    response = self.llm.chat(
+                        messages=context,
+                        temperature=0.4,
+                        max_tokens=4096,
+                    )
+
+                self.conversation.add_assistant_message(response)
+
+                if response.strip():
+                    return response
+
+                # Empty response — retry
+                logger.warning(
+                    "MarkdownAgent: empty response for '{}' (attempt {})",
+                    section_title,
+                    attempt + 1,
+                )
+                time.sleep(1)
+
+            except Exception as exc:
+                logger.warning(
+                    "MarkdownAgent: LLM call failed for '{}' (attempt {}): {}",
+                    section_title,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt == 0:
+                    time.sleep(2)
+                continue
+
+        # Both attempts failed — return a minimal fallback
+        logger.error(
+            "MarkdownAgent: LLM failed for '{}' after 2 attempts, "
+            "using fallback",
+            section_title,
+        )
+        return (
+            f"## {section_title}\n\n"
+            f"_This section could not be generated due to an LLM error._\n"
         )
 
-        self.conversation.add_assistant_message(response)
+    async def _validate_section_output(
+        self, response: str, section: SectionPlan
+    ) -> str:
+        """Run generated section through CodeReferenceValidator.
 
-        return response
+        Only validates when the validator module is available.  On
+        validation failure a warning is emitted and the model is asked
+        to correct just the problematic chunk (not the whole section).
+        """
+        try:
+            from ggdes.validation.code_references import CodeReferenceValidator
+
+            kb_path = get_kb_path(self.config, self.analysis_id)
+            diffs_dir = kb_path / "git_analysis"
+            diff_file = diffs_dir / "diff.txt"
+            diff_content = diff_file.read_text() if diff_file.exists() else ""
+
+            validator = CodeReferenceValidator(
+                repo_path=self.repo_path,
+                changed_files=section.code_references or [],
+                code_elements={},
+                diff_content=diff_content,
+            )
+            validated = validator.validate_and_correct(
+                llm_output=response,
+                llm_provider=self.llm,
+                max_corrections=1,
+            )
+            if validated != response:
+                logger.info(
+                    "MarkdownAgent: validator corrected '{}' references",
+                    section.title,
+                )
+            return validated
+        except Exception as exc:
+            logger.debug(
+                "MarkdownAgent: validation skipped for '{}': {}",
+                section.title,
+                exc,
+            )
+            return response
+
+    def _build_source_code_block(
+        self, section: SectionPlan, max_chars: int = 2500
+    ) -> str:
+        """Build the ``=== ACTUAL SOURCE CODE ===`` block, respecting a
+        total character budget."""
+        if not section.source_code:
+            return ""
+        lines = [
+            "\n=== ACTUAL SOURCE CODE (use ONLY this code for references) ===\n"
+        ]
+        budget = max_chars
+        for elem_name, code in section.source_code.items():
+            if budget <= 0:
+                break
+            snippet = code[: budget - 100]
+            lines.append(f"\n{elem_name}:\n```\n{snippet}\n```\n")
+            budget -= len(snippet) + 60
+        lines.append("\n=== END SOURCE CODE ===\n")
+        return "".join(lines)
+
+    def _build_before_after_block(
+        self, section: SectionPlan, max_chars: int = 2000
+    ) -> str:
+        """Build the ``=== CODE CHANGES ===`` block."""
+        if not section.before_after_code:
+            return ""
+        lines = [
+            "\n=== CODE CHANGES (before/after comparisons) ===\n"
+            "Use these to accurately describe what changed. Reference the actual code.\n"
+        ]
+        budget = max_chars
+        for elem_name, ba in section.before_after_code.items():
+            if budget <= 0:
+                break
+            before = ba.get("before", "")
+            after = ba.get("after", "")
+            diff_text = ba.get("diff", "")
+            if before and after:
+                budget -= 500
+                if budget < 0:
+                    break
+                lines.append(f"\n--- {elem_name} (MODIFIED) ---\n")
+                lines.append(
+                    f"BEFORE:\n```\n{before[:400]}\n```\n"
+                    f"AFTER:\n```\n{after[:400]}\n```\n"
+                )
+                if diff_text:
+                    lines.append(f"DIFF:\n```diff\n{diff_text[:300]}\n```\n")
+            elif after and not before:
+                lines.append(f"\n--- {elem_name} (NEW) ---\n```\n{after[:400]}\n```\n")
+            elif before and not after:
+                lines.append(
+                    f"\n--- {elem_name} (DELETED) ---\n```\n{before[:400]}\n```\n"
+                )
+        lines.append("\n=== END CODE CHANGES ===\n")
+        return "".join(lines)
+
+    def _build_usage_examples_block(
+        self, section: SectionPlan, max_chars: int = 1500
+    ) -> str:
+        """Build the ``=== USAGE EXAMPLES ===`` block."""
+        if not section.usages:
+            return ""
+        lines = [
+            "\n=== USAGE EXAMPLES (real call sites from codebase) ===\n"
+            "These show how the changed APIs are actually called in the codebase.\n"
+        ]
+        budget = max_chars
+        for elem_name, usage_data in section.usages.items():
+            if budget <= 0:
+                break
+            before_usages = usage_data.get("before_usages", [])
+            after_usages = usage_data.get("after_usages", [])
+            if before_usages:
+                budget -= 400
+                if budget < 0:
+                    break
+                lines.append(f"\n--- {elem_name}: BEFORE CHANGE ---\n")
+                for usage in before_usages[:3]:
+                    lines.append(f"```\n{usage[:300]}\n```\n")
+            if after_usages:
+                budget -= 400
+                if budget < 0:
+                    break
+                lines.append(f"\n--- {elem_name}: AFTER CHANGE ---\n")
+                for usage in after_usages[:3]:
+                    lines.append(f"```\n{usage[:300]}\n```\n")
+        lines.append("\n=== END USAGE EXAMPLES ===\n")
+        return "".join(lines)
+
+    async def _generate_section_chunked(
+        self,
+        section: SectionPlan,
+        facts: list[TechnicalFact],
+        max_tokens: int,
+    ) -> str:
+        """Split a large section into chunks and generate each separately.
+
+        Each chunk gets a subset of facts and a short preamble telling the
+        model it's part N of M.  Results are concatenated with chunk
+        separators.
+        """
+        CHUNK_SIZE = 4  # facts per chunk
+        chunks: list[str] = []
+        n_chunks = (len(facts) + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+        for i in range(0, len(facts), CHUNK_SIZE):
+            chunk_num = (i // CHUNK_SIZE) + 1
+            sub_facts = facts[i : i + CHUNK_SIZE]
+
+            fact_lines: list[str] = []
+            for fact in sub_facts:
+                fact_lines.append(f"- [{fact.category}] {fact.description}\n")
+                if fact.code_snippets:
+                    for elem_name, code in list(fact.code_snippets.items())[:1]:
+                        truncated = code[:400] + "..." if len(code) > 400 else code
+                        fact_lines.append(
+                            f"  Source ({elem_name}):\n  ```\n  {truncated}\n  ```\n"
+                        )
+            fact_summaries = "".join(fact_lines)
+
+            prompt = get_prompt("output", "markdown_section").format(
+                section_title=f"{section.title} (part {chunk_num}/{n_chunks})",
+                section_description=(
+                    f"{section.description} — part {chunk_num} of {n_chunks}"
+                ),
+                fact_summaries=fact_summaries,
+                code_references_block="",
+                source_code_block="",
+                before_after_block="",
+                usage_examples_block="",
+                section_feedback_block="",
+            )
+
+            chunk_content = await self._call_llm_with_remediation(
+                prompt, f"{section.title} (chunk {chunk_num})"
+            )
+            chunks.append(chunk_content)
+
+        return "\n\n---\n\n".join(chunks)
+
+    # ------------------------------------------------------------------
+    # Section content cache
+    # ------------------------------------------------------------------
+
+    def _cache_dir(self) -> Path:
+        """Directory where section content caches are stored."""
+        p = (
+            get_kb_path(self.config, self.analysis_id)
+            / "cache"
+            / "sections"
+        )
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _load_cached_section(self, cache_key: str) -> str | None:
+        """Return cached section content, or ``None``."""
+        cache_file = self._cache_dir() / f"{cache_key}.txt"
+        if cache_file.exists():
+            return cache_file.read_text()
+        return None
+
+    def _save_cached_section(self, cache_key: str, content: str) -> None:
+        """Persist generated section content so it can be reused."""
+        cache_file = self._cache_dir() / f"{cache_key}.txt"
+        cache_file.write_text(content)
 
     def _build_markdown(
         self,

@@ -122,3 +122,74 @@ markdown_plan: |
   }}
 
   Write ONLY valid JSON that matches the schema above. No markdown fences, no extra text.
+
+markdown_section: |
+  Write the "{section_title}" section for a design document.
+
+  Section Description: {section_description}
+
+  Technical Facts to Include:
+  {fact_summaries}
+
+  {code_references_block}
+
+  {source_code_block}
+
+  {before_after_block}
+
+  {usage_examples_block}
+
+  {section_feedback_block}
+
+  Requirements:
+  - Write in clear, technical prose
+  - Use markdown formatting (headers, lists, code blocks)
+  - Include specific details from the facts
+  - Explain the "why" not just the "what"
+  - Keep it concise but comprehensive
+  - Use hierarchical headers (## for section title, ### for subsections)
+  - Keep paragraphs to 3-5 sentences maximum
+  - Use fenced code blocks with language identifiers
+  - IMPORTANT: Only include code blocks that match the ACTUAL SOURCE CODE provided above
+  - IMPORTANT: Only reference files, functions, and classes that are explicitly provided
+
+  Write the section content now:
+
+pptx_slides: |
+  Create a PowerPoint presentation in markdown format for a technical design document.
+
+  PRESENTATION RULES:
+  - Each ## heading becomes ONE slide
+  - Max 6 bullet points per slide (6x6 rule)
+  - ~6 words per bullet point — be concise
+  - Start with a title slide: # Presentation Title
+  - End with a summary or Q&A slide
+  - Group related content into themed slides
+  - Include [Diagram: type] references where visuals help
+
+  Technical Facts Available ({total_facts} total):
+  {fact_summaries}
+
+  Audience: {audience}
+  Detail Level: {detail_level}
+  {purpose_line}
+
+  EXAMPLE SLIDE STRUCTURE:
+  # {example_title}
+
+  ## Why This Change
+  - {example_bullet_1}
+  - {example_bullet_2}
+  - {example_bullet_3}
+
+  ## Architecture
+  - {example_arch_1}
+  - {example_arch_2}
+  - [Diagram: architecture]
+
+  ## Summary
+  - {example_summary_1}
+  - {example_summary_2}
+  - [Diagram: flow]
+
+  Write the presentation now:

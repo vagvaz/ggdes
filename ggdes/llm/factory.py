@@ -1,5 +1,6 @@
 """LLM factory for managing different providers with structured outputs."""
 
+import asyncio
 import functools
 import json
 import os
@@ -728,6 +729,46 @@ class LLMProvider(ABC):
             Generated text
         """
         ...
+
+    async def async_chat(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Async version of :meth:`chat`.
+
+        The default implementation runs the synchronous ``chat()`` in a
+        thread-pool executor.  Providers with native async HTTP clients
+        should override this for true non-blocking I/O.
+        """
+        return await asyncio.to_thread(
+            self.chat,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def async_generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Async version of :meth:`generate`.
+
+        The default implementation runs the synchronous ``generate()`` in a
+        thread-pool executor.  Providers with native async HTTP clients
+        should override this for true non-blocking I/O.
+        """
+        return await asyncio.to_thread(
+            self.generate,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
     def generate_structured(
         self,

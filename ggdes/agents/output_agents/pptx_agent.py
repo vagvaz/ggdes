@@ -141,6 +141,8 @@ class PptxAgent(OutputAgent):
         Content follows the 6x6 rule (max 6 bullets, ~6 words per bullet)
         and includes diagram references.
         """
+        import time
+
         from rich.console import Console
 
         from ggdes.agents.coordinator import Coordinator
@@ -165,75 +167,57 @@ class PptxAgent(OutputAgent):
         for f in facts:
             facts_by_cat.setdefault(f.category, []).append(f)
 
-        # Build a presentation-aware prompt
-        prompt_parts = [
-            "Create a PowerPoint presentation in markdown format for a technical design document.",
-            "",
-            "PRESENTATION RULES:",
-            "- Each ## heading becomes ONE slide",
-            "- Max 6 bullet points per slide (6x6 rule)",
-            "- ~6 words per bullet point — be concise",
-            "- Start with a title slide: # Presentation Title",
-            "- End with a summary or Q&A slide",
-            "- Group related content into themed slides",
-            "- Include [Diagram: type] references where visuals help",
-            "",
-            f"Technical Facts Available ({len(facts)} total):",
-        ]
-
+        # Build fact summaries
+        fact_lines: list[str] = []
         for cat, cat_facts in facts_by_cat.items():
-            prompt_parts.append(f"\n{cat.upper()} ({len(cat_facts)} facts):")
+            fact_lines.append(f"\n{cat.upper()} ({len(cat_facts)} facts):")
             for fact in cat_facts[:5]:
-                prompt_parts.append(f"  - {fact.fact_id}: {fact.description[:200]}")
+                fact_lines.append(f"  - {fact.fact_id}: {fact.description[:200]}")
                 if fact.code_snippets:
                     for elem, code in list(fact.code_snippets.items())[:1]:
-                        prompt_parts.append(f"    Source ({elem}): {code[:200]}")
-
-        prompt_parts.append(
-            f"""
-Audience: {user_context.get("audience", "developers")}
-Detail Level: {user_context.get("detail_level", "medium")}
-"""
-        )
+                        fact_lines.append(f"    Source ({elem}): {code[:200]}")
 
         purposes = user_context.get("purpose", [])
-        if purposes:
-            if isinstance(purposes, list):
-                prompt_parts.append(f"Purpose: {', '.join(purposes)}")
-            else:
-                prompt_parts.append(f"Purpose: {purposes}")
+        if isinstance(purposes, list):
+            purposes = ", ".join(purposes)
 
-        prompt_parts.append(
-            """
-EXAMPLE SLIDE STRUCTURE:
-# Authentication Overhaul
+        # Pick example slide values from actual facts for the template
+        example_title = "System Changes"
+        example_bullets = ["", "", ""]
+        example_arch = ["", ""]
+        example_summary = ["", ""]
+        if facts:
+            first_fact = facts[0]
+            example_title = first_fact.description[:40] if first_fact.description else "System Changes"
+            example_bullets = [
+                f"{first_fact.category} change in {first_fact.source_file or 'codebase'}",
+                f"{len(facts)} facts analysed",
+                "See architecture diagram below",
+            ]
+            for i, ex_fact in enumerate(facts[:2]):
+                if ex_fact.code_snippets:
+                    first_elem = next(iter(ex_fact.code_snippets.keys()), "")
+                    example_arch[i] = f"{first_elem} handles {ex_fact.category} logic"
+                    example_summary[i] = f"{first_elem} change: {ex_fact.description[:60]}"
 
-## Why This Change
-- JWT tokens replacing session-based auth
-- Eliminates server-side session storage
-- Enables stateless horizontal scaling
-
-## Architecture
-- AuthMiddleware intercepts all /api/* requests
-- Token validation in validate_token()
-- [Diagram: architecture]
-
-## Breaking Changes
-- Session cookie no longer accepted
-- All clients must include Authorization header
-- Migration period: 2 weeks
-
-## Summary
-- Stateless auth improves scalability
-- Breaking change requires client updates
-- [Diagram: flow]
-
-Write the presentation now:"""
+        # Format via YAML template
+        prompt = get_prompt("output", "pptx_slides").format(
+            total_facts=len(facts),
+            fact_summaries="\n".join(fact_lines),
+            audience=user_context.get("audience", "developers"),
+            detail_level=user_context.get("detail_level", "medium"),
+            purpose_line=f"Purpose: {purposes}" if purposes else "",
+            example_title=example_title,
+            example_bullet_1=example_bullets[0],
+            example_bullet_2=example_bullets[1],
+            example_bullet_3=example_bullets[2],
+            example_arch_1=example_arch[0],
+            example_arch_2=example_arch[1],
+            example_summary_1=example_summary[0],
+            example_summary_2=example_summary[1],
         )
 
-        prompt = "\n".join(prompt_parts)
-
-        # Call LLM
+        # Call LLM with error handling
         system_prompt = get_prompt("output", "system")
         conv = ConversationContext(
             system_prompt=system_prompt,
@@ -242,18 +226,47 @@ Write the presentation now:"""
         conv.add_user_message(prompt)
         context = conv.get_context_for_llm()
 
-        response = self.llm.chat(
-            messages=context,
-            temperature=0.4,
-            max_tokens=4096,
-        )
+        for attempt in range(2):
+            try:
+                response = self.llm.chat(
+                    messages=context,
+                    temperature=0.4,
+                    max_tokens=4096,
+                )
 
-        result = response.strip()
-        plan_console.print(
-            f"  [green]✓[/green] Generated slide content "
-            f"({len(result.split(chr(10)))} lines)"
+                result = response.strip()
+                if result:
+                    plan_console.print(
+                        f"  [green]✓[/green] Generated slide content "
+                        f"({len(result.split(chr(10)))} lines)"
+                    )
+                    return result
+
+                logger.warning(
+                    "PptxAgent: empty response (attempt {})", attempt + 1
+                )
+                time.sleep(1)
+
+            except Exception as exc:
+                logger.warning(
+                    "PptxAgent: LLM call failed (attempt {}): {}",
+                    attempt + 1,
+                    exc,
+                )
+                if attempt == 0:
+                    time.sleep(2)
+
+        # Fallback
+        logger.error("PptxAgent: LLM failed after 2 attempts, using placeholder")
+        plan_console.print("  [yellow]⚠ LLM unavailable — using placeholder content[/yellow]")
+        return (
+            "# Design Document\n\n"
+            "## Overview\n"
+            f"- {len(facts)} technical facts analyzed\n"
+            "- Diagrams available in output directory\n\n"
+            "## Summary\n"
+            "- Generation encountered an LLM error\n"
         )
-        return result
 
     def _select_palette(self, content: str) -> dict[str, str]:
         """Select a color palette based on content keywords."""
