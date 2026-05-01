@@ -8,6 +8,16 @@ This is a uv-managed Python project for GGDes (Get from Git Design Documentation
 uv sync
 ```
 
+### NPM Dependencies (for DOCX and PPTX output)
+
+The output agents use Node.js libraries for professional document generation:
+
+```bash
+npm install -g pptxgenjs docx
+```
+
+If Node.js is unavailable, the agents fall back to pandoc (markdown→docx/pptx conversion).
+
 ## System Dependencies
 
 The output agents require additional system-level dependencies for document generation:

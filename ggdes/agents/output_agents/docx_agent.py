@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,10 @@ class DocxAgent(OutputAgent):
                 check=True,
                 capture_output=True,
                 text=True,
+                env={
+                    **os.environ,
+                    "NODE_PATH": str(self.repo_path / "node_modules"),
+                },
             )
             console.print(f"  [green]✓ Document generated:[/green] {output_file}")
             self._validate_docx(output_file)

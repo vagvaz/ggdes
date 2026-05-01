@@ -1,6 +1,7 @@
 """PPTX output agent for generating PowerPoint presentations using the pptx skill."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -187,6 +188,10 @@ class PptxAgent(OutputAgent):
                 check=True,
                 capture_output=True,
                 text=True,
+                env={
+                    **os.environ,
+                    "NODE_PATH": str(self.repo_path / "node_modules"),
+                },
             )
             if result.stdout:
                 logger.debug(f"Node.js stdout: {result.stdout.strip()}")

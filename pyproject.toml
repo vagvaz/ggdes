@@ -30,6 +30,9 @@ dependencies = [
     "pdf2image>=1.17.0",
     # PPTX text extraction
     "markitdown[pptx]>=0.1.0",
+    # Skill script dependencies (OOXML validation, XML processing)
+    "lxml>=5.0.0",
+    "defusedxml>=0.7.0",
     "pytest>=9.0.2",
 ]
 
