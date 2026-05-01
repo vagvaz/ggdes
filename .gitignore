@@ -14,3 +14,6 @@ wheels/
 *.egg-info/
 
 node_modules/
+
+# Test output artifacts
+MagicMock/

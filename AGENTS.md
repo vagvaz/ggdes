@@ -8,6 +8,17 @@ This is a uv-managed Python project for GGDes (Get from Git Design Documentation
 uv sync
 ```
 
+### System Dependencies
+
+The output agents require additional system-level dependencies for document generation:
+
+- **Java Runtime (JRE)** — Required by PlantUML for diagram generation
+  ```bash
+  # Ubuntu/Debian: sudo apt-get install default-jre
+  # macOS: brew install java
+  # Arch: sudo pacman -S jre-openjdk-headless
+  ```
+
 ### NPM Dependencies (for DOCX and PPTX output)
 
 The output agents use Node.js libraries for professional document generation:
