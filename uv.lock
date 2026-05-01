@@ -560,7 +560,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "defusedxml" },
     { name = "loguru" },
+    { name = "lxml" },
     { name = "markitdown", extra = ["pptx"] },
     { name = "openai" },
     { name = "pdf2image" },
@@ -614,8 +616,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
+    { name = "defusedxml", specifier = ">=0.7.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115.0" },
     { name = "loguru", specifier = ">=0.7.0" },
+    { name = "lxml", specifier = ">=5.0.0" },
     { name = "markdown", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "markdown", marker = "extra == 'render'", specifier = ">=3.5.0" },
     { name = "markitdown", extras = ["pptx"], specifier = ">=0.1.0" },
