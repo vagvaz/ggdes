@@ -1,5 +1,6 @@
 """Comprehensive tests for GGDes pipeline module."""
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from ggdes.kb.manager import (
 )
 from ggdes.pipeline import AnalysisPipeline
 from ggdes.schemas import StoragePolicy
+from ggdes.stages import StageResult, WorktreeSetupStage
 
 
 @pytest.fixture
@@ -174,12 +176,23 @@ class TestRunStage:
             with patch("ggdes.pipeline.WorktreeManager"):
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                # Mock the specific stage method
-                with patch.object(pipeline, "_run_worktree_setup", return_value=True):
+                # Mock the stage registry to return a successful stage
+                mock_stage_class = MagicMock()
+                mock_stage_instance = MagicMock()
+                mock_stage_instance.run = AsyncMock(
+                    return_value=StageResult(success=True)
+                )
+                mock_stage_class.return_value = mock_stage_instance
+
+                with patch(
+                    "ggdes.pipeline.get_stage", return_value=mock_stage_class
+                ):
                     result = pipeline.run_stage("worktree_setup")
 
                     assert result is True
-                    mock_metadata.start_stage.assert_called_once_with("worktree_setup")
+                    mock_metadata.start_stage.assert_called_once_with(
+                        "worktree_setup"
+                    )
                     mock_metadata.complete_stage.assert_called_once_with(
                         "worktree_setup"
                     )
@@ -201,12 +214,22 @@ class TestRunStage:
             with patch("ggdes.pipeline.WorktreeManager"):
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                with patch.object(pipeline, "_run_worktree_setup", return_value=False):
+                # Mock the stage registry to return a failing stage
+                mock_stage_class = MagicMock()
+                mock_stage_instance = MagicMock()
+                mock_stage_instance.run = AsyncMock(
+                    return_value=StageResult(success=False, error="Stage failed")
+                )
+                mock_stage_class.return_value = mock_stage_instance
+
+                with patch(
+                    "ggdes.pipeline.get_stage", return_value=mock_stage_class
+                ):
                     result = pipeline.run_stage("worktree_setup")
 
                     assert result is False
                     mock_metadata.fail_stage.assert_called_once_with(
-                        "worktree_setup", "Stage returned False"
+                        "worktree_setup", "Stage failed"
                     )
 
     def test_run_stage_exception_handling(
@@ -226,8 +249,16 @@ class TestRunStage:
             with patch("ggdes.pipeline.WorktreeManager"):
                 pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
 
-                with patch.object(
-                    pipeline, "_run_worktree_setup", side_effect=Exception("Test error")
+                # Mock the stage registry to raise an exception
+                mock_stage_class = MagicMock()
+                mock_stage_instance = MagicMock()
+                mock_stage_instance.run = AsyncMock(
+                    side_effect=Exception("Test error")
+                )
+                mock_stage_class.return_value = mock_stage_instance
+
+                with patch(
+                    "ggdes.pipeline.get_stage", return_value=mock_stage_class
                 ):
                     result = pipeline.run_stage("worktree_setup")
 
@@ -733,91 +764,123 @@ class TestBuildToolExecutor:
 
 
 class TestRunWorktreeSetup:
-    """Tests for _run_worktree_setup method."""
+    """Tests for WorktreeSetupStage."""
+
+    @pytest.fixture
+    def mock_console(self) -> MagicMock:
+        """Create a mock Console."""
+        return MagicMock()
 
     def test_run_worktree_setup_success(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
+        self,
+        mock_config: GGDesConfig,
+        mock_metadata: AnalysisMetadata,
+        mock_console: MagicMock,
     ) -> None:
         """Test successful worktree setup."""
         mock_metadata.commit_range = "abc123..def456"
+        mock_kb = MagicMock()
 
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
+        with patch(
+            "ggdes.stages.worktree_setup.WorktreeManager"
+        ) as mock_wt_class:
+            mock_wt_manager = MagicMock()
+            mock_worktree_pair = MagicMock()
+            mock_worktree_pair.base = Path("/test/worktrees/base")
+            mock_worktree_pair.head = Path("/test/worktrees/head")
+            mock_wt_manager.create_for_analysis.return_value = mock_worktree_pair
+            mock_wt_class.return_value = mock_wt_manager
 
-            with patch("ggdes.pipeline.WorktreeManager") as mock_wt_class:
-                mock_wt_manager = MagicMock()
-                mock_worktree_pair = MagicMock()
-                mock_worktree_pair.base = Path("/test/worktrees/base")
-                mock_worktree_pair.head = Path("/test/worktrees/head")
-                mock_wt_manager.create_for_analysis.return_value = mock_worktree_pair
-                mock_wt_class.return_value = mock_wt_manager
+            stage = WorktreeSetupStage()
 
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                # Mock Path.exists for worktree verification
-                with (
-                    patch("ggdes.pipeline.Path.exists", return_value=True),
-                    patch(
-                        "ggdes.pipeline.Path.iterdir",
-                        return_value=[Path("file1"), Path("file2")],
-                    ),
-                    patch(
-                        "ggdes.pipeline.Path.resolve",
-                        return_value=Path("/test/worktrees/base"),
-                    ),
-                ):
-                    result = pipeline._run_worktree_setup()
-
-                    assert result is True
-                    mock_wt_manager.create_for_analysis.assert_called_once_with(
-                        "test_analysis_001",
-                        base_commit="abc123",
-                        head_commit="def456",
+            # Mock Path.exists, iterdir, resolve
+            with (
+                patch(
+                    "ggdes.stages.worktree_setup.Path.exists", return_value=True
+                ),
+                patch(
+                    "ggdes.stages.worktree_setup.Path.iterdir",
+                    return_value=[Path("file1"), Path("file2")],
+                ),
+                patch(
+                    "ggdes.stages.worktree_setup.Path.resolve",
+                    return_value=Path("/test/worktrees/base"),
+                ),
+            ):
+                result = asyncio.run(
+                    stage.run(
+                        metadata=mock_metadata,
+                        config=mock_config,
+                        kb=mock_kb,
+                        console=mock_console,
                     )
+                )
+
+                assert result.success is True
+                assert result.skipped is False
+                mock_wt_manager.create_for_analysis.assert_called_once_with(
+                    "test_analysis_001",
+                    base_commit="abc123",
+                    head_commit="def456",
+                )
 
     def test_run_worktree_setup_invalid_range(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
+        self,
+        mock_config: GGDesConfig,
+        mock_metadata: AnalysisMetadata,
+        mock_console: MagicMock,
     ) -> None:
         """Test worktree setup with invalid commit range."""
         mock_metadata.commit_range = "invalid_range"
+        mock_kb = MagicMock()
 
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
+        with patch("ggdes.stages.worktree_setup.WorktreeManager"):
+            stage = WorktreeSetupStage()
 
-            with patch("ggdes.pipeline.WorktreeManager"):
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
+            result = asyncio.run(
+                stage.run(
+                    metadata=mock_metadata,
+                    config=mock_config,
+                    kb=mock_kb,
+                    console=mock_console,
+                )
+            )
 
-                result = pipeline._run_worktree_setup()
-
-                assert result is False
+            assert result.success is False
+            assert result.error is not None
 
     def test_run_worktree_setup_creation_failure(
-        self, mock_config: GGDesConfig, mock_metadata: AnalysisMetadata
+        self,
+        mock_config: GGDesConfig,
+        mock_metadata: AnalysisMetadata,
+        mock_console: MagicMock,
     ) -> None:
         """Test worktree setup when creation fails."""
         mock_metadata.commit_range = "abc123..def456"
+        mock_kb = MagicMock()
 
-        with patch("ggdes.pipeline.KnowledgeBaseManager") as mock_kb_class:
-            mock_kb_instance = MagicMock()
-            mock_kb_instance.load_metadata.return_value = mock_metadata
-            mock_kb_class.return_value = mock_kb_instance
+        with patch(
+            "ggdes.stages.worktree_setup.WorktreeManager"
+        ) as mock_wt_class:
+            mock_wt_manager = MagicMock()
+            mock_wt_manager.create_for_analysis.side_effect = RuntimeError(
+                "Creation failed"
+            )
+            mock_wt_class.return_value = mock_wt_manager
 
-            with patch("ggdes.pipeline.WorktreeManager") as mock_wt_class:
-                mock_wt_manager = MagicMock()
-                mock_wt_manager.create_for_analysis.side_effect = RuntimeError(
-                    "Creation failed"
+            stage = WorktreeSetupStage()
+
+            result = asyncio.run(
+                stage.run(
+                    metadata=mock_metadata,
+                    config=mock_config,
+                    kb=mock_kb,
+                    console=mock_console,
                 )
-                mock_wt_class.return_value = mock_wt_manager
+            )
 
-                pipeline = AnalysisPipeline(mock_config, "test_analysis_001")
-
-                result = pipeline._run_worktree_setup()
-
-                assert result is False
+            assert result.success is False
+            assert "Creation failed" in (result.error or "")
 
 
 class TestRunGitAnalysis:

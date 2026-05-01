@@ -17,6 +17,7 @@ from ggdes.kb import KnowledgeBaseManager
 from ggdes.parsing import ASTParser
 from ggdes.review import ReviewSession
 from ggdes.schemas import ChangeSummary, CodeElement
+from ggdes.stages import StageResult as StageResultData, get_stage
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
 from ggdes.worktree import WorktreeManager
@@ -103,9 +104,72 @@ class AnalysisPipeline:
             self.kb_manager.save_metadata(self.analysis_id, self.metadata)
 
         try:
-            if stage_name == self.kb_manager.STAGE_WORKTREE_SETUP:
-                success = self._run_worktree_setup()
-            elif stage_name == self.kb_manager.STAGE_GIT_ANALYSIS:
+            # --- EXTRACTED STAGES (via registry) ---
+            stage_class = get_stage(stage_name)
+            if stage_class is not None:
+                stage = stage_class()
+                result = asyncio.run(
+                    stage.run(
+                        metadata=self.metadata,
+                        config=self.config,
+                        kb=self.kb_manager,
+                        console=console,
+                        feedback=self._get_feedback_for_stage(stage_name),
+                    )
+                )
+                with self._metadata_lock:
+                    if result.skipped:
+                        self.metadata.skip_stage(stage_name)
+                        self.kb_manager.save_metadata(
+                            self.analysis_id, self.metadata
+                        )
+                        logger.info(
+                            "Pipeline stage skipped | stage=%s analysis=%s",
+                            stage_name,
+                            self.analysis_id,
+                        )
+                        return True
+                    elif result.success:
+                        self.metadata.complete_stage(stage_name)
+                        self.kb_manager.save_metadata(
+                            self.analysis_id, self.metadata
+                        )
+                        console.print(
+                            f"[green]✓ Stage completed:[/green] {stage_name}"
+                        )
+                        logger.info(
+                            "Pipeline stage completed | stage=%s analysis=%s",
+                            stage_name,
+                            self.analysis_id,
+                        )
+                        if self.interactive:
+                            should_continue = self._maybe_review(stage_name)
+                            if not should_continue:
+                                console.print(
+                                    "[yellow]Analysis paused for review.[/yellow]"
+                                )
+                                return False
+                        return True
+                    else:
+                        error_msg = result.error or "Stage failed"
+                        self.metadata.fail_stage(stage_name, error_msg)
+                        self.kb_manager.save_metadata(
+                            self.analysis_id, self.metadata
+                        )
+                        console.print(
+                            f"[red]✗ Stage failed:[/red] {stage_name} - {error_msg}"
+                        )
+                        logger.error(
+                            "Pipeline stage failed | stage=%s analysis=%s error=%s",
+                            stage_name,
+                            self.analysis_id,
+                            error_msg,
+                        )
+                        return False
+                # (end of with self._metadata_lock)
+
+            # --- LEGACY DISPATCH (non-extracted stages) ---
+            if stage_name == self.kb_manager.STAGE_GIT_ANALYSIS:
                 success = self._run_git_analysis()
             elif stage_name == self.kb_manager.STAGE_CHANGE_FILTER:
                 success = self._run_change_filter()
@@ -382,78 +446,6 @@ class AnalysisPipeline:
         console.print("\n[green]✓ All stages completed successfully![/green]")
         return True
 
-    def _run_worktree_setup(self) -> bool:
-        """Setup worktrees for base and head commits."""
-        # Parse commit range
-        commit_range = self.metadata.commit_range
-        console.print(f"  [dim]Parsing commit range: {commit_range}[/dim]")
-
-        if ".." not in commit_range:
-            console.print(f"[red]Invalid commit range:[/red] {commit_range}")
-            return False
-
-        base_commit, head_commit = commit_range.split("..", 1)
-        console.print(
-            f"  [dim]Setting up worktrees for base: {base_commit or 'HEAD'}, head: {head_commit or 'HEAD'}[/dim]"
-        )
-
-        # Create worktrees
-        try:
-            worktree_pair = self.wt_manager.create_for_analysis(
-                self.analysis_id,
-                base_commit=base_commit or "HEAD",
-                head_commit=head_commit or "HEAD",
-            )
-        except (OSError, RuntimeError) as e:
-            console.print(f"[red]Failed to create worktrees:[/red] {e}")
-            return False
-
-        # Verify worktrees were actually created
-        if not worktree_pair.base.exists():
-            console.print(
-                f"[red]Base worktree was not created:[/red] {worktree_pair.base}"
-            )
-            return False
-        if not worktree_pair.head.exists():
-            console.print(
-                f"[red]Head worktree was not created:[/red] {worktree_pair.head}"
-            )
-            return False
-
-        # Check if worktrees have content
-        try:
-            base_contents = list(worktree_pair.base.iterdir())
-            head_contents = list(worktree_pair.head.iterdir())
-
-            if not base_contents:
-                console.print(
-                    f"[yellow]Warning: Base worktree is empty:[/yellow] {worktree_pair.base}"
-                )
-            if not head_contents:
-                console.print(
-                    f"[yellow]Warning: Head worktree is empty:[/yellow] {worktree_pair.head}"
-                )
-
-            console.print(f"  [dim]Base worktree items: {len(base_contents)}[/dim]")
-            console.print(f"  [dim]Head worktree items: {len(head_contents)}[/dim]")
-        except OSError as e:
-            console.print(
-                f"[yellow]Warning: Could not read worktree contents:[/yellow] {e}"
-            )
-
-        # Update metadata with absolute paths
-        from ggdes.kb import WorktreeInfo
-
-        self.metadata.worktrees = WorktreeInfo(
-            base=str(worktree_pair.base.resolve()),
-            head=str(worktree_pair.head.resolve()),
-        )
-
-        console.print(f"  [green]✓ Base worktree:[/green] {worktree_pair.base}")
-        console.print(f"  [green]✓ Head worktree:[/green] {worktree_pair.head}")
-
-        return True
-
     def _run_git_analysis(self) -> bool:
         """Run git analysis agent."""
         from ggdes.validation.validators import InputValidator
@@ -726,44 +718,20 @@ class AnalysisPipeline:
     def _get_summary_path(self) -> Path:
         """Get the path to the change summary, preferring filtered over raw.
 
-        Returns the change_filter summary if it exists (filtered output),
-        otherwise falls back to the raw git_analysis summary.
-
-        Returns:
-            Path to the summary JSON file
+        Delegates to ``ggdes.stages.utils.get_summary_path``.
         """
-        filtered_path = (
-            self.kb_manager.get_analysis_path(self.analysis_id)
-            / "change_filter"
-            / "summary.json"
-        )
-        if filtered_path.exists():
-            return filtered_path
+        from ggdes.stages.utils import get_summary_path
 
-        return (
-            self.kb_manager.get_analysis_path(self.analysis_id)
-            / "git_analysis"
-            / "summary.json"
-        )
+        return get_summary_path(self.kb_manager, self.analysis_id)
 
     def _get_changed_files_from_analysis(self) -> list[str]:
         """Get list of changed files from git analysis results.
 
-        Returns:
-            List of file paths that changed (relative to repo root)
+        Delegates to ``ggdes.stages.utils.get_changed_files_from_analysis``.
         """
-        analysis_path = self._get_summary_path()
+        from ggdes.stages.utils import get_changed_files_from_analysis
 
-        if not analysis_path.exists():
-            return []
-
-        try:
-            data = json.loads(analysis_path.read_text())
-            files_changed = data.get("files_changed", [])
-            # Extract just the path from each FileChange object
-            return [f["path"] for f in files_changed if "path" in f]
-        except (json.JSONDecodeError, ValueError, OSError):
-            return []
+        return get_changed_files_from_analysis(self.kb_manager, self.analysis_id)
 
     def _run_ast_parsing_head(self) -> bool:
         """Parse AST for head worktree."""
@@ -772,86 +740,35 @@ class AnalysisPipeline:
     def _build_tool_executor(self) -> "ToolExecutor":
         """Build a ToolExecutor for grounded LLM calls.
 
-        Assembles changed files, AST elements, and commit range data
-        from the knowledge base to provide tools with real codebase context.
-
-        Returns:
-            ToolExecutor instance, or None if required data is unavailable
+        Delegates to ``ggdes.stages.utils.build_tool_executor``.
         """
-        from ggdes.tools import ToolExecutor
+        from ggdes.stages.utils import build_tool_executor
 
-        # Load changed files from git analysis
-        changed_files = self._get_changed_files_detailed()
-
-        # Load AST elements from head worktree
-        ast_elements = self._load_ast_elements_for_tools()
-
-        # Get commit range and focus commits from metadata
-        commit_range = self.metadata.commit_range
-        focus_commits = self.metadata.focus_commits
-
-        return ToolExecutor(
+        return build_tool_executor(
+            config=self.config,
+            kb=self.kb_manager,
+            analysis_id=self.analysis_id,
             repo_path=self.repo_path,
-            changed_files=changed_files,
-            ast_elements=ast_elements,
-            commit_range=commit_range,
-            focus_commits=focus_commits,
+            metadata=self.metadata,
         )
 
     def _get_changed_files_detailed(self) -> list[dict[str, Any]]:
         """Get detailed changed file info from git analysis results.
 
-        Returns:
-            List of dicts with path, change_type, lines_added, lines_deleted, summary
+        Delegates to ``ggdes.stages.utils.get_changed_files_detailed``.
         """
-        analysis_path = self._get_summary_path()
+        from ggdes.stages.utils import get_changed_files_detailed
 
-        if not analysis_path.exists():
-            return []
-
-        try:
-            data = json.loads(analysis_path.read_text())
-            files_changed = data.get("files_changed", [])
-            result = []
-            for f in files_changed:
-                if isinstance(f, dict):
-                    result.append(
-                        {
-                            "path": f.get("path", ""),
-                            "change_type": f.get("change_type", "modified"),
-                            "lines_added": f.get("lines_added", 0),
-                            "lines_deleted": f.get("lines_deleted", 0),
-                            "summary": f.get("summary", ""),
-                            "relevant_line_ranges": f.get("relevant_line_ranges"),
-                        }
-                    )
-            return result
-        except (json.JSONDecodeError, ValueError, OSError):
-            return []
+        return get_changed_files_detailed(self.kb_manager, self.analysis_id)
 
     def _load_ast_elements_for_tools(self) -> dict[str, list[Any]]:
         """Load AST elements from KB for tool executor.
 
-        Returns:
-            Dict mapping file paths to lists of code elements
+        Delegates to ``ggdes.stages.utils.load_ast_elements``.
         """
-        ast_elements: dict[str, list[Any]] = {}
+        from ggdes.stages.utils import load_ast_elements
 
-        # Load head AST elements
-        ast_head_dir = self.kb_manager.get_analysis_path(self.analysis_id) / "ast_head"
-        if ast_head_dir.exists():
-            for json_file in ast_head_dir.glob("*.json"):
-                try:
-                    data = json.loads(json_file.read_text())
-                    elements = data.get("elements", [])
-                    if elements:
-                        # Use the file_path from the data, or derive from filename
-                        file_path = data.get("file_path", json_file.stem)
-                        ast_elements[file_path] = elements
-                except (json.JSONDecodeError, ValueError):
-                    continue
-
-        return ast_elements
+        return load_ast_elements(self.kb_manager, self.analysis_id, "head")
 
     def _run_technical_author(self) -> bool:
         """Run technical author agent."""
