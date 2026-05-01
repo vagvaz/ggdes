@@ -899,15 +899,20 @@ class AnalysisPipeline:
         return True
 
     def _run_coordinator_plan(self) -> bool:
-        """Run coordinator planning stage."""
+        """Prepare shared data context for all output agents.
+
+        The coordinator is now a programmatic stage — it loads technical facts,
+        categorises them, gathers user context, and artifacts the assembled
+        context for each output agent to consume.  Per-medium planning is the
+        responsibility of each ``OutputAgent`` subclass.
+        """
         from ggdes.agents import Coordinator
 
-        console.print("  [dim]Initializing Coordinator for document planning...[/dim]")
+        console.print(
+            "  [dim]Coordinator: loading facts and user context...[/dim]"
+        )
 
-        # Get user context from metadata
         user_context = getattr(self.metadata, "user_context", None)
-
-        # Get feedback for this stage (from review session)
         feedback = self._get_feedback_for_stage(STAGE_COORDINATOR_PLAN)
         if feedback:
             console.print(
@@ -922,38 +927,30 @@ class AnalysisPipeline:
             review_feedback=feedback,
         )
 
-        # Get target formats from metadata (CLI-selected formats)
         target_formats = self.metadata.target_formats or ["markdown"]
-        console.print(f"  [dim]Target formats: {', '.join(target_formats)}[/dim]")
-
-        # Check if we should run interactively
-        # In auto mode, use defaults. Otherwise, ask user (handled in Coordinator)
         auto_mode = not self.interactive
-
-        if auto_mode:
-            console.print("  [dim]Running in auto mode (no user prompts)[/dim]")
-
-        # Get storage policy from metadata
         storage_policy = self.metadata.storage_policy
 
         try:
-            plans = asyncio.run(
-                coordinator.create_plan(
+            context = asyncio.run(
+                coordinator.prepare_data(
                     target_formats=target_formats,
                     interactive=not auto_mode,
                     storage_policy=storage_policy,
                 )
             )
         except Exception as e:
-            console.print(f"  [red]Coordinator planning failed:[/red] {e}")
+            console.print(f"  [red]Coordinator stage failed:[/red] {e}")
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             return False
 
-        console.print(f"  [dim]Created {len(plans)} document plans:[/dim]")
-        for plan in plans:
-            console.print(
-                f"    [dim]- {plan.format}: {len(plan.sections)} sections, {len(plan.diagrams)} diagrams[/dim]"
-            )
+        facts_by_cat = context.get("facts_by_category", {})
+        total_facts = sum(len(v) for v in facts_by_cat.values())
+        console.print(
+            f"  [green]✓[/green] Shared context ready: "
+            f"{total_facts} facts across {len(facts_by_cat)} categories, "
+            f"{len(target_formats)} format(s)"
+        )
 
         return True
 

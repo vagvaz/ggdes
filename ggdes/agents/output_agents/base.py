@@ -181,21 +181,30 @@ class OutputAgent(ABC):
         return result
 
     def _load_user_context(self) -> None:
-        """Load user context from document plan or metadata."""
+        """Load user context from the coordinator's shared context, a saved
+        document plan (backward compat), or pipeline metadata (last resort)."""
         try:
             from ggdes.agents.coordinator import Coordinator
 
             kb_path = get_kb_path(self.config, self.analysis_id)
 
-            # Try to find the plan for this agent's format
+            # 1. Shared context (new coordinator — programmatic)
+            shared = Coordinator.load_shared_context(kb_path)
+            if shared:
+                uctx = shared.get("user_context")
+                if uctx:
+                    self.user_context = uctx
+                    return
+
+            # 2. Format-specific plan (old coordinator — backward compat)
             format_name = getattr(self, "format_name", None)
             if format_name:
                 plan = Coordinator.load_plan(kb_path, format_name)
-                if plan and plan.user_context:
-                    self.user_context = plan.user_context
+                if plan and plan.get("user_context"):
+                    self.user_context = plan["user_context"]
                     return
 
-            # Fallback: try to load from metadata
+            # 3. Pipeline metadata
             from ggdes.kb import KnowledgeBaseManager
 
             kb_manager = KnowledgeBaseManager(self.config)

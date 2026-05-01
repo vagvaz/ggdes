@@ -90,12 +90,22 @@ class PptxAgent(OutputAgent):
         super().__init__(
             repo_path, config, analysis_id, review_feedback=review_feedback
         )
+        self._llm: Any = None  # Lazy — created on first use
         self.format_name = "pptx"
         self.file_extension = ".pptx"
         self.skill_content = self._load_skill("pptx")
 
         # Load user context from document plan
         self._load_user_context()
+
+    @property
+    def llm(self) -> Any:
+        """Lazy LLM provider initialisation."""
+        if self._llm is None:
+            from ggdes.llm import LLMFactory
+
+            self._llm = LLMFactory.from_config(self.config)
+        return self._llm
 
     def _load_plan(self) -> dict[str, Any] | None:
         """Load document plan from KB."""
@@ -108,6 +118,141 @@ class PptxAgent(OutputAgent):
             return None
 
         result: dict[str, Any] = json.loads(plan_file.read_text())
+        return result
+
+    def _get_content(self) -> str:
+        """Generate presentation-optimised content from technical facts.
+
+        PPTX is a fundamentally different medium from a written document —
+        slides need short bullets, a presentation arc, and visual pacing.
+        This method always generates slide-native content rather than
+        converting prose markdown verbatim.
+        """
+        logger.info(
+            "PptxAgent: generating slide-native content | analysis={}",
+            self.analysis_id,
+        )
+        return self._generate_slide_content()
+
+    def _generate_slide_content(self) -> str:
+        """Generate presentation-optimised markdown via LLM.
+
+        Returns markdown where each ``##`` heading starts a new slide.
+        Content follows the 6x6 rule (max 6 bullets, ~6 words per bullet)
+        and includes diagram references.
+        """
+        from rich.console import Console
+
+        from ggdes.agents.coordinator import Coordinator
+        from ggdes.llm import ConversationContext
+        from ggdes.prompts import get_prompt
+        from ggdes.schemas import StoragePolicy
+
+        plan_console = Console()
+        plan_console.print("  [dim]Generating presentation content via LLM...[/dim]")
+
+        # Load shared context
+        kb_path = get_kb_path(self.config, self.analysis_id)
+        shared = Coordinator.load_shared_context(kb_path) or {}
+        facts_data = shared.get("technical_facts", [])
+        from ggdes.schemas import TechnicalFact
+
+        facts = [TechnicalFact(**fd) for fd in facts_data]
+        user_context = shared.get("user_context", {}) or {}
+
+        # Group facts for the prompt
+        facts_by_cat: dict[str, list[TechnicalFact]] = {}
+        for f in facts:
+            facts_by_cat.setdefault(f.category, []).append(f)
+
+        # Build a presentation-aware prompt
+        prompt_parts = [
+            "Create a PowerPoint presentation in markdown format for a technical design document.",
+            "",
+            "PRESENTATION RULES:",
+            "- Each ## heading becomes ONE slide",
+            "- Max 6 bullet points per slide (6x6 rule)",
+            "- ~6 words per bullet point — be concise",
+            "- Start with a title slide: # Presentation Title",
+            "- End with a summary or Q&A slide",
+            "- Group related content into themed slides",
+            "- Include [Diagram: type] references where visuals help",
+            "",
+            f"Technical Facts Available ({len(facts)} total):",
+        ]
+
+        for cat, cat_facts in facts_by_cat.items():
+            prompt_parts.append(f"\n{cat.upper()} ({len(cat_facts)} facts):")
+            for fact in cat_facts[:5]:
+                prompt_parts.append(f"  - {fact.fact_id}: {fact.description[:200]}")
+                if fact.code_snippets:
+                    for elem, code in list(fact.code_snippets.items())[:1]:
+                        prompt_parts.append(f"    Source ({elem}): {code[:200]}")
+
+        prompt_parts.append(
+            f"""
+Audience: {user_context.get("audience", "developers")}
+Detail Level: {user_context.get("detail_level", "medium")}
+"""
+        )
+
+        purposes = user_context.get("purpose", [])
+        if purposes:
+            if isinstance(purposes, list):
+                prompt_parts.append(f"Purpose: {', '.join(purposes)}")
+            else:
+                prompt_parts.append(f"Purpose: {purposes}")
+
+        prompt_parts.append(
+            """
+EXAMPLE SLIDE STRUCTURE:
+# Authentication Overhaul
+
+## Why This Change
+- JWT tokens replacing session-based auth
+- Eliminates server-side session storage
+- Enables stateless horizontal scaling
+
+## Architecture
+- AuthMiddleware intercepts all /api/* requests
+- Token validation in validate_token()
+- [Diagram: architecture]
+
+## Breaking Changes
+- Session cookie no longer accepted
+- All clients must include Authorization header
+- Migration period: 2 weeks
+
+## Summary
+- Stateless auth improves scalability
+- Breaking change requires client updates
+- [Diagram: flow]
+
+Write the presentation now:"""
+        )
+
+        prompt = "\n".join(prompt_parts)
+
+        # Call LLM
+        system_prompt = get_prompt("output", "system")
+        conv = ConversationContext(
+            system_prompt=system_prompt,
+            storage_policy=StoragePolicy.SUMMARY,
+        )
+        conv.add_user_message(prompt)
+        context = conv.get_context_for_llm()
+
+        response = self.llm.chat(
+            messages=context,
+            temperature=0.4,
+            max_tokens=4096,
+        )
+
+        result = response.strip()
+        plan_console.print(
+            f"  [green]✓[/green] Generated slide content "
+            f"({len(result.split(chr(10)))} lines)"
+        )
         return result
 
     def _select_palette(self, content: str) -> dict[str, str]:

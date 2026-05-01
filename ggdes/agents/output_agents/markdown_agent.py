@@ -95,6 +95,20 @@ class MarkdownAgent(OutputAgent):
 
         return facts
 
+    def _load_all_facts(self) -> list[TechnicalFact]:
+        """Load every technical fact from the combined facts file."""
+        import json
+
+        facts_file = (
+            get_kb_path(self.config, self.analysis_id)
+            / "technical_facts"
+            / "facts.json"
+        )
+        if not facts_file.exists():
+            return []
+        data = json.loads(facts_file.read_text())
+        return [TechnicalFact(**fact_data) for fact_data in data]
+
     def _load_plan(self) -> DocumentPlan | None:
         """Load document plan from KB."""
         import json
@@ -108,6 +122,279 @@ class MarkdownAgent(OutputAgent):
 
         data = json.loads(plan_file.read_text())
         return DocumentPlan(**data)
+
+    def _ensure_plan(self) -> DocumentPlan:
+        """Return a plan — loading from disk first, generating via LLM otherwise.
+
+        Calls :meth:`_load_plan` and, if no plan file exists, calls
+        :meth:`_generate_plan` to create one from the shared context.
+        The generated plan is saved to disk for downstream consumers such
+        as diagram generation.
+        """
+        plan = self._load_plan()
+        if plan is not None:
+            return plan
+        return self._generate_plan()
+
+    def _generate_plan(self) -> DocumentPlan:
+        """Generate a document plan from technical facts via the LLM.
+
+        Loads the shared context written by the programmatic coordinator,
+        asks the LLM to propose a section structure, and saves the result
+        as ``plan_markdown.json`` so that downstream machinery
+        (diagram generation, etc.) can load it.
+        """
+        import json
+
+        from rich.console import Console
+
+        from ggdes.agents.coordinator import Coordinator
+
+        plan_console = Console()
+        plan_console.print("  [dim]Generating markdown document plan via LLM...[/dim]")
+        logger.info(
+            "MarkdownAgent: generating plan | analysis={}",
+            self.analysis_id,
+        )
+
+        # Load shared context
+        kb_path = get_kb_path(self.config, self.analysis_id)
+        shared = Coordinator.load_shared_context(kb_path) or {}
+        facts_data = shared.get("technical_facts", [])
+        facts = [TechnicalFact(**fd) for fd in facts_data]
+        facts_by_category: dict[str, list[TechnicalFact]] = {}
+        for f in facts:
+            facts_by_category.setdefault(f.category, []).append(f)
+
+        user_context = shared.get("user_context", {}) or {}
+        semantic_diff = shared.get("semantic_diff")
+
+        # Build dynamic sections for the YAML template
+        facts_lines: list[str] = []
+        for cat, cat_facts in facts_by_category.items():
+            facts_lines.append(f"\n{cat.upper()} ({len(cat_facts)} facts):")
+            for fact in cat_facts[:5]:
+                desc = fact.description[:200]
+                facts_lines.append(f"  - {fact.fact_id}: {desc}")
+                if fact.code_snippets:
+                    for elem, code in list(fact.code_snippets.items())[:1]:
+                        facts_lines.append(f"    Source ({elem}):")
+                        facts_lines.append(f"    ```\n    {code[:300]}\n    ```")
+                if fact.before_after_code:
+                    for elem, ba in list(fact.before_after_code.items())[:1]:
+                        before = (ba.get("before") or "")[:150]
+                        after = (ba.get("after") or "")[:150]
+                        facts_lines.append(f"    Changed ({elem}):")
+                        facts_lines.append(f"      Before: {before}")
+                        facts_lines.append(f"      After:  {after}")
+
+        facts_summary = "\n".join(facts_lines)
+
+        focus = user_context.get("focus", user_context.get("focus_areas", ""))
+        focus_line = f"- Focus Areas: {focus}" if focus else ""
+
+        purposes = user_context.get("purpose", [])
+        if isinstance(purposes, list):
+            purposes = ", ".join(purposes)
+        purpose_line = f"- Document Purpose: {purposes}" if purposes else ""
+
+        semantic_diff_section = ""
+        if semantic_diff:
+            summary = semantic_diff.get("summary", {})
+            semantic_diff_section = (
+                f"Semantic Diff Analysis:\n"
+                f"- Total changes: {summary.get('total_changes', 0)}\n"
+                f"- Breaking changes: {summary.get('breaking_changes', 0)}\n"
+            )
+
+        prompt = get_prompt("output", "markdown_plan").format(
+            total_facts=len(facts),
+            facts_summary=facts_summary,
+            audience=user_context.get("audience", "developers"),
+            detail_level=user_context.get("detail_level", "medium"),
+            include_diagrams=user_context.get("include_diagrams", True),
+            focus_line=focus_line,
+            purpose_line=purpose_line,
+            semantic_diff_section=semantic_diff_section,
+        )
+
+        # Call LLM
+        from ggdes.schemas import StoragePolicy as _SP
+
+        self._init_conversation(
+            shared.get("storage_policy", _SP.SUMMARY) or _SP.SUMMARY
+        )
+        if not self.conversation:
+            raise RuntimeError("Conversation not initialized")
+        self.conversation.add_user_message(prompt)
+        context = self.conversation.get_context_for_llm()
+
+        response = self.llm.chat(
+            messages=context,
+            temperature=0.4,
+            max_tokens=4096,
+        )
+
+        plan_data = self._extract_json(response)
+        if not plan_data:
+            logger.warning(
+                "MarkdownAgent: LLM plan not valid JSON, using category-based fallback"
+            )
+            plan_data = self._build_fallback_plan(facts)
+
+        sections = []
+        for i, sec_data in enumerate(plan_data.get("sections", [])):
+            section_source_code: dict[str, str] = {}
+            section_before_after: dict[str, dict[str, str]] = {}
+            section_usages: dict[str, dict[str, list[str]]] = {}
+            for fid in sec_data.get("technical_facts", []):
+                m = next((f for f in facts if f.fact_id == fid), None)
+                if m:
+                    if m.code_snippets:
+                        section_source_code.update(m.code_snippets)
+                    if m.before_after_code:
+                        section_before_after.update(m.before_after_code)
+                    if m.usages:
+                        section_usages.update(m.usages)
+
+            sections.append(
+                SectionPlan(
+                    title=sec_data.get("title", f"Section {i + 1}"),
+                    description=sec_data.get("description", ""),
+                    technical_facts=sec_data.get("technical_facts", []),
+                    code_references=sec_data.get("code_references", []),
+                    diagrams=sec_data.get("diagrams", []),
+                    source_code=section_source_code,
+                    before_after_code=section_before_after,
+                    usages=section_usages,
+                )
+            )
+
+        diagrams = []
+        for diag_data in plan_data.get("diagrams", []):
+            diagrams.append(
+                DiagramSpec(
+                    diagram_type=diag_data.get("type", "architecture"),
+                    title=diag_data.get("title", f"Diagram"),
+                    description=diag_data.get("description", ""),
+                    elements_to_include=diag_data.get("elements", []),
+                    format="plantuml",
+                )
+            )
+
+        title = plan_data.get(
+            "title",
+            user_context.get("purpose", f"Design Document - {self.analysis_id}"),
+        )
+        if isinstance(title, list):
+            title = ", ".join(title)
+
+        plan = DocumentPlan(
+            analysis_id=self.analysis_id,
+            format="markdown",
+            title=title,
+            audience=user_context.get("audience", "developers"),
+            sections=sections,
+            diagrams=diagrams,
+            template=None,
+            user_context=user_context,
+        )
+
+        # Persist so downstream code (diagram gen, etc.) can load it
+        plans_dir = kb_path / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        (plans_dir / "plan_markdown.json").write_text(
+            json.dumps(plan.model_dump(), indent=2, default=str)
+        )
+
+        plan_console.print(
+            f"  [green]✓[/green] Markdown plan: {len(sections)} sections, "
+            f"{len(diagrams)} diagrams"
+        )
+        return plan
+
+    @staticmethod
+    def _extract_json(text: str) -> dict[str, Any] | None:
+        """Extract a JSON object from an LLM response using multiple strategies."""
+        import json
+
+        text = text.strip()
+
+        # Strategy 1: raw
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: ```json fence
+        if "```json" in text:
+            start = text.find("```json") + 7
+            end = text.find("```", start)
+            if end != -1:
+                try:
+                    return json.loads(text[start:end].strip())
+                except json.JSONDecodeError:
+                    pass
+
+        # Strategy 3: outermost { … }
+        brace_start = text.find("{")
+        if brace_start != -1:
+            depth = 0
+            for i in range(brace_start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[brace_start : i + 1])
+                        except json.JSONDecodeError:
+                            break
+        return None
+
+    @staticmethod
+    def _build_fallback_plan(facts: list[TechnicalFact]) -> dict[str, Any]:
+        """Build a simple plan from facts when the LLM response is not valid JSON."""
+        sections = []
+        added = set()
+        for cat, label in [
+            ("api", "API Changes"),
+            ("behavior", "Behavioral Changes"),
+            ("architecture", "Architecture Changes"),
+            ("data_flow", "Data Flow Changes"),
+            ("dependency", "Dependency Changes"),
+        ]:
+            cf = [f for f in facts if f.category == cat]
+            if cf:
+                fids = [f.fact_id for f in cf]
+                added.update(fids)
+                sections.append({
+                    "title": label,
+                    "description": f"{len(cf)} {cat} change(s)",
+                    "technical_facts": fids,
+                    "code_references": list(
+                        {e for f in cf for e in f.source_elements}
+                    ),
+                    "diagrams": [],
+                })
+        remaining = [f for f in facts if f.fact_id not in added]
+        if remaining:
+            sections.append({
+                "title": "Other Changes",
+                "description": f"{len(remaining)} additional change(s)",
+                "technical_facts": [f.fact_id for f in remaining],
+                "code_references": [],
+                "diagrams": [],
+            })
+        if not sections:
+            sections.append({
+                "title": "Overview",
+                "description": "Summary of changes",
+                "technical_facts": [],
+                "code_references": [],
+                "diagrams": [],
+            })
+        return {"title": "Design Document", "sections": sections, "diagrams": []}
 
     def _generate_plantuml(self, diagram: DiagramSpec) -> str:
         """Generate PlantUML source for a diagram."""
@@ -212,10 +499,8 @@ title {diagram.title}
         # Initialize conversation
         self._init_conversation(storage_policy)
 
-        # Load document plan
-        plan = self._load_plan()
-        if not plan:
-            raise ValueError(f"No markdown plan found for {self.analysis_id}")
+        # Load or generate document plan
+        plan = self._ensure_plan()
 
         console.print(
             f"\n[bold blue]Generating Markdown Document:[/bold blue] {plan.title}"

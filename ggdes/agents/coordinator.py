@@ -1,6 +1,8 @@
-"""Coordinator Agent for planning document generation."""
+"""Programmatic coordinator — loads and prepares shared context for output agents.
 
-import asyncio
+No longer an LLM agent. Each output agent plans its own content for its medium.
+"""
+
 import json
 from pathlib import Path
 from typing import Any
@@ -10,21 +12,20 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from ggdes.config import GGDesConfig, get_kb_path
-from ggdes.llm import ConversationContext, LLMFactory
-from ggdes.prompts import get_prompt
-from ggdes.schemas import (
-    DiagramSpec,
-    DocumentPlan,
-    SectionPlan,
-    StoragePolicy,
-    TechnicalFact,
-)
+from ggdes.schemas import StoragePolicy, TechnicalFact
 
 console = Console()
 
 
 class Coordinator:
-    """Plan document structure and content based on technical facts."""
+    """Prepare shared data context that all output agents consume.
+
+    Responsibilities:
+    - Load technical facts, semantic diff, and pipeline metadata from the KB.
+    - Categorize facts for downstream use.
+    - Gather user context interactively (when not provided via CLI).
+    - Persist the assembled context so each output agent can load it.
+    """
 
     def __init__(
         self,
@@ -34,127 +35,44 @@ class Coordinator:
         user_context: dict[str, Any] | None = None,
         review_feedback: str | None = None,
     ):
-        """Initialize coordinator.
-
-        Args:
-            repo_path: Path to git repository
-            config: GGDesConfig instance
-            analysis_id: Analysis ID for reading/writing to KB
-            user_context: Optional user-provided context from CLI questionnaire
-            review_feedback: Optional feedback from review session to incorporate during regeneration.
-        """
         self.repo_path = repo_path
         self.config = config
         self.analysis_id = analysis_id
         self.user_context = user_context or {}
-        self.llm = LLMFactory.from_config(config)
-        self.conversation: ConversationContext | None = None
         self.review_feedback = review_feedback
 
-    def _init_conversation(
-        self, storage_policy: StoragePolicy = StoragePolicy.SUMMARY
-    ) -> None:
-        """Initialize conversation context."""
-        from ggdes.agents.skill_utils import SystemPromptBuilder
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
 
-        builder = SystemPromptBuilder()
-
-        builder.set_base_prompt(get_prompt("coordinator", "system"))
-
-        user_guidance = self._build_user_context_guidance()
-        if user_guidance:
-            builder.set_user_guidance(user_guidance)
-
-        if self.review_feedback:
-            builder.add_section("REVIEW FEEDBACK", self._build_review_feedback_block())
-
-        system_prompt = builder.build()
-
-        self.conversation = ConversationContext(
-            system_prompt=system_prompt,
-            storage_policy=storage_policy,
-            max_tokens=50000,
-        )
-
-    def _build_user_context_guidance(self) -> str:
-        """Build guidance text from user context."""
-        from ggdes.agents.skill_utils import build_user_context_guidance
-
-        return build_user_context_guidance(self.user_context)
-
-    def _build_review_feedback_block(self) -> str:
-        """Build a formatted block with review feedback for injection into prompts."""
-        return (
-            "╔══════════════════════════════════════════════════════════════════╗\n"
-            "║              ⚠️  REVIEW FEEDBACK (MUST INCORPORATE)  ⚠️          ║\n"
-            "╚══════════════════════════════════════════════════════════════════╝\n\n"
-            "The following feedback was provided during review. You MUST incorporate\n"
-            f"this feedback into your document plan:\n\n{self.review_feedback}"
-        )
-
-    def _load_facts(self) -> list[TechnicalFact]:
-        """Load technical facts from KB."""
-
-        facts_file = (
-            get_kb_path(self.config, self.analysis_id)
-            / "technical_facts"
-            / "facts.json"
-        )
-
-        if not facts_file.exists():
-            return []
-
-        data = json.loads(facts_file.read_text())
-        return [TechnicalFact(**fact_data) for fact_data in data]
-
-    def _load_semantic_diff(self) -> dict[str, Any] | None:
-        """Load semantic diff results from KB.
-
-        Returns:
-            Dict with semantic diff data or None if not available
-        """
-
-        semantic_diff_path = (
-            get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
-        )
-
-        if not semantic_diff_path.exists():
-            return None
-
-        try:
-            data = json.loads(semantic_diff_path.read_text())
-            return data if isinstance(data, dict) else None
-        except Exception:
-            return None
-
-    async def create_plan(
+    async def prepare_data(
         self,
         target_formats: list[str],
         interactive: bool = True,
         storage_policy: StoragePolicy = StoragePolicy.SUMMARY,
-        parallel: bool = True,
-    ) -> list[DocumentPlan]:
-        """Create document plans for specified formats.
+    ) -> dict[str, Any]:
+        """Load and prepare shared context for all output agents.
+
+        Returns the assembled context dict and persists it to the KB so that
+        each ``OutputAgent`` subclass can load it independently.
 
         Args:
-            target_formats: List of output formats (markdown, docx, pptx, pdf)
-            interactive: Whether to ask user for input
-            storage_policy: How to persist conversation
-            parallel: Whether to create plans in parallel (default: True)
+            target_formats: List of output formats (markdown, docx, pptx, pdf).
+            interactive: Whether to prompt the user when CLI context is missing.
+            storage_policy: Ignored by the programmatic coordinator (retained for
+                            signature compatibility).
 
         Returns:
-            List of document plans (one per format)
+            Shared context dict with keys ``technical_facts``, ``facts_by_category``,
+            ``user_context``, ``semantic_diff``.
         """
-        # Initialize conversation
-        self._init_conversation(storage_policy)
-
-        # Load technical facts
+        # Load raw data
         facts = self._load_facts()
         if not facts:
             raise ValueError(f"No technical facts found for {self.analysis_id}")
 
         logger.info(
-            "Coordinator: creating plan | facts=%d formats=%s analysis=%s",
+            "Coordinator: preparing context | facts=%d formats=%s analysis=%s",
             len(facts),
             target_formats,
             self.analysis_id,
@@ -162,98 +80,105 @@ class Coordinator:
 
         console.print(f"\n[bold]Loaded {len(facts)} technical facts[/bold]")
 
-        # Categorize facts for planning
+        # Categorise facts
         facts_by_category = self._categorize_facts(facts)
+        for cat, items in facts_by_category.items():
+            console.print(f"  [dim]{cat}: {len(items)} facts[/dim]")
 
-        # Load semantic diff results if available
+        # Semantic diff
         semantic_diff_data = self._load_semantic_diff()
         if semantic_diff_data:
             summary = semantic_diff_data.get("summary", {})
             console.print(
-                f"  [dim]Loaded semantic diff: {summary.get('total_changes', 0)} semantic changes, "
-                f"impact score {summary.get('total_impact_score', 0):.1f}/10[/dim]"
+                f"  [dim]Loaded semantic diff: {summary.get('total_changes', 0)} changes, "
+                f"impact {summary.get('total_impact_score', 0):.1f}/10[/dim]"
             )
             if summary.get("has_breaking_changes", False):
                 console.print(
-                    f"  [yellow]⚠ {summary.get('breaking_changes', 0)} breaking change(s) detected[/yellow]"
+                    f"  [yellow]⚠ {summary.get('breaking_changes', 0)} breaking change(s)[/yellow]"
                 )
         else:
-            console.print("  [dim]No semantic diff results available[/dim]")
+            console.print("  [dim]No semantic diff results[/dim]")
 
-        # Get user context - use pre-populated context from CLI if available
-        user_context = dict(self.user_context)  # Copy to avoid modifying original
+        # Gather user context (interactive fallback when CLI omitted)
+        user_context = dict(self.user_context)
         if interactive and not user_context:
-            # Only ask questions if no context was provided from CLI
             user_context = await self._gather_user_input(facts_by_category)
 
-        # Create plans for each format
-        if parallel and len(target_formats) > 1:
-            # Run format plans in parallel
-            tasks = [
-                self._create_format_plan(
-                    fmt, facts, facts_by_category, user_context, semantic_diff_data
-                )
-                for fmt in target_formats
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            # Filter out exceptions, log errors
-            plans: list[DocumentPlan] = []
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    console.print(
-                        f"[red]Plan creation failed for {target_formats[i]}: {result}[/red]"
-                    )
-                else:
-                    plans.append(result)  # type: ignore[arg-type]
-        else:
-            # Sequential (original behavior)
-            plans = []
-            for fmt in target_formats:
-                plan = await self._create_format_plan(
-                    fmt, facts, facts_by_category, user_context, semantic_diff_data
-                )
-                plans.append(plan)
+        # Assemble shared context
+        context: dict[str, Any] = {
+            "analysis_id": self.analysis_id,
+            "technical_facts": [f.model_dump() for f in facts],
+            "facts_by_category": {
+                cat: [f.model_dump() for f in cat_facts]
+                for cat, cat_facts in facts_by_category.items()
+            },
+            "user_context": user_context,
+            "semantic_diff": semantic_diff_data,
+            "target_formats": target_formats,
+            "review_feedback": self.review_feedback,
+        }
 
-        # Interactive review: LLM self-review of generated plans (used during regeneration)
-        if self.review_feedback and plans:
-            await self._interactive_review(plans)
+        self._save_shared_context(context)
+        return context
 
-        # Save conversation
+    # ------------------------------------------------------------------
+    # Data loaders
+    # ------------------------------------------------------------------
 
-        kb_path = (
-            get_kb_path(self.config, self.analysis_id) / "conversations" / "coordinator"
+    def _load_facts(self) -> list[TechnicalFact]:
+        """Load technical facts from KB."""
+        facts_file = (
+            get_kb_path(self.config, self.analysis_id)
+            / "technical_facts"
+            / "facts.json"
         )
-        if self.conversation:
-            self.conversation.save(kb_path)
+        if not facts_file.exists():
+            return []
+        data = json.loads(facts_file.read_text())
+        return [TechnicalFact(**fact_data) for fact_data in data]
 
-        # Save plans
-        self._save_plans(plans)
+    def _load_semantic_diff(self) -> dict[str, Any] | None:
+        """Load semantic diff results from KB."""
+        path = (
+            get_kb_path(self.config, self.analysis_id) / "semantic_diff" / "result.json"
+        )
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
 
-        return plans
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
+    @staticmethod
     def _categorize_facts(
-        self, facts: list[TechnicalFact]
+        facts: list[TechnicalFact],
     ) -> dict[str, list[TechnicalFact]]:
-        """Group facts by category for planning."""
+        """Group facts by category."""
         categories: dict[str, list[TechnicalFact]] = {}
         for fact in facts:
             cat = fact.category
-            if cat not in categories:
-                categories[cat] = []
-            categories[cat].append(fact)
+            categories.setdefault(cat, []).append(fact)
         return categories
 
     async def _gather_user_input(
-        self, facts_by_category: dict[str, list[TechnicalFact]]
+        self,
+        facts_by_category: dict[str, list[TechnicalFact]],
     ) -> dict[str, Any]:
-        """Interactive mode: ask user for context and preferences."""
-        # Use pre-populated context from CLI as defaults
+        """Interactive mode: ask the user for context and preferences.
+
+        Only called when no CLI-provided user context exists.
+        """
         context = dict(self.user_context)
 
         console.print("\n[bold cyan]Document Planning Questions[/bold cyan]")
         console.print("Help me create the best documentation for your changes.\n")
 
-        # Target audience (use CLI value as default if available)
         default_audience = context.get("audience", "developers")
         context["audience"] = Prompt.ask(
             "Who is the target audience?",
@@ -261,19 +186,15 @@ class Coordinator:
             default=default_audience,
         )
 
-        # Focus areas (use CLI value as default if available)
         available_categories = list(facts_by_category.keys())
         if len(available_categories) > 1:
             default_focus = context.get("focus_areas", "all")
-            focus = Prompt.ask(
+            context["focus"] = Prompt.ask(
                 "Which aspects should the documentation focus on?",
                 default=default_focus,
             )
-            context["focus"] = focus
 
-        # Detail level (use CLI value as default if available)
         default_detail = context.get("detail_level", "medium")
-        # Map CLI values to coordinator choices if needed
         detail_map = {
             "quick_summary": "low",
             "medium": "medium",
@@ -286,12 +207,10 @@ class Coordinator:
             default=mapped_detail,
         )
 
-        # Diagrams
         context["include_diagrams"] = Confirm.ask(
             "Include architecture diagrams?", default=True
         )
 
-        # Special sections - use CLI purpose to guide defaults
         purposes = context.get("purpose", [])
         if isinstance(purposes, str):
             purposes = [purposes]
@@ -311,7 +230,6 @@ class Coordinator:
                 ),
             )
 
-        # Additional context (use CLI value as default if available)
         default_additional = context.get("additional_context", "")
         additional = Prompt.ask(
             "Any additional context or specific aspects to cover? (optional)",
@@ -321,574 +239,45 @@ class Coordinator:
             context["additional_context"] = additional
 
         console.print("\n[green]✓ Preferences captured[/green]\n")
-
         return context
 
-    async def _create_format_plan(
-        self,
-        fmt: str,
-        facts: list[TechnicalFact],
-        facts_by_category: dict[str, list[TechnicalFact]],
-        user_context: dict[str, Any],
-        semantic_diff: dict[str, Any] | None = None,
-    ) -> DocumentPlan:
-        """Create a document plan for a specific format with its own conversation context."""
-        from ggdes.llm import ConversationContext
-        from ggdes.schemas import StoragePolicy
-
-        # Create a fresh conversation context for this format
-        conv = ConversationContext(
-            system_prompt=self.conversation.system_prompt if self.conversation else "",
-            storage_policy=self.conversation.storage_policy
-            if self.conversation
-            else StoragePolicy.SUMMARY,
+    def _save_shared_context(self, context: dict[str, Any]) -> None:
+        """Persist the assembled context for output agents to consume."""
+        context_dir = get_kb_path(self.config, self.analysis_id) / "shared_context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        (context_dir / "context.json").write_text(
+            json.dumps(context, indent=2, default=str)
         )
 
-        console.print(f"[dim]Creating {fmt} plan...[/dim]")
-        logger.info(
-            "Coordinator: creating %s plan | facts=%d analysis=%s",
-            fmt,
-            len(facts),
-            self.analysis_id,
-        )
-
-        # Build prompt for LLM
-        prompt = self._build_planning_prompt(
-            fmt, facts, facts_by_category, user_context, semantic_diff
-        )
-
-        conv.add_user_message(prompt)
-        context = conv.get_context_for_llm()
-
-        # Generate plan via LLM
-        plan_data = await self._generate_plan_response(context, fmt, facts=facts)
-
-        # Create DocumentPlan
-        sections = []
-        for i, sec_data in enumerate(plan_data.get("sections", [])):
-            # Collect source code for referenced elements from facts
-            section_source_code: dict[str, str] = {}
-            section_before_after: dict[str, dict[str, str]] = {}
-            section_usages: dict[str, dict[str, list[str]]] = {}
-            for fact_id in sec_data.get("technical_facts", []):
-                matching_fact = next((f for f in facts if f.fact_id == fact_id), None)
-                if matching_fact and matching_fact.code_snippets:
-                    section_source_code.update(matching_fact.code_snippets)
-                if matching_fact and matching_fact.before_after_code:
-                    section_before_after.update(matching_fact.before_after_code)
-                if matching_fact and matching_fact.usages:
-                    section_usages.update(matching_fact.usages)
-
-            sections.append(
-                SectionPlan(
-                    title=sec_data.get("title", f"Section {i + 1}"),
-                    description=sec_data.get("description", ""),
-                    technical_facts=sec_data.get("technical_facts", []),
-                    code_references=sec_data.get("code_references", []),
-                    diagrams=sec_data.get("diagrams", []),
-                    source_code=section_source_code,
-                    before_after_code=section_before_after,
-                    usages=section_usages,
-                )
-            )
-
-        diagrams = []
-        for i, diag_data in enumerate(plan_data.get("diagrams", [])):
-            diagrams.append(
-                DiagramSpec(
-                    diagram_type=diag_data.get("type", "architecture"),
-                    title=diag_data.get("title", f"Diagram {i + 1}"),
-                    description=diag_data.get("description", ""),
-                    elements_to_include=diag_data.get("elements", []),
-                    format="plantuml",
-                )
-            )
-
-        plan = DocumentPlan(
-            analysis_id=self.analysis_id,
-            format=fmt,
-            title=plan_data.get("title", f"Design Document - {self.analysis_id}"),
-            audience=user_context.get("audience", "developers"),
-            sections=sections,
-            diagrams=diagrams,
-            template=None,
-            user_context=user_context,
-        )
-
-        # Save per-format conversation for debugging
-        if self.analysis_id and conv.messages:
-            conv_path = (
-                get_kb_path(self.config, self.analysis_id)
-                / "conversations"
-                / f"coordinator_{fmt}"
-            )
-            conv.save(conv_path)
-
-        console.print(
-            f"  [green]✓[/green] {fmt}: {len(sections)} sections, {len(diagrams)} diagrams"
-        )
-
-        return plan
-
-    def _build_planning_prompt(
-        self,
-        fmt: str,
-        facts: list[TechnicalFact],
-        facts_by_category: dict[str, list[TechnicalFact]],
-        user_context: dict[str, Any],
-        semantic_diff: dict[str, Any] | None = None,
-    ) -> str:
-        """Build prompt for document planning."""
-        prompt = f"""Create a document plan for a {fmt.upper()} format design document.
-
-Technical Facts Available ({len(facts)} total):
-"""
-
-        # Summarize facts by category, including code snippets when available
-        for category, cat_facts in facts_by_category.items():
-            prompt += f"\n{category.upper()} ({len(cat_facts)} facts):\n"
-            for fact in cat_facts[:5]:  # Limit to first 5 per category
-                # Truncate descriptions with warning
-                desc = fact.description[:100]
-                desc_truncated = len(fact.description) > 100
-                prompt += (
-                    f"  - {fact.fact_id}: {desc}{'...' if desc_truncated else ''}\n"
-                )
-                if desc_truncated:
-                    prompt += f"    (description truncated, full: {len(fact.description)} chars)\n"
-                # Include source code snippets if available
-                if fact.code_snippets:
-                    for elem_name, code in list(fact.code_snippets.items())[:2]:
-                        # Truncate long snippets with warning
-                        snippet_truncated = len(code) > 300
-                        truncated_code = (
-                            code[:300] + "..." if snippet_truncated else code
-                        )
-                        prompt += (
-                            f"    Source ({elem_name}):\n```\n{truncated_code}\n```\n"
-                        )
-                        if snippet_truncated:
-                            prompt += (
-                                f"    (snippet truncated, full: {len(code)} chars)\n"
-                            )
-                # Include before/after code if available
-                if fact.before_after_code:
-                    for elem_name, ba in list(fact.before_after_code.items())[:2]:
-                        before = ba.get("before", "")
-                        after = ba.get("after", "")
-                        if before and after:
-                            before_truncated = len(before) > 150
-                            after_truncated = len(after) > 150
-                            prompt += (
-                                f"    Changed ({elem_name}):\n"
-                                f"      Before: {before[:150]}{'...' if before_truncated else ''}\n"
-                                f"      After: {after[:150]}{'...' if after_truncated else ''}\n"
-                            )
-                        elif after and not before:
-                            after_truncated = len(after) > 200
-                            prompt += f"    New ({elem_name}): {after[:200]}{'...' if after_truncated else ''}\n"
-            if len(cat_facts) > 5:
-                prompt += f"  ... and {len(cat_facts) - 5} more\n"
-
-        prompt += f"""
-User Requirements:
-- Target Audience: {user_context.get("audience", "developers")}
-- Detail Level: {user_context.get("detail_level", "medium")}
-- Include Diagrams: {user_context.get("include_diagrams", True)}
-"""
-
-        # Handle focus from CLI (focus_areas) or coordinator (focus)
-        focus_value = user_context.get("focus", user_context.get("focus_areas", ""))
-        if focus_value:
-            prompt += f"- Focus Areas: {focus_value}\n"
-
-        # Handle purpose from CLI
-        purposes = user_context.get("purpose", [])
-        if purposes:
-            if isinstance(purposes, list):
-                prompt += f"- Document Purpose: {', '.join(purposes)}\n"
-            else:
-                prompt += f"- Document Purpose: {purposes}\n"
-
-        if user_context.get("additional_context"):
-            prompt += f"\nAdditional Context: {user_context['additional_context']}\n"
-
-        # Inject review feedback if available
-        if self.review_feedback:
-            prompt += f"""
-
-Review Feedback (from previous stage review):
-{self.review_feedback}
-
-You MUST incorporate this feedback into your document plan. Adjust sections,
-priorities, and content accordingly.
-"""
-
-        # Include semantic diff analysis if available
-        if semantic_diff:
-            summary = semantic_diff.get("summary", {})
-            changes = semantic_diff.get("semantic_changes", [])
-            prompt += f"""
-
-Semantic Diff Analysis (automated code change detection):
-- Total semantic changes: {summary.get("total_changes", 0)}
-- Breaking changes: {summary.get("breaking_changes", 0)}
-- Behavioral changes: {summary.get("behavioral_changes", 0)}
-- Refactoring changes: {summary.get("refactoring_changes", 0)}
-- Documentation changes: {summary.get("documentation_changes", 0)}
-- Performance changes: {summary.get("performance_changes", 0)}
-- Total impact score: {summary.get("total_impact_score", 0):.1f}/10
-
-Key semantic changes:
-"""
-            # Group changes by type for better presentation
-            changes_by_type: dict[str, list[dict[str, Any]]] = {}
-            for change in changes:
-                change_type = change.get("change_type", "unknown")
-                if change_type not in changes_by_type:
-                    changes_by_type[change_type] = []
-                changes_by_type[change_type].append(change)
-
-            for change_type, type_changes in changes_by_type.items():
-                prompt += f"\n{change_type.replace('_', ' ').title()} ({len(type_changes)}):\n"
-                for change in type_changes[:5]:  # Limit to 5 per type
-                    prompt += f"  - {change.get('description', '')} in {change.get('file_path', '')}"
-                    if change.get("impact_score"):
-                        prompt += f" (impact: {change['impact_score']:.2f})"
-                    prompt += "\n"
-                if len(type_changes) > 5:
-                    prompt += f"  ... and {len(type_changes) - 5} more\n"
-
-            prompt += """
-
-Use the semantic diff analysis to:
-1. Prioritize sections for high-impact and breaking changes
-2. Create dedicated sections for breaking changes with migration guidance
-3. Include diagrams showing architectural changes
-4. Ensure every significant semantic change is covered in the document
-"""
-
-        # Format-specific guidance
-        if fmt == "markdown":
-            prompt += """
-Format: Markdown - optimized for web viewing, code blocks, and links.
-"""
-        elif fmt == "docx":
-            prompt += """
-Format: Word Document - formal structure, page breaks, table of contents.
-"""
-        elif fmt == "pptx":
-            prompt += """
-Format: PowerPoint - visual emphasis, bullet points, minimal text per slide.
-"""
-        elif fmt == "pdf":
-            prompt += """
-Format: PDF - print-ready, bookmarks, formal layout.
-"""
-
-        prompt += """
-Provide a document plan as JSON:
-{
-  "title": "Document title",
-  "sections": [
-    {
-      "title": "Section name",
-      "description": "What this section covers",
-      "technical_facts": ["fact_id_1", "fact_id_2"],
-      "code_references": ["function_name", "class_name"],
-      "diagrams": ["diagram_id_1"]
-    }
-  ],
-  "diagrams": [
-    {
-      "type": "architecture|flow|sequence|class",
-      "title": "Diagram title",
-      "description": "What to show",
-      "elements": ["element_1", "element_2"]
-    }
-  ]
-}
-"""
-
-        return prompt
-
-    def _extract_json_from_response(self, response: str) -> str | None:
-        """Extract JSON string from an LLM response using multiple strategies."""
-        # Strategy 1: Try raw response as JSON
-        text = response.strip()
-        try:
-            json.loads(text)
-            return text
-        except json.JSONDecodeError:
-            pass
-
-        # Strategy 2: Extract from ```json ... ``` fence
-        if "```json" in text:
-            start = text.find("```json") + 7
-            end = text.find("```", start)
-            if end != -1:
-                candidate = text[start:end].strip()
-                try:
-                    json.loads(candidate)
-                    return candidate
-                except json.JSONDecodeError:
-                    pass
-
-        # Strategy 3: Extract from ``` ... ``` fence (no language tag)
-        if "```" in text:
-            start = text.find("```") + 3
-            end = text.find("```", start)
-            if end != -1:
-                candidate = text[start:end].strip()
-                try:
-                    json.loads(candidate)
-                    return candidate
-                except json.JSONDecodeError:
-                    pass
-
-        # Strategy 4: Find outermost { ... } in the response
-        brace_start = text.find("{")
-        if brace_start != -1:
-            depth = 0
-            for i in range(brace_start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        candidate = text[brace_start : i + 1]
-                        try:
-                            json.loads(candidate)
-                            return candidate
-                        except json.JSONDecodeError:
-                            break
-
-        return None
-
-    def _build_fallback_plan(
-        self, facts: list["TechnicalFact"], fmt: str
-    ) -> dict[str, Any]:
-        """Build a fallback plan from facts when LLM JSON parsing fails.
-
-        Creates one section per fact category and assigns all relevant facts.
-        This is far better than returning an empty plan.
-        """
-        sections = []
-        added_fact_ids = set()
-
-        # Group facts by category
-        categories = ["api", "behavior", "architecture", "data_flow", "dependency"]
-        category_titles = {
-            "api": "API Changes",
-            "behavior": "Behavioral Changes",
-            "architecture": "Architecture Changes",
-            "data_flow": "Data Flow Changes",
-            "dependency": "Dependency Changes",
-        }
-
-        for cat in categories:
-            cat_facts = [f for f in facts if f.category == cat]
-            if cat_facts:
-                fact_ids = [f.fact_id for f in cat_facts]
-                added_fact_ids.update(fact_ids)
-                sections.append(
-                    {
-                        "title": category_titles.get(
-                            cat, cat.replace("_", " ").title()
-                        ),
-                        "description": f"{len(cat_facts)} {cat.replace('_', ' ')} change(s)",
-                        "technical_facts": fact_ids,
-                        "code_references": list(
-                            {elem for f in cat_facts for elem in f.source_elements}
-                        ),
-                        "diagrams": [],
-                    }
-                )
-
-        # Catch-all for any uncategorized facts
-        remaining = [f for f in facts if f.fact_id not in added_fact_ids]
-        if remaining:
-            sections.append(
-                {
-                    "title": "Other Changes",
-                    "description": f"{len(remaining)} additional change(s)",
-                    "technical_facts": [f.fact_id for f in remaining],
-                    "code_references": [],
-                    "diagrams": [],
-                }
-            )
-
-        if not sections:
-            sections.append(
-                {
-                    "title": "Overview",
-                    "description": "Summary of changes",
-                    "technical_facts": [],
-                    "code_references": [],
-                    "diagrams": [],
-                }
-            )
-
-        return {
-            "title": f"Design Document - {self.analysis_id}",
-            "sections": sections,
-            "diagrams": [],
-        }
-
-    async def _generate_plan_response(
-        self,
-        context: list[dict[str, Any]],
-        fmt: str,
-        facts: list["TechnicalFact"] | None = None,
-    ) -> dict[str, Any]:
-        """Generate document plan from conversation context.
-
-        Tries to parse the LLM response as JSON. On failure, retries once with
-        a correction prompt. If that also fails, builds a facts-derived fallback plan.
-        """
-        logger.info(
-            "Coordinator: LLM call for %s plan | messages=%d model=%s",
-            fmt,
-            len(context),
-            self.llm.model_name,
-        )
-
-        # First attempt
-        response = self.llm.chat(
-            messages=context,
-            temperature=0.4,
-            max_tokens=4096,
-        )
-
-        # Parse JSON response
-        json_str = self._extract_json_from_response(response)
-        if json_str is not None:
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                pass
-
-        # Retry with correction prompt
-        logger.warning(
-            "Coordinator: JSON parse failed for %s plan, retrying with correction",
-            fmt,
-        )
-        correction_prompt = (
-            "Your previous response was not valid JSON. Respond with ONLY a valid JSON object "
-            "matching this exact schema:\n"
-            '{"title": "...", "sections": [{"title": "...", "description": "...", '
-            '"technical_facts": ["fact_id_1"], "code_references": [], "diagrams": []}], '
-            '"diagrams": []}\n'
-            "Do NOT include markdown code fences, explanations, or any text outside the JSON object."
-        )
-        retry_context = context + [
-            {"role": "assistant", "content": response},
-            {"role": "user", "content": correction_prompt},
-        ]
-        retry_response = self.llm.chat(
-            messages=retry_context,
-            temperature=0.2,  # Lower temperature for more deterministic output
-            max_tokens=4096,
-        )
-
-        json_str = self._extract_json_from_response(retry_response)
-        if json_str is not None:
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                pass
-
-        # All parsing failed - build fallback from facts if available
-        logger.error(
-            "Coordinator: JSON parse failed for %s plan after retry, using fact-derived fallback",
-            fmt,
-        )
-        if facts:
-            return self._build_fallback_plan(facts, fmt)
-        return {
-            "title": f"Design Document - {self.analysis_id}",
-            "sections": [
-                {
-                    "title": "Overview",
-                    "description": "Summary of changes",
-                    "technical_facts": [],
-                    "code_references": [],
-                    "diagrams": [],
-                }
-            ],
-            "diagrams": [],
-        }
-
-    async def _interactive_review(self, plans: list[DocumentPlan]) -> None:
-        """LLM self-review of generated plans to verify feedback was incorporated."""
-        if not self.conversation:
-            return
-
-        from ggdes.prompts import get_prompt
-
-        plan_summary = []
-        for plan in plans:
-            sections = ", ".join(s.title for s in plan.sections)
-            plan_summary.append(f"{plan.format}: [{sections}]")
-
-        review_prompt = get_prompt("coordinator", "interactive_review").format(
-            document_plan="\n".join(plan_summary)
-        )
-
-        self.conversation.add_user_message(review_prompt)
-        context = self.conversation.get_context_for_llm()
-
-        console.print("[dim]Running interactive review of document plans...[/dim]")
-
-        try:
-            response = self.llm.chat(messages=context, temperature=0.3, max_tokens=1024)
-            self.conversation.add_assistant_message(response)
-
-            if response.strip().lower().startswith("approve"):
-                console.print("[green]✓ Interactive review: plan approved[/green]")
-            else:
-                console.print(f"[yellow]Review feedback: {response[:200]}[/yellow]")
-        except Exception as e:
-            console.print(f"[dim]Interactive review skipped: {e}[/dim]")
-
-    def _save_plans(self, plans: list[DocumentPlan]) -> None:
-        """Save document plans to knowledge base."""
-
-        plans_dir = get_kb_path(self.config, self.analysis_id) / "plans"
-        plans_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save each plan
-        for plan in plans:
-            plan_file = plans_dir / f"plan_{plan.format}.json"
-            plan_file.write_text(json.dumps(plan.model_dump(), indent=2, default=str))
-
-        # Save index
-        index = {
-            "analysis_id": self.analysis_id,
-            "available_formats": [p.format for p in plans],
-            "plans": [f"plan_{p.format}.json" for p in plans],
-        }
-        (plans_dir / "index.json").write_text(json.dumps(index, indent=2))
+    # ------------------------------------------------------------------
+    # Utility class methods (used by agents during content generation)
+    # ------------------------------------------------------------------
 
     @classmethod
-    def load_plan(cls, kb_path: Path, fmt: str) -> DocumentPlan | None:
-        """Load a specific document plan from KB."""
-        plan_file = kb_path / "plans" / f"plan_{fmt}.json"
+    def load_shared_context(cls, kb_path: Path) -> dict[str, Any] | None:
+        """Load the shared context saved by :meth:`prepare_data`."""
+        ctx_file = kb_path / "shared_context" / "context.json"
+        if not ctx_file.exists():
+            return None
+        return json.loads(ctx_file.read_text())
 
+    @classmethod
+    def load_plan(cls, kb_path: Path, fmt: str) -> dict[str, Any] | None:
+        """Load a format-specific plan from KB.
+
+        Plans are now generated by each output agent rather than the coordinator,
+        but this method remains for backward compatibility with saved plans.
+        """
+        plan_file = kb_path / "plans" / f"plan_{fmt}.json"
         if not plan_file.exists():
             return None
-
-        data = json.loads(plan_file.read_text())
-        return DocumentPlan(**data)
+        return json.loads(plan_file.read_text())
 
     @classmethod
     def list_available_formats(cls, kb_path: Path) -> list[str]:
         """List available document formats in KB."""
         index_file = kb_path / "plans" / "index.json"
-
         if not index_file.exists():
             return []
-
         data: dict[str, Any] = json.loads(index_file.read_text())
-        formats: list[str] = data.get("available_formats", [])
-        return formats
+        return data.get("available_formats", [])

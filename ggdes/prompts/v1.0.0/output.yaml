@@ -78,8 +78,47 @@ markdown_system: |
      - Use active voice when possible
      - Define acronyms on first use
 
-  4. Technical Depth:
-     - Include function signatures and parameters
-     - Describe behavioral changes, not just structural
-     - Explain the "why" behind changes
-     - Note any breaking changes or migration steps
+   4. Technical Depth:
+      - Include function signatures and parameters
+      - Describe behavioral changes, not just structural
+      - Explain the "why" behind changes
+      - Note any breaking changes or migration steps
+
+markdown_plan: |
+  Create a document plan for a MARKDOWN format design document.
+
+  Technical Facts Available ({total_facts} total):
+  {facts_summary}
+
+  User Requirements:
+  - Target Audience: {audience}
+  - Detail Level: {detail_level}
+  - Include Diagrams: {include_diagrams}
+  {focus_line}
+  {purpose_line}
+
+  {semantic_diff_section}
+
+  Provide a document plan as JSON with this exact schema:
+  {{
+    "title": "Document title",
+    "sections": [
+      {{
+        "title": "Section name",
+        "description": "What this section covers",
+        "technical_facts": ["fact_id_1", "fact_id_2"],
+        "code_references": ["function_name"],
+        "diagrams": []
+      }}
+    ],
+    "diagrams": [
+      {{
+        "type": "architecture|flow|sequence|class",
+        "title": "Diagram title",
+        "description": "What to show",
+        "elements": ["element_1", "element_2"]
+      }}
+    ]
+  }}
+
+  Write ONLY valid JSON that matches the schema above. No markdown fences, no extra text.
