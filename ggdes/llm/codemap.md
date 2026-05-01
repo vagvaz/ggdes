@@ -54,6 +54,8 @@ Core interface methods:
 |---|---|
 | `chat(messages, temperature, max_tokens)` | Generate from conversation context |
 | `generate(prompt, system_prompt, temperature, max_tokens)` | Generate from prompt |
+| `async_chat(messages, temperature, max_tokens)` | Async version of `chat()` — default runs sync in thread-pool executor; providers override for true async I/O |
+| `async_generate(prompt, system_prompt, temperature, max_tokens)` | Async version of `generate()` — default runs sync in thread-pool executor; providers override for true async I/O |
 | `generate_structured(prompt, response_model, system_prompt, temperature, max_retries)` | Generate structured output matching a Pydantic model |
 
 #### `retry_on_failure` decorator
@@ -160,10 +162,20 @@ AnthropicProvider / OpenAIProvider / OllamaProvider / etc.
     ↓
   retry_on_failure decorator (3 attempts, exponential backoff + jitter)
     ↓
-  chat() / generate() → API call
-    ↓
-  generate_structured (if used):
-      prompt → add format instructions → generate() → parse → validate → retry if needed
+  ┌─ sync path ────────────────────────────┐
+  │  chat() / generate() → API call        │
+  │  generate_structured (if used):        │
+  │    prompt → add format instructions →   │
+  │    generate() → parse → validate →      │
+  │    retry if needed                      │
+  └─────────────────────────────────────────┘
+  ┌─ async path ───────────────────────────┐
+  │  async_chat() / async_generate()       │
+  │    ├─ default: asyncio.to_thread(…)    │
+  │    │   (runs sync in thread-pool)       │
+  │    └─ overridden: true async I/O       │
+  │  (no structured variant yet)           │
+  └─────────────────────────────────────────┘
     ↓
   Text / Pydantic model instance returned
 ```

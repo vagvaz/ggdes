@@ -54,7 +54,7 @@ Three outcome states:
 - `success=False, error=msg` — failure (pipeline halts)
 - `success=True, skipped=True` — intentionally skipped (pipeline advances)
 
-### Stage Name Constants (`__init__.py:11`)
+### Stage Name Constants (`__init__.py:13`)
 
 Canonical source for all 9 pipeline stage names. Every consumer (`pipeline.py`, `kb/manager.py`, `review/`) imports from here to avoid string duplication:
 
@@ -70,9 +70,50 @@ Canonical source for all 9 pipeline stage names. Every consumer (`pipeline.py`, 
 | `STAGE_COORDINATOR_PLAN` | `"coordinator_plan"` | `_run_coordinator_plan()` |
 | `STAGE_OUTPUT_GENERATION` | `"output_generation"` | `_run_output_generation()` |
 
-`ALL_STAGES` (`__init__.py:21`) provides the canonical ordering.
+`ALL_STAGES` (`__init__.py:23`) provides the canonical ordering.
 
-### Stage Registry (`__init__.py:33`)
+### Stage Dependency Graph (`__init__.py:38`)
+
+`STAGE_DEPENDENCIES` defines the prerequisite relationships between stages for automated scheduler resolution:
+
+```python
+STAGE_DEPENDENCIES = {
+    "worktree_setup": [],
+    "git_analysis": ["worktree_setup"],
+    "change_filter": ["git_analysis"],
+    "ast_parsing_base": ["worktree_setup"],
+    "ast_parsing_head": ["worktree_setup"],
+    "semantic_diff": ["git_analysis"],
+    "technical_author": ["git_analysis", "ast_parsing_base", "ast_parsing_head", "semantic_diff"],
+    "coordinator_plan": ["technical_author"],
+    "output_generation": ["coordinator_plan"],
+}
+```
+
+Key insight for parallelism: `git_analysis` and `ast_parsing_*` have no dependency on each other (both depend only on `worktree_setup`), so they can run concurrently.
+
+### Topological Scheduler (`resolve_stage_order`, `__init__.py:70`)
+
+Uses **Kahn's algorithm** to produce parallel-compatible execution layers:
+
+```python
+resolve_stage_order() -> list[list[str]]
+# Returns layers like:
+#   [["worktree_setup"],
+#    ["git_analysis", "ast_parsing_base"],
+#    ["semantic_diff", "ast_parsing_head"],
+#    ["technical_author"],
+#    ["coordinator_plan"],
+#    ["output_generation"]]
+```
+
+- Computes in-degree (unresolved dependencies) per stage
+- Tracks reverse dependencies for cascade notifications
+- Each inner list is a layer of stages that can run in parallel
+- Outer list is in strict dependency order
+- Raises `ValueError` on circular dependencies
+
+### Stage Registry (`__init__.py:55`)
 
 ```python
 STAGE_REGISTRY: dict[str, type[Stage]] = {

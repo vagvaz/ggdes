@@ -19,7 +19,7 @@ GGDes (Get from Git Design Documentation) is a multi-stage pipeline that analyze
 
 | Directory | Responsibility Summary | Detailed Map |
 |-----------|------------------------|--------------|
-| `ggdes/agents/` | Four-agent LLM pipeline: GitAnalyzer, TechnicalAuthor, Coordinator, ChangeFilter. Anti-hallucination via tool-augmented LLM + source code injection. | [View Map](ggdes/agents/codemap.md) |
+| `ggdes/agents/` | LLM-powered agents (GitAnalyzer, TechnicalAuthor) + programmatic Coordinator + ChangeFilter. Anti-hallucination via tool-augmented LLM + source code injection. | [View Map](ggdes/agents/codemap.md) |
 | `ggdes/agents/output_agents/` | Format-specific document generators (Markdown, DOCX, PDF, PPTX) using Template Method pattern. Shared base class with `_convert()` seam for each format. | [View Map](ggdes/agents/output_agents/codemap.md) |
 | `ggdes/cli/` | Typer CLI app with 12 commands across 9 modules. Entry point for user interaction. | [View Map](ggdes/cli/codemap.md) |
 | `ggdes/cli/commands/` | CLI command implementations: analyze, compare, config, doctor, export, archive, resume, status, server, tui, web, debug. | [View Map](ggdes/cli/commands/codemap.md) |
@@ -77,13 +77,16 @@ Git Commits
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
-│ Coordinator         │  LLM agent: creates per-format DocumentPlans
-│                     │  with sections, diagrams, code references
+│ Coordinator         │  Programmatic orchestrator: saves
+│                     │  shared_context/context.json
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
-│ Output Generation   │  Markdown → DOCX/PDF/PPTX via format adapters
-│                     │  PlantUML diagrams embedded in all formats
+│ Output Generation   │  Each agent plans its own content per medium.
+│                     │  MarkdownAgent self-plans sections via LLM,
+│                     │  PptxAgent self-generates slide-native content.
+│                     │  DOCX/PDF consume shared markdown or plan.
+│                     │  PlantUML diagrams embedded in all formats.
 └─────────────────────┘
           │
           ▼

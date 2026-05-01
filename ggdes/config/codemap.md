@@ -61,13 +61,14 @@ GGDesConfig                      # Root — all sub-configs as fields
 **OutputConfig** (`loader.py:137`)
 - `default_format` — default output format (default `"markdown"`)
 - `formats` — list of enabled formats (default `["markdown", "docx", "pptx", "pdf"]`)
+- `max_section_tokens` — token budget per section prompt (default `28000`), for content chunking
 
-**RepoConfig** (`loader.py:146`)
+**RepoConfig** (`loader.py:155`)
 - `path` — repository path (`None` = current directory)
 
 ### 4-Tier Resolution
 
-Implemented in `load_config()` (`loader.py:181`). Priority (highest first):
+Implemented in `load_config()` (`loader.py:190`). Priority (highest first):
 
 ```
 1. CLI arguments          — --repo, --provider, --model, --api-key
@@ -76,7 +77,7 @@ Implemented in `load_config()` (`loader.py:181`). Priority (highest first):
 4. Pydantic defaults      — hardcoded in model definitions
 ```
 
-**Merge algorithm** (`merge_configs`, `loader.py:239`):
+**Merge algorithm** (`merge_configs`, `loader.py:248`):
 - Recursive deep merge on dict representations (`model_dump()`)
 - Scalar values from higher-priority config replace lower-priority ones
 - Nested sub-configs (e.g. `ModelConfig.api_key`) are merged key-by-key, not replaced whole
@@ -95,7 +96,7 @@ The `resolve_api_key` validator returns the original string if the env var is un
 
 ### Path Resolution Helpers
 
-All in `loader.py:261-280`. Each takes `config` + `analysis_id` and returns a `Path`:
+All in `loader.py:270-289`. Each takes `config` + `analysis_id` and returns a `Path`:
 
 | Helper | Returns | Example |
 |--------|---------|---------|

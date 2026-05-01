@@ -26,14 +26,14 @@ Git History
 └─────────┬───────────┘
           │ list[TechnicalFact] (JSON)
           ▼
-┌─────────────────────┐
-│   Coordinator       │  ← creates per-format DocumentPlan
-│   (ggdes/agents/    │
-│    coordinator.py)  │
-└─────────┬───────────┘
-          │ list[DocumentPlan] (JSON)
-          ▼
-   Output Agents*
+┌──────────────────────────┐
+│   Coordinator            │  ← programmatic: loads facts, saves shared_context/
+│   (ggdes/agents/         │    context.json for output agents to consume
+│    coordinator.py)       │
+└──────────┬───────────────┘
+           │ shared_context/context.json
+           ▼
+   Output Agents*  (each plans its own content per medium)
    (ggdes/agents/output_agents/)
 
 * Optional: ChangeFilter may run between GitAnalyzer and TechnicalAuthor
@@ -87,7 +87,7 @@ summary = await analyzer.analyze(commit_range, focus_commits, storage_policy)
 
 ---
 
-### 2. TechnicalAuthor — `technical_author.py` (1527 lines)
+### 2. TechnicalAuthor — `technical_author.py` (1524 lines)
 
 **Role:** Second pipeline stage. Combines the `ChangeSummary` with AST parse data
 (base and head commits) to produce structured `TechnicalFact` objects. This is the
@@ -168,41 +168,39 @@ facts = await author.synthesize(storage_policy, parallel=True)
 
 ---
 
-### 3. Coordinator — `coordinator.py` (894 lines)
+### 3. Coordinator — `coordinator.py` (283 lines)
 
-**Role:** Third pipeline stage. Creates `DocumentPlan` objects from technical facts,
-tailored to each requested output format. Handles interactive user input gathering
-and LLM self-review.
+**Role:** Third pipeline stage. **Programmatic orchestrator** (no longer an LLM agent).
+Loads technical facts and pipeline metadata from the KB, categorises them, optionally
+gathers user context interactively, and saves a `shared_context/context.json` blob that
+all output agents consume. Each output agent now plans its own content for its medium.
 
-**Produces:** `list[DocumentPlan]` — one per format, each with `title`, `audience`,
-`sections[]` (with `title`, `description`, `technical_facts[]`, `code_references[]`,
-`diagrams[]`), `diagrams[]` (with `type`, `title`, `description`, `elements[]`).
+**Produces:** `shared_context/context.json` — a dict with keys `technical_facts`,
+`facts_by_category`, `user_context`, `semantic_diff`, `target_formats`, `review_feedback`.
 
 **Key responsibilities:**
-- **Fact categorization:** Groups facts by category (api, behavior, architecture, etc.)
-  for structured planning.
-- **Per-format planning:** Creates one `DocumentPlan` per target format, each with its
-  own LLM conversation context. Formats run in parallel when there are multiple targets.
-- **Semantic diff integration:** Loads semantic diff results and injects them into the
-  planning prompt, highlighting breaking changes and high-impact items.
+- **Data loading:** Loads technical facts (`_load_facts()`), semantic diff results
+  (`_load_semantic_diff()`), and pipeline metadata from the KB.
+- **Fact categorisation:** `_categorize_facts()` groups facts by category (api, behavior,
+  architecture, etc.) for downstream consumption.
 - **Interactive input:** `_gather_user_input()` asks the user about audience, focus areas,
-  detail level, diagram preferences, and special sections (API reference, migration guide).
-- **JSON extraction with fallback:** `_extract_json_from_response()` tries 4 strategies
-  (raw, ```json fence, ``` fence, outermost braces). If all fail, uses correction prompt
-  retry. If that also fails, `_build_fallback_plan()` creates one section per fact category.
-- **LLM self-review:** When `review_feedback` is provided, `_interactive_review()` runs
-  an LLM check on the generated plans to verify feedback was incorporated.
+  detail level, diagram preferences, and special sections — only when CLI context
+  is missing.
+- **Context persistence:** `_save_shared_context()` writes the assembled dict to
+  `shared_context/context.json` for output agents to load via `load_shared_context()`.
+- **Backward-compatible helpers:** `load_plan()` and `list_available_formats()` remain
+  as class methods for compatibility with previously-saved plans (pre-refactor).
 
 **Invocation:**
 ```python
 coord = Coordinator(repo_path, config, analysis_id, user_context, review_feedback)
-plans = await coord.create_plan(target_formats, interactive=True, storage_policy, parallel=True)
+context = await coord.prepare_data(target_formats, interactive=True, storage_policy)
 ```
 
 **Integration points:**
 - Input: `kb/technical_facts/facts.json`, `kb/semantic_diff/result.json`
-- Output: `kb/plans/plan_{format}.json` + `kb/plans/index.json`
-- Uses: `prompts.get_prompt("coordinator", "system")`, `prompts.get_prompt("coordinator", "interactive_review")`
+- Output: `kb/shared_context/context.json`
+- No LLM prompts used (programmatic only)
 
 ---
 
@@ -266,7 +264,7 @@ run in the same pipeline.
 2. Base system prompt — core agent instructions
 3. User guidance — wrapped in a prominent "VERY IMPORTANT" box
 
-Used by: GitAnalyzer, TechnicalAuthor, Coordinator, MarkdownAgent.
+Used by: GitAnalyzer, TechnicalAuthor, Coordinator.
 
 ---
 
@@ -339,17 +337,17 @@ User Input (commit range, focus commits, feature description)
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Coordinator.create_plan()                                           │
-│   ├─ _categorize_facts()                                           │
-│   ├─ (optional) _gather_user_input() ← interactive CLI             │
-│   ├─ _create_format_plan()    ← per-format LLM (parallel)         │
-│   │   └─ _extract_json_from_response() + fallback chain            │
-│   └─ _interactive_review()     ← LLM self-check when feedback     │
+│ Coordinator.prepare_data()        ← programmatic (no LLM)          │
+│   ├─ _load_facts()                ← kb/technical_facts/facts.json  │
+│   ├─ _load_semantic_diff()        ← kb/semantic_diff/result.json   │
+│   ├─ _categorize_facts()          ← group by category              │
+│   ├─ (optional) _gather_user_input() ← interactive CLI fallback    │
+│   └─ _save_shared_context()       ← kb/shared_context/context.json │
 │                                                                     │
-│   Output: list[DocumentPlan] → kb/plans/plan_{format}.json          │
+│   Output: shared_context/context.json                                │
 └───────────────────────────────────┬─────────────────────────────────┘
-                                    │
+                                    │ shared_context/context.json
                                     ▼
-                        Output Agents (separate codemap)
+                        Output Agents*  (each plans its own content)
                          ggdes/agents/output_agents/
 ```

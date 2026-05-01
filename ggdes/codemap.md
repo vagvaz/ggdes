@@ -176,7 +176,7 @@ Several pipeline methods delegate directly to `ggdes/stages/utils.py`:
 | `_run_ast_parsing(variant)` (647) | STAGE_AST_PARSING_* | Scans worktree, parses with `ASTParser` (incremental or full), saves per-file JSON |
 | `_run_semantic_diff()` (960) | STAGE_SEMANTIC_DIFF | Runs `SemanticDiffAnalyzer` on changed files, saves to `semantic_diff/result.json` |
 | `_run_technical_author()` (804) | STAGE_TECHNICAL_AUTHOR | Detects primary language, builds `ToolExecutor`, runs `TechnicalAuthor.synthesize()`, validates facts via `ASTValidator` |
-| `_run_coordinator_plan()` (901) | STAGE_COORDINATOR_PLAN | Runs `Coordinator.create_plan()` for target formats |
+| `_run_coordinator_plan()` (901) | STAGE_COORDINATOR_PLAN | Runs `Coordinator.prepare_data()` → `shared_context/context.json` for output agents |
 | `_run_output_generation()` (1052) | STAGE_OUTPUT_GENERATION | Generates Markdown (source), then parallel DOCX/PPTX/PDF via `ThreadPoolExecutor` |
 
 ## Flow (End-to-End)
@@ -213,12 +213,13 @@ AnalysisPipeline.run_all_pending()
   │     └── TechnicalAuthor.synthesize() → technical_facts
   │
   ├── STAGE_COORDINATOR_PLAN        ─ _run_coordinator_plan()
-  │     └── Coordinator.create_plan() → document plans
+  │     └── Coordinator.prepare_data() → shared_context/context.json
+  │                                     (output agents plan their own content)
   │
   └── STAGE_OUTPUT_GENERATION       ─ _run_output_generation()
-        ├── MarkdownAgent.generate()       → .md file
+        ├── MarkdownAgent.generate()       → .md file  (self-plans via _ensure_plan)
         ├── DocxAgent.generate()           → .docx file
-        ├── PptxAgent.generate()           → .pptx file
+        ├── PptxAgent.generate()           → .pptx file (self-generates slides via _get_content)
         └── PdfAgent.generate()            → .pdf file
 ```
 

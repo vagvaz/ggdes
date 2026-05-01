@@ -8,39 +8,53 @@ All output agents share a common base class that implements the **Template Metho
 for document generation.
 
 ```
-Coordinator plans
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  OutputAgent (abstract base)                 │
-│                                                             │
-│  generate() ← template method                               │
-│    ├─ 1. _get_content()        — load markdown or build     │
-│    │                             from plan sections           │
-│    ├─ 2. _append_feedback()    — inject review/section      │
-│    │                             feedback                    │
-│    ├─ 3. _prepare_content()    — optional preprocessing     │
-│    │                             (pptx: slides+palette)      │
-│    ├─ 4. _generate_and_log_   — generate architecture,     │
-│    │     diagrams()              flow, class diagrams        │
-│    └─ 5. _convert()            — format-specific output     │
-│                                  (abstract)                 │
-├───────────────────┬───────────────────┬──────────────────┐  │
-│                   │                   │                  │  │
-│  MarkdownAgent    │  DocxAgent        │  PdfAgent        │  PptxAgent
-│  (direct LLM      │  (docx-js/        │  (reportlab/     │  (pptxgenjs/
-│   section gen)    │   pandoc)         │   pandoc)        │   pandoc)
-│                   │                   │                  │
-│  _convert() is    │  _convert() is    │  _convert() is   │  _convert() is
-│  not needed —     │  Node.js script   │  reportlab       │  pptxgenjs script
-│  generate() is    │  generation       │  Flowables       │  generation
-│  overridden       │                   │                  │
-└───────────────────┴───────────────────┴──────────────────┘
+                              ┌──────────────────────────────┐
+                              │  Coordinator (optional)      │
+                              │  Shared context + facts      │
+                              └──────────┬───────────────────┘
+                                         │
+                  ┌──────────────────────┼──────────────────────┐
+                  │                      │                      │
+          MarkdownAgent            PptxAgent          DocxAgent/PdfAgent
+          (self-plans via          (self-generates       (consume markdown
+           LLM, no coordinator)     slide content)        from agent above)
+                                         │
+                                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                  OutputAgent (abstract base)                     │
+│                                                                  │
+│  generate() ← template method                                   │
+│    ├─ 0. _ensure_plan()        — load or LLM-generate plan      │
+│    │                             (MarkdownAgent only)            │
+│    ├─ 1. _get_content()        — load markdown from file,       │
+│    │                             build from plan, or generate   │
+│    │                             via LLM (PptxAgent override)    │
+│    ├─ 2. _append_feedback()    — inject review/section          │
+│    │                             feedback                        │
+│    ├─ 3. _prepare_content()    — optional preprocessing         │
+│    │                             (pptx: slides+palette)          │
+│    ├─ 4. _generate_and_log_   — generate architecture,         │
+│    │     diagrams()              flow, class diagrams            │
+│    └─ 5. _convert()            — format-specific output         │
+│                                  (abstract)                     │
+├───────────────────┬───────────────────┬──────────────────────┐  │
+│                   │                   │                      │  │
+│  MarkdownAgent    │  DocxAgent        │  PdfAgent            │  PptxAgent
+│  (self-plans,     │  (docx-js/        │  (reportlab/         │  (pptxgenjs/
+│   LLM section     │   pandoc)         │   pandoc)            │   pandoc)
+│   gen, cache,     │                   │                      │
+│   code valid.)    │                   │                      │
+│                   │                   │                      │
+│  _convert() is    │  _convert() is    │  _convert() is       │  _convert() is
+│  not needed —     │  Node.js script   │  reportlab           │  pptxgenjs script
+│  generate() is    │  generation       │  Flowables           │  generation
+│  overridden       │                   │                      │
+└───────────────────┴───────────────────┴──────────────────────┘
 ```
 
 ---
 
-## Base Class: `OutputAgent` — `base.py` (1109 lines)
+## Base Class: `OutputAgent` — `base.py` (1131 lines)
 
 ### Class Hierarchy
 
@@ -105,6 +119,7 @@ generate()
 | `_load_changed_classes()` | Set of class names with changes | `kb/semantic_diff/*.json` |
 | `_load_section_feedback()` | Dict of section_title→feedback_text | KB metadata (via `KnowledgeBaseManager`) |
 | `_load_skill(skill_name)` | Content of `SKILL.md` for format-specific docs | `ggdes/skills/{skill_name}/SKILL.md` |
+| `_load_user_context()` | User context dict (audience, purpose, focus) | `shared_context/context.json` → format-specific plan (backward compat) → pipeline metadata |
 
 ### Diagram Generation
 
@@ -132,37 +147,74 @@ against AST data before generating PlantUML, preventing hallucinated references.
 
 ## Format-Specific Agents
 
-### MarkdownAgent — `markdown_agent.py` (588 lines)
+### MarkdownAgent — `markdown_agent.py` (1134 lines)
 
 **Overrides `generate()`** (not just `_convert()`). This is the only agent that does
 not use the template method's `_convert()` hook because markdown is the "native" format —
-there's no conversion step.
+there's no conversion step. The agent generates its own document plan via LLM when no
+pre-saved plan exists, making it **self-planning** — it does not depend on the Coordinator.
 
-**Generation pipeline:**
-1. Loads `plan_markdown.json` from KB.
-2. For each section in the plan, calls `_generate_section()`:
-   - Loads relevant facts for that section.
-   - Builds a prompt with fact descriptions, source code snippets, before/after code
-     comparisons, usage examples, and section-specific feedback.
-   - Passes `code_snippets`, `before_after_code`, and `usages` (populated by
-     TechnicalAuthor) through to the LLM as **ground truth** — the LLM is instructed
-     to ONLY reference the provided actual source code.
-   - Calls LLM via `self.llm.chat()` with temperature 0.4.
-3. `_build_markdown()` assembles the final document:
-   - YAML front matter (`title`, `audience`, `analysis_id`, `generated`)
-   - Executive summary (from user context)
-   - Table of contents (auto-generated from sections)
-   - Sections with body content
-   - Diagrams section: auto-generated images (PNG via PlantUML) + plan diagrams
-     (PlantUML code blocks) + failed diagram debugging notes
-   - Footer with generation metadata
-4. `_save_markdown()` writes to `{analysis_id}-{safe_title}.md`.
-5. Optionally renders to PNG images via `MarkdownToPngRenderer` (Playwright).
+#### Self-Planning (`_ensure_plan()` / `_generate_plan()`)
 
-**Diagram handling:** Both auto-generated diagrams (from facts via
-`_generate_diagrams_for_facts`) and plan-specified diagrams (PlantUML code) are
-embedded. Auto-generated diagrams appear as markdown image links; plan diagrams
-appear as PlantUML code blocks. Failed diagrams are noted with fix instructions.
+1. `_ensure_plan()` (line 126) tries `_load_plan()` first; if no `plan_markdown.json`
+   exists, calls `_generate_plan()`.
+2. `_generate_plan()` (line 139) loads shared context (technical facts, user context,
+   semantic diff) and asks the LLM to propose a section structure via the
+   `"output"` / `"markdown_plan"` prompt template.
+3. The LLM response is extracted as JSON (via `_extract_json()` with 3 strategies:
+   raw parse, ` ```json ` fence, outermost `{…}` braces).
+4. If parsing fails, `_build_fallback_plan()` creates a category-based plan from facts.
+5. The generated `DocumentPlan` is saved to `kb/plans/plan_markdown.json` so downstream
+   code (diagram generation, etc.) can load it.
+
+#### Section Generation Pipeline (`_generate_section()` at line 595)
+
+Each section is an independent parallel LLM call via `asyncio.gather()`:
+
+1. **Load facts** — loads `TechnicalFact` objects referenced by the section plan.
+2. **Build structured prompt blocks:**
+   - `_build_source_code_block()` — actual source code snippets (budget: 2500 chars).
+   - `_build_before_after_block()` — before/after code comparisons (budget: 2000 chars).
+   - `_build_usage_examples_block()` — real call-site usages (budget: 1500 chars).
+   - Section feedback block (if per-section feedback exists).
+   - All blocks are rendered via the `"output"` / `"markdown_section"` YAML template.
+3. **Content caching** — a SHA-256 hash of `(section_title + fact_ids + code_references)`
+   serves as the cache key. Cached sections are stored in `kb/cache/sections/{hash}.txt`
+   via `_cache_dir()`, `_load_cached_section()`, `_save_cached_section()`.
+4. **Token estimation & chunking** — if `estimated_tokens > max_section_tokens` (from config)
+   and there are more than 3 facts, `_generate_section_chunked()` splits facts into
+   batches of 4, generating each batch as an independent LLM call, then concatenates
+   with `\n\n---\n\n` separators.
+5. **LLM call with retry** — `_call_llm_with_remediation()` (line 705) wraps the LLM call:
+   - Uses `async_chat()` if available, else `chat()`.
+   - Retries once on empty response or exception (2 attempts total).
+   - On double failure, returns a minimal fallback (`_This section could not be generated...`).
+6. **Code reference validation** — `_validate_section_output()` (line 772) runs the
+   generated section through `CodeReferenceValidator` with the section's `code_references`
+   as the expected file list. On validation failure, the validator auto-corrects the
+   output (up to 1 correction pass). If the validator is unavailable, validation is
+   silently skipped.
+7. **Cache save** — the validated response is persisted for reuse.
+
+#### Final Assembly (`_build_markdown()` at line 981)
+
+1. **YAML front matter** — `title`, `audience`, `analysis_id`, `generated` timestamp.
+2. **Executive summary** — from user context (purpose + focus areas).
+3. **Table of contents** — auto-generated from section titles with anchor links;
+   includes diagram section if any diagrams exist.
+4. **Sections** — each section rendered with `## {title}` followed by LLM-generated content.
+5. **Diagrams section:**
+   - Auto-generated diagrams (PNG via `_generate_diagrams_for_facts`) embedded as image links.
+   - Plan-specified diagrams rendered as PlantUML code blocks.
+   - Failed diagrams saved as `failed_*.puml` with fix instructions.
+6. **Footer** — generation metadata.
+
+#### Diagram Handling
+
+Both auto-generated diagrams (from facts via `_generate_diagrams_for_facts`) and
+plan-specified diagrams (PlantUML code) are embedded. Auto-generated diagrams appear
+as markdown image links; plan diagrams appear as PlantUML code blocks. Failed diagrams
+are noted with `failed_*.puml` files and fix instructions.
 
 **Key difference:** MarkdownAgent does NOT use `_convert()`. It overrides `generate()`
 entirely because the generation is an LLM-driven write, not a format conversion.
@@ -241,12 +293,24 @@ pandoc temp.md -o output.pdf --pdf-engine=xelatex
 
 ---
 
-### PptxAgent — `pptx_agent.py` (899 lines)
+### PptxAgent — `pptx_agent.py` (1062 lines)
 
 **Technology:** [pptxgenjs](https://github.com/gitbrent/PptxGenJS) (Node.js) with
 pandoc fallback. Skill documentation loaded from `ggdes/skills/pptx/SKILL.md`.
 
 **This is the most feature-rich output agent**, with a sophisticated slide layout system.
+
+**`_get_content()` override (line 123):** PptxAgent overrides `_get_content()` to always
+generate **slide-native** content via LLM instead of falling back to shared markdown.
+The method calls `_generate_slide_content()` which:
+1. Loads shared context (technical facts, user context) via `Coordinator.load_shared_context()`.
+2. Builds a prompt using the `"output"` / `"pptx_slides"` template with fact summaries,
+   audience, purpose, and example bullets drawn from actual facts.
+3. Calls the LLM (2 retries with fallback) to produce markdown where each `##` heading
+   is a slide, following the 6x6 rule (max 6 bullets, ~6 words per bullet).
+4. Every slide is expected to have a visual element (diagram reference, architecture
+   description, or data callout).
+5. On LLM failure, returns placeholder content with a warning.
 
 **`_prepare_content()` — preprocessing:**
 1. `_select_palette(content)` — keyword-based color palette selection:
@@ -317,30 +381,49 @@ pandoc fallback. Skill documentation loaded from `ggdes/skills/pptx/SKILL.md`.
 ## Content Source Flow
 
 ```
-Pre-rendered Markdown (if exists)
-    │
-    ├── DocxAgent._get_content()
-    ├── PdfAgent._get_content()
-    └── PptxAgent._get_content()
-              │
-              ▼
-         Markdown string
-              │
-              ▼
-         _append_feedback()
-              │
-              ▼
-         _prepare_content()    ← PptxAgent: parses into slides
-              │
-              ▼
-         _convert()            ← Each format's conversion
-              │
-              ▼
-         Output file (.docx / .pdf / .pptx / .md)
+                   MarkdownAgent.generate()
+                        │
+            ┌───────────┴───────────────┐
+            │                           │
+     _ensure_plan()             plan_diagrams (PlantUML)
+            │                           │
+     _generate_sections_parallel()      │
+     (LLM per section, cached)          │
+            │                           │
+     _build_markdown()                  │
+            │                           │
+            ▼                           │
+     {analysis_id}-*.md  ◄──────────────┘
+     (pre-rendered markdown)
+            │
+            │
+ ├──────────┼──────────┐              ┌─────────────────────┐
+ │          │          │              │  PptxAgent._get_content()
+ ▼          ▼          ▼              │  (always generates fresh
+DocxAgent  PdfAgent  PptxAgent        │   slide-native content
+._get()    ._get()   ._get()          │   via LLM — does NOT
+  │          │          │             │   consume pre-rendered
+  │          │          │             │   markdown)
+  │          │          │             └─────────────────────┘
+  └──────────┴──────────┘
+            │
+            ▼
+       _append_feedback()
+            │
+            ▼
+       _prepare_content()    ← PptxAgent: parses into slides
+            │                           (from its own LLM content)
+            ▼
+       _convert()            ← Each format's conversion
+            │
+            ▼
+       Output file (.docx / .pdf / .pptx)
 ```
 
 When pre-rendered markdown is not available, `_build_content_from_plan()` reconstructs
 markdown from the `DocumentPlan`'s sections (title, audience, section titles/descriptions, diagram list).
+However, this path is rarely used now — MarkdownAgent generates rich content via LLM,
+and PptxAgent bypasses markdown entirely in favor of self-generated slide content.
 
 ---
 
