@@ -1,5 +1,6 @@
 """Tests for the rendering module."""
 
+import inspect
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -383,18 +384,10 @@ Content two.""")
             assert mock_render.call_count == 3
 
     def test_render_import_error(self, tmp_path: Path) -> None:
-        """Test ImportError is raised when playwright is not installed.
-
-        Note: This test verifies the error handling code path exists.
-        Since playwright is imported inside the function, we test by
-        checking the error message format in the implementation.
-        """
-        # Verify the error message format in the code
-        import inspect
-
+        """Verify _get_browser raises ImportError when playwright is missing."""
         from ggdes.rendering.markdown_to_png import MarkdownToPngRenderer
 
-        source = inspect.getsource(MarkdownToPngRenderer._render_html_to_png_async)
+        source = inspect.getsource(MarkdownToPngRenderer._get_browser)
 
         # Check that the function has proper error handling
         assert "ImportError" in source

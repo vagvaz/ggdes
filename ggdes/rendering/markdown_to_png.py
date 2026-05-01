@@ -4,7 +4,7 @@ import asyncio
 import re
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -25,9 +25,61 @@ class MarkdownToPngRenderer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.theme = theme if theme in ("light", "dark") else "light"
         self.width = width
+        self._playwright = None
+        self._browser = None
+
+    async def _get_browser(self) -> Any:
+        """Get or create a cached Playwright browser instance.
+
+        The first call launches a headless Chromium instance; subsequent calls
+        reuse the same browser, avoiding startup overhead across multiple renders.
+
+        Returns:
+            Playwright ``Browser`` instance.
+
+        Raises:
+            ImportError: If Playwright is not installed.
+        """
+        if self._browser is not None:
+            return self._browser
+
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError as e:
+            raise ImportError(
+                "Playwright not installed. "
+                "Install with: pip install ggdes[render] && playwright install chromium"
+            ) from e
+
+        self._playwright = await async_playwright().__aenter__()
+        self._browser = await self._playwright.chromium.launch()
+        return self._browser
+
+    async def close(self) -> None:
+        """Close the cached browser and Playwright context.
+
+        Safe to call multiple times — subsequent calls are no-ops.
+        """
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            await self._playwright.__aexit__(None, None, None)
+            self._playwright = None
+
+    async def __aenter__(self) -> "MarkdownToPngRenderer":
+        """Context manager entry — browser is created lazily on first render."""
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        """Context manager exit — ensures browser is closed."""
+        await self.close()
 
     def render(self, markdown_path: Path, sections: bool = False) -> list[Path]:
         """Render a markdown file to PNG images.
+
+        Reuses a cached Playwright browser across section renders for efficiency.
+        The browser is automatically closed when this method returns.
 
         Args:
             markdown_path: Path to the markdown file
@@ -37,42 +89,46 @@ class MarkdownToPngRenderer:
         Returns:
             List of paths to generated PNG files
         """
-        markdown_content = markdown_path.read_text()
+        try:
+            markdown_content = markdown_path.read_text()
 
-        if sections:
-            # Split by sections and render each separately
-            section_parts = self._split_by_sections(markdown_content)
-            png_paths = []
+            if sections:
+                # Split by sections and render each separately
+                section_parts = self._split_by_sections(markdown_content)
+                png_paths = []
 
-            for i, (title, content) in enumerate(section_parts):
-                if not content.strip():
-                    continue
+                for i, (title, content) in enumerate(section_parts):
+                    if not content.strip():
+                        continue
 
-                # Generate filename
-                if title:
-                    safe_title = (
-                        re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")
+                    # Generate filename
+                    if title:
+                        safe_title = (
+                            re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")
+                        )
+                        filename = f"{safe_title}_{i:03d}.png"
+                    else:
+                        filename = f"section_{i:03d}.png"
+
+                    output_path = self.output_dir / filename
+
+                    # Convert to HTML and render
+                    html = self.render_to_html(content)
+                    png_path = asyncio.run(
+                        self._render_html_to_png_async(html, output_path)
                     )
-                    filename = f"{safe_title}_{i:03d}.png"
-                else:
-                    filename = f"section_{i:03d}.png"
+                    png_paths.append(png_path)
 
-                output_path = self.output_dir / filename
-
-                # Convert to HTML and render
-                html = self.render_to_html(content)
-                png_path = asyncio.run(
-                    self._render_html_to_png_async(html, output_path)
-                )
-                png_paths.append(png_path)
-
-            return png_paths
-        else:
-            # Render entire document as one PNG
-            html = self.render_to_html(markdown_content)
-            output_path = self.output_dir / f"{markdown_path.stem}.png"
-            png_path = asyncio.run(self._render_html_to_png_async(html, output_path))
-            return [png_path]
+                return png_paths
+            else:
+                # Render entire document as one PNG
+                html = self.render_to_html(markdown_content)
+                output_path = self.output_dir / f"{markdown_path.stem}.png"
+                png_path = asyncio.run(self._render_html_to_png_async(html, output_path))
+                return [png_path]
+        finally:
+            # Ensure browser is closed even if rendering fails partway through
+            asyncio.run(self.close())
 
     def render_to_html(self, markdown_content: str) -> str:
         """Convert markdown content to styled HTML suitable for rendering.
@@ -335,11 +391,8 @@ class MarkdownToPngRenderer:
     async def _render_html_to_png_async(self, html: str, output_path: Path) -> Path:
         """Render HTML string to PNG using Playwright (async version).
 
-        Uses headless Chromium with:
-        - Full page screenshot (no clipping)
-        - Proper viewport width
-        - Wait for fonts to load
-        - Scale factor of 2 for high-DPI output
+        Uses a cached headless Chromium instance shared across multiple renders,
+        avoiding browser startup overhead per section.
 
         Args:
             html: HTML content to render
@@ -348,14 +401,6 @@ class MarkdownToPngRenderer:
         Returns:
             Path to the generated PNG file
         """
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError as e:
-            raise ImportError(
-                "Playwright not installed. "
-                "Install with: pip install ggdes[render] && playwright install chromium"
-            ) from e
-
         # Create temp HTML file
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".html", delete=False
@@ -364,27 +409,26 @@ class MarkdownToPngRenderer:
             temp_path = Path(temp_file.name)
 
         try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch()
-                context = await browser.new_context(
-                    viewport={"width": self.width, "height": 800},
-                    device_scale_factor=2,  # High-DPI output
-                )
-                page = await context.new_page()
+            browser = await self._get_browser()
+            context = await browser.new_context(
+                viewport={"width": self.width, "height": 800},
+                device_scale_factor=2,  # High-DPI output
+            )
+            page = await context.new_page()
 
-                # Load the HTML file
-                await page.goto(f"file://{temp_path}")
+            # Load the HTML file
+            await page.goto(f"file://{temp_path}")
 
-                # Wait for fonts to load and page to be stable
-                await page.wait_for_load_state("networkidle")
+            # Wait for fonts to load and page to be stable
+            await page.wait_for_load_state("networkidle")
 
-                # Take full page screenshot
-                await page.screenshot(
-                    path=str(output_path),
-                    full_page=True,
-                )
+            # Take full page screenshot
+            await page.screenshot(
+                path=str(output_path),
+                full_page=True,
+            )
 
-                await browser.close()
+            await context.close()
 
             return output_path
 
