@@ -1002,6 +1002,9 @@ pres.writeFile({{ fileName: "{output_file}" }})
 
     def _fallback_to_pandoc(self, content: str, output_file: Path) -> None:
         """Fallback to pandoc for pptx generation."""
+        from rich.console import Console
+
+        console = Console()
         slides_md = self._create_slide_markdown(content)
         temp_md = output_file.with_suffix(".temp.md")
         temp_md.write_text(slides_md)
@@ -1012,8 +1015,14 @@ pres.writeFile({{ fileName: "{output_file}" }})
                 check=True,
                 capture_output=True,
             )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to convert to pptx: {e}") from e
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.warning(
+                f"Pandoc fallback failed: {e}. Install pandoc for PPTX conversion."
+            )
+            console.print(
+                "  [yellow]⚠ Pandoc not available. Install it for PPTX output:[/yellow]\n"
+                "    sudo apt install pandoc  # or brew install pandoc"
+            )
         finally:
             if temp_md.exists():
                 temp_md.unlink()

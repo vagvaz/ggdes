@@ -1,0 +1,9 @@
+# Default context file for GGDes benchmarks
+# Used when a benchmark does not specify its own context_file
+focus_areas:
+  - Code structure and architectural changes
+  - API surface modifications
+  - Key implementation details and design decisions
+audience: developers
+purpose: Document the changes introduced in this commit range for developers
+detail_level: comprehensive

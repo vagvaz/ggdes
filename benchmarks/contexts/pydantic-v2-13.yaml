@@ -1,0 +1,12 @@
+# Pydantic v2.12 → v2.13 context
+target_feature: "pydantic-core merge into main repo, polymorphic serialization option, performance optimization of Literal validators and JSON validation"
+focus_areas:
+  - pydantic-core Rust crate merged into main repo (build system and CI)
+  - Polymorphic serialization option for discriminated unions
+  - Literal validator performance optimization
+  - JSON validation improvements
+  - Deferred annotation evaluation with TypeVar support
+  - Cross-language (Python+Rust) build system changes
+audience: developers
+purpose: Document the major structural and feature changes in Pydantic v2.13
+detail_level: comprehensive

@@ -1,0 +1,202 @@
+# GGDes Benchmark Suite
+#
+# Each benchmark is a self-contained test with unique name, description,
+# and explicit ggdes CLI arguments. Benchmarks exercise different aspects
+# of the pipeline across languages and project scales.
+#
+# Usage:
+#   1. ./setup.sh                  # Clone all repos and checkout tags
+#   2. ./run.sh                    # Run all benchmarks sequentially
+#   3. ./run.sh <id>               # Run a single benchmark by id
+#
+# LLM Configuration (priority):
+#   1. Per-benchmark ggdes.provider / ggdes.model_name — if set, overrides ggdes.yaml
+#   2. ggdes.yaml at project root — default LLM config
+#   3. CLI flags --provider / --model — if you want to override at runtime
+
+# Default context file for benchmarks without a specific one
+context_file: "contexts/default.yaml"
+
+benchmarks:
+
+  # ═══════════════════════════════════════════════════════════
+  # C++ — Small/medium library, template-heavy
+  # ═══════════════════════════════════════════════════════════
+  - id: fmtlib-11-to-12
+    name: "fmtlib v11.0.0 → v12.0.0"
+    description: >
+      Major release of the {fmt} formatting library. Tests template-heavy C++ analysis:
+      constexpr format, FMT_STATIC_FORMAT, C++20 modules, floating-point perf rewrite,
+      deprecated API removal (has_formatter, fmt::localtime, wide stream overloads).
+    repo: "https://github.com/fmtlib/fmt.git"
+    dir: "fmt"
+    base_tag: "11.0.0"
+    head_tag: "12.0.0"
+    type: full-release
+    ggdes:
+      feature: "Full release v11.0.0 → v12.0.0 — constexpr format, FMT_STATIC_FORMAT, C++20 modules, floating-point perf rewrite, deprecated API removal"
+      context_file: "contexts/fmtlib-11-to-12.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  # ═══════════════════════════════════════════════════════════
+  # C++ — Large database, feature-focused
+  # ═══════════════════════════════════════════════════════════
+
+  - id: duckdb-asof-join
+    name: "DuckDB AsOf Join"
+    description: >
+      Three AsOf Join merge commits from DuckDB v1.5 development: Pipeline
+      (Sep 30), Sorting Conversion (Oct 8), Predicates (Oct 9). Narrow commit
+      range instead of full v1.4→v1.5 diff.
+    repo: "https://github.com/duckdb/duckdb.git"
+    dir: "duckdb"
+    base_tag: "3e00750a548e"           # parent of first AsOf merge commit (PR#19169)
+    head_tag: "b820c791dde3"           # last AsOf merge commit (PR#19316)
+    type: feature-focused
+    ggdes:
+      feature: "AsOfJoinimplementation"
+      context_file: "contexts/duckdb-asof-join.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+      focus_commits:
+        - "cdb1995d71ccb37a870aa0c2b6a4e2049122ded9"   # PR #19169: AsOf Join Pipeline
+        - "2788d86f658befda6f02a08595feb1a3f0943305"   # PR #19278: AsOf Sorting Conversion
+        - "b820c791dde349cf3e0ed56fca806f2503644ee8"   # PR #19316: AsOf Join Predicates
+
+  - id: duckdb-geometry
+    name: "DuckDB GEOMETRY Rework"
+    description: >
+      Four-part GEOMETRY type rework: Part 1 (Logical Type), Part 2 (Statistics),
+      Part 3 (Filter Pushdown), Part 4 (Parquet/Arrow support). Tests spatial
+      type system analysis in a database engine — type additions, statistics
+      propagation, and connector changes.
+    repo: "https://github.com/duckdb/duckdb.git"
+    dir: "duckdb"
+    base_tag: "v1.4.0"
+    head_tag: "v1.5.0"
+    type: feature-focused
+    ggdes:
+      feature: "GEOMETRY type system rework — logical type, statistics, filter pushdown, Parquet/Arrow support"
+      context_file: "contexts/duckdb-geometry.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  - id: duckdb-binder-refactor
+    name: "DuckDB Binder Refactoring"
+    description: >
+      Major internal refactoring: removal of BoundQueryNode, BoundTableRef, and
+      CTENode; set operations reworked for standard binding flow; CTE binding made
+      lazy. Tests refactoring detection capabilities — architectural changes
+      with no user-facing SQL diff. Good benchmark for change classification.
+    repo: "https://github.com/duckdb/duckdb.git"
+    dir: "duckdb"
+    base_tag: "v1.4.0"
+    head_tag: "v1.5.0"
+    type: feature-focused
+    ggdes:
+      feature: "Binder refactoring — remove BoundQueryNode, BoundTableRef, CTENode; rework set operation and CTE binding"
+      context_file: "contexts/duckdb-binder-refactor.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  # ═══════════════════════════════════════════════════════════
+  # C — Large database, feature-focused
+  # ═══════════════════════════════════════════════════════════
+
+  - id: postgres-json-sql
+    name: "PostgreSQL SQL/JSON constructor functions"
+    description: >
+      SQL/JSON constructor functions (JSON_OBJECT, JSON_ARRAY, JSON_OBJECTAGG,
+      JSON_ARRAYAGG) added in PostgreSQL 18. Tests C codebase analysis for a
+      major SQL standard feature addition spanning parser, executor, and
+      type system layers. ~1M LOC of C.
+    repo: "https://github.com/postgres/postgres.git"
+    dir: "postgres"
+    base_tag: "REL_17_0"
+    head_tag: "REL_18_0"
+    type: feature-focused
+    ggdes:
+      feature: "SQL/JSON constructor functions — JSON_OBJECT, JSON_ARRAY, JSON_OBJECTAGG, JSON_ARRAYAGG"
+      context_file: "contexts/postgres-json-sql.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  - id: postgres-incremental-backup
+    name: "PostgreSQL Incremental Backup"
+    description: >
+      Incremental backup and recovery infrastructure in PostgreSQL 18. Tests
+      analysis of storage engine, WAL archiving, and recovery subsystem changes
+      in a large (~1M LOC) C codebase. Covers new pg_backup functionality,
+      incremental WAL summarization, and mergebackup commands.
+    repo: "https://github.com/postgres/postgres.git"
+    dir: "postgres"
+    base_tag: "REL_17_0"
+    head_tag: "REL_18_0"
+    type: feature-focused
+    ggdes:
+      feature: "Incremental backup and recovery — pg_backup, incremental WAL archiving, mergebackup"
+      context_file: "contexts/postgres-incremental-backup.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  # ═══════════════════════════════════════════════════════════
+  # Python — API framework
+  # ═══════════════════════════════════════════════════════════
+
+  - id: fastapi-streaming
+    name: "FastAPI streaming and SSE"
+    description: >
+      Server-Sent Events (0.135.0) and streaming JSON Lines (0.134.0) support
+      in FastAPI. Tests Python AST parsing on decorators, route handlers, type
+      annotations, and dependency injection. API surface changes include new
+      response types and Starlette version upgrade.
+    repo: "https://github.com/fastapi/fastapi.git"
+    dir: "fastapi"
+    base_tag: "0.133.0"
+    head_tag: "0.136.0"
+    type: feature-focused
+    ggdes:
+      feature: "Server-Sent Events and streaming JSON Lines support — yield-based streaming, SSE via EventSourceResponse, Starlette upgrade"
+      context_file: "contexts/fastapi-streaming.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true
+
+  # ═══════════════════════════════════════════════════════════
+  # Python — Schema/validation library
+  # ═══════════════════════════════════════════════════════════
+
+  - id: pydantic-v2-13
+    name: "Pydantic v2.12 → v2.13"
+    description: >
+      Major Pydantic release: pydantic-core repository merged into main repo,
+      polymorphic serialization option, performance optimization of Literal
+      validators, JSON validation, and deferred annotation evaluation. Tests
+      analysis across Python+Rust boundary and schema/validation type system
+      changes.
+    repo: "https://github.com/pydantic/pydantic.git"
+    dir: "pydantic"
+    base_tag: "v2.12.0"
+    head_tag: "v2.13.0"
+    type: feature-focused
+    ggdes:
+      feature: "pydantic-core merge into main repo, polymorphic serialization option, performance optimization of Literal validators and JSON validation"
+      context_file: "contexts/pydantic-v2-13.yaml"
+      formats: "markdown"
+      storage: "summary"
+      auto: true
+      semantic_diff: true

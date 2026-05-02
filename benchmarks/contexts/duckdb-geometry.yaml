@@ -1,0 +1,10 @@
+# DuckDB GEOMETRY type rework context
+target_feature: "GEOMETRY type system rework — logical type, statistics, filter pushdown, Parquet/Arrow support"
+focus_areas:
+  - New logical type registration for GEOMETRY
+  - Statistics propagation for spatial columns
+  - Filter pushdown optimizations for spatial queries
+  - Parquet/Arrow serialization support
+audience: developers
+purpose: Document the four-part GEOMETRY type system rework across v1.4 to v1.5
+detail_level: comprehensive

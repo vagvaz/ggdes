@@ -1,10 +1,14 @@
 model:
-  provider: "ollama"
-  # model_name: "qwen3-coder-next"
-  model_name: "qwen3.6"
-  # model_name: lfm2.5-thinking
-  api_key: "ollama"
-  base_url: "http://192.168.0.179:11234/v1"
+  provider: "opencodezen"
+  model_name: "qwen3.5-plus"       # $0.20/M in, $1.20/M out — cheapest open-source
+  # Free models on OpenCode Zen (zero cost, may have rate limits):
+  # model_name: "gpt-5-nano"             # OpenAI — free
+  # model_name: "minimax-m2.5-free"      # MiniMax — free (proprietary)
+  # model_name: "nemotron-3-super-free"  # Nvidia — free
+  # model_name: "ling-2.6-flash-free"    # InclusionAI — free
+  # model_name: "trinity-large-preview-free"  # Arcee AI — free
+  # model_name: "hy3-preview-free"       # Tencent — free
+  api_key: "${MYKEY_VAGVAZ}"
   enable_thinking: false
 
 paths:
@@ -16,7 +20,7 @@ output:
   formats: ["markdown"]
 
 features:
-  semantic_diff: false
+  semantic_diff: true
   auto_cleanup: true
   worktree_retention_days: 7
 
@@ -25,3 +29,4 @@ analysis:
   chunk_mode: independent        # independent (fast) or accumulated (slower, more coherent)
   chunk_token_threshold: 1000
   max_diff_tokens: 50000
+  chunk_concurrency: 10          # concurrent LLM calls for chunk analysis (1 = serial)

@@ -1,5 +1,6 @@
 """Git Analysis Agent for analyzing code changes with multi-turn support."""
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -169,39 +170,47 @@ class GitAnalyzer:
         """
         try:
             if focus_commits:
-                # When focus commits are specified, get diff only for those commits
-                # For multiple focus commits, we get diff from parent of first to last
-                if len(focus_commits) == 1:
-                    # Single commit: diff against its parent
-                    cmd = [
-                        "git",
-                        "-C",
-                        str(self.repo_path),
-                        "diff",
-                        f"{focus_commits[0]}~1..{focus_commits[0]}",
-                    ]
-                else:
-                    # Multiple commits: diff from parent of first to last
-                    cmd = [
-                        "git",
-                        "-C",
-                        str(self.repo_path),
-                        "diff",
-                        f"{focus_commits[0]}~1..{focus_commits[-1]}",
-                    ]
+                # Ensure focus commits are available locally — fetch any missing ones
+                for fc in focus_commits:
+                    result = subprocess.run(
+                        ["git", "-C", str(self.repo_path), "cat-file", "-t", fc],
+                        capture_output=True, text=True,
+                    )
+                    if result.returncode != 0:
+                        logger.info(
+                            "Fetching missing focus commit {} from origin", fc
+                        )
+                        subprocess.run(
+                            ["git", "-C", str(self.repo_path), "fetch", "--depth", "1",
+                             "origin", f"{fc}:refs/tags/_ggdes_focus_{fc}"],
+                            capture_output=True, check=True,
+                        )
 
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    encoding="utf-8",
-                    errors="replace",
+                # For each focus commit, diff against its parent and concatenate.
+                # This isolates only the specific merge commits' changes, unlike
+                # computing a single base..head range which includes everything
+                # merged on the branch between those points.
+                diffs: list[str] = []
+                for fc in focus_commits:
+                    fc_cmd = [
+                        "git", "-C", str(self.repo_path),
+                        "diff", f"{fc}~1..{fc}",
+                    ]
+                    fc_result = subprocess.run(
+                        fc_cmd, capture_output=True, text=True, check=True,
+                        encoding="utf-8", errors="replace",
+                    )
+                    diffs.append(
+                        f"# Diff for focus commit: {fc}\n"
+                        f"{fc_result.stdout}"
+                    )
+
+                diff = "\n".join(diffs)
+                diff = (
+                    f"# Analyzing {len(focus_commits)} focus commits: "
+                    f"{', '.join(fc[:12] for fc in focus_commits)}\n"
+                    f"# Full range context: {commit_range}\n\n{diff}"
                 )
-
-                diff = result.stdout
-                # Prefix with context about which commits are being analyzed
-                diff = f"# Analyzing focus commits: {', '.join(focus_commits)}\n# Full range context: {commit_range}\n\n{diff}"
             else:
                 # No focus commits - analyze the full range
                 cmd = ["git", "-C", str(self.repo_path), "diff", commit_range]
@@ -676,20 +685,30 @@ IMPORTANT: Your description MUST be based on the actual git diff and file list s
             )
             chunk_summaries = saved_summaries
         else:
-            if saved_summaries and len(saved_summaries) < len(chunks):
+            if saved_summaries:
                 console.print(
-                    f"  [yellow]Partial chunk summaries found ({len(saved_summaries)}/{len(chunks)}), re-analyzing all chunks[/yellow]"
+                    f"  [green]Loaded {len(saved_summaries)} saved chunk summaries, "
+                    f"analyzing remaining {len(chunks) - len(saved_summaries)} chunks[/green]"
                 )
-            chunk_summaries = []
+                chunk_summaries = list(saved_summaries)
+            else:
+                chunk_summaries = []
 
             if chunk_mode.value == "independent":
-                # Process each chunk independently (no growing context)
-                for i, chunk in enumerate(chunks):
-                    console.print(
-                        f"  [dim]Analyzing chunk {i + 1}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
-                    )
+                # Process chunks concurrently with a configurable semaphore
+                concurrency = self.config.analysis.chunk_concurrency
+                sem = asyncio.Semaphore(concurrency)
 
-                    chunk_prompt = f"""You are analyzing a git diff chunk. This is chunk {i + 1} of {len(chunks)}.
+                async def _analyze_chunk(
+                    idx: int, chunk: dict[str, Any]
+                ) -> dict[str, Any]:
+                    """Analyze a single chunk with semaphore-guarded concurrency."""
+                    async with sem:
+                        console.print(
+                            f"  [dim]Analyzing chunk {idx}/{len(chunks)}: {', '.join(chunk['files'][:5])}{'...' if len(chunk['files']) > 5 else ''}[/dim]"
+                        )
+
+                        chunk_prompt = f"""You are analyzing a git diff chunk. This is chunk {idx} of {len(chunks)}.
 
 Files in this chunk: {chunk["files"]}
 
@@ -705,20 +724,35 @@ Provide a brief analysis of these specific changes. Focus on:
 
 IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
-                    response = self.llm.generate(
-                        prompt=chunk_prompt,
-                        system_prompt=self.conversation.system_prompt,
-                        temperature=0.3,
-                        max_tokens=2048,
-                    )
+                        response = await self.llm.async_generate(
+                            prompt=chunk_prompt,
+                            system_prompt=self.conversation.system_prompt,
+                            temperature=0.3,
+                            max_tokens=2048,
+                        )
 
-                    chunk_summaries.append(
-                        {
-                            "chunk_num": i + 1,
+                        return {
+                            "chunk_num": idx,
                             "files": chunk["files"],
                             "analysis": response,
                         }
-                    )
+
+                # Build set of already-analyzed chunk numbers (for resume)
+                done_chunks: set[int] = {
+                    s["chunk_num"] for s in chunk_summaries if "chunk_num" in s
+                }
+
+                tasks = []
+                for i, chunk in enumerate(chunks):
+                    chunk_num = i + 1
+                    if chunk_num in done_chunks:
+                        continue
+                    tasks.append(_analyze_chunk(chunk_num, chunk))
+
+                for coro in asyncio.as_completed(tasks):
+                    summary = await coro
+                    chunk_summaries.append(summary)
+                    self._save_chunk_summaries(chunk_summaries)
             else:
                 # Accumulated mode: each chunk sees all previous context (original behavior)
                 for i, chunk in enumerate(chunks):

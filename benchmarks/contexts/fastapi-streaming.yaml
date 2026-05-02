@@ -1,0 +1,12 @@
+# FastAPI streaming and SSE context
+target_feature: "Server-Sent Events and streaming JSON Lines support — yield-based streaming, SSE via EventSourceResponse, Starlette upgrade"
+focus_areas:
+  - Yield-based streaming response support
+  - SSE via EventSourceResponse
+  - Python decorator and async route handler changes
+  - Type annotations for streaming response types
+  - Dependency injection for streaming contexts
+  - Starlette version upgrade
+audience: developers
+purpose: Document the streaming and SSE support added in FastAPI 0.134-0.135
+detail_level: comprehensive

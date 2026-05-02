@@ -1,0 +1,10 @@
+# PostgreSQL SQL/JSON constructor functions context
+target_feature: "SQL/JSON constructor functions — JSON_OBJECT, JSON_ARRAY, JSON_OBJECTAGG, JSON_ARRAYAGG"
+focus_areas:
+  - Parser grammar additions for SQL/JSON constructors
+  - Executor node types for JSON construction
+  - Type system additions for JSON constructor result types
+  - Output functions and serialization
+audience: developers
+purpose: Document the SQL/JSON constructor function implementation in PostgreSQL 18
+detail_level: comprehensive

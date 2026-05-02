@@ -1,0 +1,10 @@
+# DuckDB Binder refactoring context
+target_feature: "Binder refactoring — remove BoundQueryNode, BoundTableRef, CTENode; rework set operation and CTE binding"
+focus_areas:
+  - Removal of BoundQueryNode and BoundTableRef base classes
+  - CTENode removal and lazy CTE binding
+  - Set operations reworked into standard binding flow
+  - Refactoring detection (architectural changes with no SQL diff)
+audience: developers
+purpose: Document the internal binder refactoring with focus on architectural impact and code structure changes
+detail_level: comprehensive

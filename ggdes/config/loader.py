@@ -100,6 +100,12 @@ class AnalysisConfig(BaseModel):
         default=50000,
         description="Absolute max tokens before chunking is triggered.",
     )
+    chunk_concurrency: int = Field(
+        default=1,
+        description="Number of concurrent LLM calls for independent chunk analysis. "
+        "1 = serial (safe). 10 = 10 chunks at once. "
+        "Higher values reduce latency but may hit API rate limits.",
+    )
     enable_thinking: bool = Field(
         default=False,
         description="Enable thinking/reasoning mode for git analysis LLM calls. "

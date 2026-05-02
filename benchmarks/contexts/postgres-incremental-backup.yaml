@@ -1,0 +1,10 @@
+# PostgreSQL Incremental Backup context
+target_feature: "Incremental backup and recovery — pg_backup, incremental WAL archiving, mergebackup"
+focus_areas:
+  - pg_backup infrastructure for incremental backups
+  - Incremental WAL summarization for page-level change tracking
+  - Mergebackup commands for combining incremental backup chains
+  - Storage engine, WAL archiving subsystem, and recovery integration
+audience: developers
+purpose: Document the incremental backup and recovery infrastructure in PostgreSQL 18
+detail_level: comprehensive

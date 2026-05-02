@@ -1,0 +1,8 @@
+# Cloned benchmark repos
+repos/
+
+# Run results
+results/
+
+# Keep gitkeep
+!repos/.gitkeep

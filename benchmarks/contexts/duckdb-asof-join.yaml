@@ -1,0 +1,12 @@
+# DuckDB AsOf Join implementation context
+target_feature: "Non-equi temporal ASOF join across pipeline, sorting, threading, predicates"
+focus_areas:
+  - Physical plan generation and operator architecture for ASOF joins
+  - Sorted-run build with partitioning and ordering (HashedSort)
+  - Parallel probe using exponential + binary search over sorted runs
+  - Iterator state management, memory pinning, and AsOfPayloadScanner
+  - Multi-stage task scheduling (SORT → MATERIALIZE → GET → LEFT → RIGHT → DONE)
+  - Predicate evaluation and join type dispatch (SEMI, ANTI, MARK, LEFT, INNER, RIGHT, OUTER)
+audience: developers
+purpose: Document the DuckDB ASOF join execution engine design and implementation details
+detail_level: comprehensive

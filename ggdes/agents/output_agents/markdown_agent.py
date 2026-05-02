@@ -1132,3 +1132,9 @@ title {diagram.title}
         output_file.write_text(content)
 
         return output_file
+
+    def _convert(self, content: str, output_file: Path, diagrams_dir: Path) -> Path:
+        """Write markdown content directly to the output file."""
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(content)
+        return output_file

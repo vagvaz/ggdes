@@ -1,0 +1,10 @@
+# fmtlib v11.0.0 → v12.0.0 context
+target_feature: "Full release v11.0.0 → v12.0.0 — constexpr format, FMT_STATIC_FORMAT, C++20 modules, floating-point perf rewrite, deprecated API removal"
+focus_areas:
+  - constexpr format string support and compile-time FMT_STATIC_FORMAT validation
+  - C++20 module integration
+  - Floating-point formatting performance rewrite
+  - Deprecated API removal (has_formatter, fmt::localtime, wide stream overloads)
+audience: developers
+purpose: Document the major API and behavioral changes in the fmtlib 12.0.0 release
+detail_level: comprehensive
