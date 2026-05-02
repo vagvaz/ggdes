@@ -236,10 +236,16 @@ def resume(
         pipeline = AnalysisPipeline(config, found_id, interactive=interactive)
 
         if stage:
-            # Run specific stage
+            # Run specific stage — reset it first so it re-runs even if completed
             logger.info(f"Running specific stage: {stage}")
             console.print(f"[bold]Running stage:[/bold] {stage}")
             console.print(f"[dim]Target formats: {', '.join(target_formats)}[/dim]")
+            metadata = kb_manager.load_metadata(found_id)
+            if metadata:
+                metadata.reset_stage(stage)
+                kb_manager.save_metadata(found_id, metadata)
+                logger.info(f"Reset stage '{stage}' to pending for re-run")
+                console.print(f"[dim]Reset '{stage}' to pending for re-run[/dim]")
             success = pipeline.run_stage(stage)
         else:
             # Run all pending stages
