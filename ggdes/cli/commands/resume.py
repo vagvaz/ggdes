@@ -13,7 +13,7 @@ from ggdes.cli.utils import (
 )
 from ggdes.config import load_config
 from ggdes.kb import KnowledgeBaseManager, StageStatus
-from ggdes.stages import STAGE_COORDINATOR_PLAN, STAGE_OUTPUT_GENERATION
+from ggdes.stages import ALL_STAGES, STAGE_COORDINATOR_PLAN, STAGE_OUTPUT_GENERATION
 
 
 @app.command()
@@ -24,6 +24,14 @@ def resume(
     retry_failed: Annotated[
         bool, typer.Option(help="Retry failed stages (reset them to pending)")
     ] = False,
+    from_stage: Annotated[
+        str | None,
+        typer.Option(
+            "--from",
+            help="Reset all stages from this stage onwards to pending and re-run. "
+            "Useful after fixing code or config issues.",
+        ),
+    ] = None,
     formats: Annotated[
         str | None,
         typer.Option(
@@ -116,6 +124,28 @@ def resume(
             )
         ):
             overwrite_context = True
+
+    # If --from is set, reset everything from that stage onwards to pending
+    if from_stage:
+        if from_stage not in ALL_STAGES:
+            console.print(
+                f"[red]Error:[/red] Unknown stage '{from_stage}'. "
+                f"Valid: {', '.join(ALL_STAGES)}"
+            )
+            raise typer.Exit(1)
+
+        from_idx = ALL_STAGES.index(from_stage)
+        stages_to_reset = ALL_STAGES[from_idx:]
+        metadata = kb_manager.load_metadata(found_id)
+        if metadata:
+            for stage_name in stages_to_reset:
+                metadata.reset_stage(stage_name)
+            kb_manager.save_metadata(found_id, metadata)
+            logger.info(f"Reset stages from '{from_stage}' onwards: {', '.join(stages_to_reset)}")
+            console.print(
+                f"[yellow]Reset {len(stages_to_reset)} stage(s) from '{from_stage}' onwards:[/yellow] "
+                f"{', '.join(stages_to_reset)}"
+            )
 
     # Check if can resume
     can_resume, reason = kb_manager.can_resume(found_id, retry_failed=retry_failed)
