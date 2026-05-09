@@ -1,4 +1,5 @@
 """Web, TUI, and debug commands."""
+# mypy: disable-error-code="has-type,untyped-decorator"
 
 from typing import Annotated, Any
 

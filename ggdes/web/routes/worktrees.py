@@ -6,13 +6,13 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from ggdes.kb import StageStatus
-from ggdes.worktree import WorktreeManager
 from ggdes.web.manager import get_config, get_kb
+from ggdes.worktree import WorktreeManager
 
 router = APIRouter()
 
 
-@router.get("/api/stats")  # type: ignore[untyped-decorator]
+@router.get("/api/stats")
 async def get_stats() -> dict[str, Any]:
     """Get overall system statistics."""
     kb = get_kb()
@@ -72,7 +72,7 @@ async def get_stats() -> dict[str, Any]:
     }
 
 
-@router.get("/api/worktrees/cleanup-preview")  # type: ignore[untyped-decorator]
+@router.get("/api/worktrees/cleanup-preview")
 async def preview_worktree_cleanup(
     days: int = Query(default=7, ge=1),
 ) -> dict[str, Any]:
@@ -98,7 +98,7 @@ async def preview_worktree_cleanup(
     }
 
 
-@router.post("/api/worktrees/cleanup")  # type: ignore[untyped-decorator]
+@router.post("/api/worktrees/cleanup")
 async def cleanup_worktrees(days: int = Query(default=7, ge=1)) -> dict[str, Any]:
     """Clean up old worktrees."""
     config = get_config()

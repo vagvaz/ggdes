@@ -1,7 +1,7 @@
 """Analysis-related API routes."""
 
-import json
 import contextlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,11 +10,10 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ggdes.config import GGDesConfig, load_config
-from ggdes.kb import KnowledgeBaseManager, StageStatus
+from ggdes.kb import StageStatus
 from ggdes.pipeline import AnalysisPipeline
-from ggdes.worktree import WorktreeManager
 from ggdes.web.manager import get_config, get_kb, manager
+from ggdes.worktree import WorktreeManager
 
 router = APIRouter()
 
@@ -40,7 +39,7 @@ class SetRevisionRequest(BaseModel):
     revision_id: str
 
 
-@router.get("/api/analyses")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses")
 async def list_analyses() -> list[dict[str, Any]]:
     """List all analyses."""
     kb = get_kb()
@@ -97,7 +96,7 @@ async def list_analyses() -> list[dict[str, Any]]:
     return analyses
 
 
-@router.get("/api/analyses/{analysis_id}")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}")
 async def get_analysis(analysis_id: str) -> dict[str, Any]:
     """Get detailed information about an analysis."""
     kb = get_kb()
@@ -177,7 +176,7 @@ async def get_analysis(analysis_id: str) -> dict[str, Any]:
     }
 
 
-@router.post("/api/analyses/{analysis_id}/resume")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses/{analysis_id}/resume")
 async def resume_analysis(
     analysis_id: str, body: ResumeRequest | None = None
 ) -> dict[str, Any]:
@@ -231,7 +230,7 @@ async def resume_analysis(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/api/analyses/{analysis_id}/revisions")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/revisions")
 async def list_revisions(analysis_id: str) -> dict[str, Any]:
     """List all revisions for an analysis."""
     config = get_config()
@@ -258,7 +257,7 @@ async def list_revisions(analysis_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/api/analyses/{analysis_id}/regenerate")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses/{analysis_id}/regenerate")
 async def regenerate_from_feedback(
     analysis_id: str, body: RegenerateRequest
 ) -> dict[str, Any]:
@@ -309,7 +308,7 @@ async def regenerate_from_feedback(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.put("/api/analyses/{analysis_id}/revisions/current")  # type: ignore[untyped-decorator]
+@router.put("/api/analyses/{analysis_id}/revisions/current")
 async def set_current_revision(
     analysis_id: str, body: SetRevisionRequest
 ) -> dict[str, Any]:
@@ -329,7 +328,7 @@ async def set_current_revision(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/api/analyses/{analysis_id}/delete")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses/{analysis_id}/delete")
 async def delete_analysis(analysis_id: str, remove_kb: bool = True) -> dict[str, Any]:
     """Delete an analysis."""
     config = get_config()
@@ -362,7 +361,7 @@ async def delete_analysis(analysis_id: str, remove_kb: bool = True) -> dict[str,
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/api/analyses")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses")
 async def create_analysis(
     name: str,
     commit_range: str,
@@ -408,7 +407,7 @@ async def create_analysis(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/api/analyses/{analysis_id}/documents")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/documents")
 async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of generated documents for an analysis."""
     kb = get_kb()
@@ -444,7 +443,7 @@ async def get_documents(analysis_id: str) -> list[dict[str, Any]]:
     return documents
 
 
-@router.get("/api/analyses/{analysis_id}/documents/{format}/download")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/documents/{format}/download")
 async def download_document(analysis_id: str, format: str) -> FileResponse:
     """Download a generated document."""
     kb = get_kb()
@@ -471,7 +470,7 @@ async def download_document(analysis_id: str, format: str) -> FileResponse:
     raise HTTPException(status_code=404, detail="Document not found")
 
 
-@router.get("/api/analyses/{analysis_id}/diagrams")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/diagrams")
 async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
     """Get list of diagrams for an analysis."""
     kb = get_kb()
@@ -500,7 +499,7 @@ async def get_diagrams(analysis_id: str) -> list[dict[str, Any]]:
     return diagrams
 
 
-@router.get("/api/analyses/{analysis_id}/plan")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/plan")
 async def get_document_plan(analysis_id: str) -> dict[str, Any]:
     """Get document plan with sections for an analysis."""
     kb = get_kb()
@@ -510,7 +509,7 @@ async def get_document_plan(analysis_id: str) -> dict[str, Any]:
     return plan
 
 
-@router.get("/api/analyses/{analysis_id}/stage-preview/{stage_name}")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/stage-preview/{stage_name}")
 async def get_stage_preview(analysis_id: str, stage_name: str) -> dict[str, Any]:
     """Get a preview of a stage's output for review."""
     from ggdes.review.reviewer import StageReviewer
@@ -531,7 +530,7 @@ async def get_stage_preview(analysis_id: str, stage_name: str) -> dict[str, Any]
     }
 
 
-@router.get("/api/analyses/{analysis_id}/outputs")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/outputs")
 async def list_outputs(analysis_id: str) -> dict[str, Any]:
     """List all output files for an analysis."""
     kb = get_kb()
@@ -556,7 +555,7 @@ async def list_outputs(analysis_id: str) -> dict[str, Any]:
     return {"files": sorted(files, key=lambda x: x["relative"])}
 
 
-@router.get("/api/analyses/{analysis_id}/outputs/content")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/outputs/content")
 async def get_output_content(
     analysis_id: str, path: str = Query(...)
 ) -> dict[str, Any]:

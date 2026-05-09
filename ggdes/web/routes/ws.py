@@ -9,7 +9,7 @@ from ggdes.web.manager import manager
 router = APIRouter()
 
 
-@router.websocket("/ws")  # type: ignore[untyped-decorator]
+@router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await manager.connect(websocket)

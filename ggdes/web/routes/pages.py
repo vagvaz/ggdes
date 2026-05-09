@@ -1,26 +1,24 @@
 """HTML page-serving routes."""
 
-import json
 import contextlib
-from pathlib import Path
-from typing import Any
+import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
 from ggdes.web.manager import get_kb
-from ggdes.web.templates import INDEX_HTML, FEEDBACK_HTML, DETAIL_HTML
+from ggdes.web.templates import DETAIL_HTML, FEEDBACK_HTML, INDEX_HTML
 
 router = APIRouter()
 
 
-@router.get("/", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
+@router.get("/", response_class=HTMLResponse)
 async def root() -> HTMLResponse:
     """Serve the main web interface."""
     return HTMLResponse(content=INDEX_HTML, status_code=200)
 
 
-@router.get("/feedback/{analysis_id}", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
+@router.get("/feedback/{analysis_id}", response_class=HTMLResponse)
 async def feedback_page(analysis_id: str) -> HTMLResponse:
     """Serve the feedback interface for a specific analysis."""
     kb = get_kb()
@@ -43,7 +41,7 @@ async def feedback_page(analysis_id: str) -> HTMLResponse:
     )
 
 
-@router.get("/analysis/{analysis_id}", response_class=HTMLResponse)  # type: ignore[untyped-decorator]
+@router.get("/analysis/{analysis_id}", response_class=HTMLResponse)
 async def analysis_detail_page(analysis_id: str) -> HTMLResponse:
     """Serve the analysis detail page."""
     kb = get_kb()

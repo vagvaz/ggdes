@@ -18,17 +18,16 @@ from ggdes.parsing import ASTParser
 from ggdes.review import ReviewSession
 from ggdes.schemas import ChangeSummary, CodeElement
 from ggdes.stages import (
-    StageResult as StageResultData,
-    get_stage,
-    STAGE_GIT_ANALYSIS,
-    STAGE_CHANGE_FILTER,
     STAGE_AST_PARSING_BASE,
     STAGE_AST_PARSING_HEAD,
+    STAGE_CHANGE_FILTER,
+    STAGE_COORDINATOR_PLAN,
+    STAGE_GIT_ANALYSIS,
+    STAGE_OUTPUT_GENERATION,
     STAGE_SEMANTIC_DIFF,
     STAGE_TECHNICAL_AUTHOR,
-    STAGE_COORDINATOR_PLAN,
-    STAGE_OUTPUT_GENERATION,
     STAGE_WORKTREE_SETUP,
+    get_stage,
 )
 from ggdes.tools import ToolExecutor
 from ggdes.utils.lock import LockContext
@@ -775,13 +774,15 @@ class AnalysisPipeline:
         """
         from ggdes.stages.utils import build_tool_executor
 
-        return build_tool_executor(
+        executor = build_tool_executor(
             config=self.config,
             kb=self.kb_manager,
             analysis_id=self.analysis_id,
             repo_path=self.repo_path,
             metadata=self.metadata,
         )
+        assert isinstance(executor, ToolExecutor)
+        return executor
 
     def _get_changed_files_detailed(self) -> list[dict[str, Any]]:
         """Get detailed changed file info from git analysis results.

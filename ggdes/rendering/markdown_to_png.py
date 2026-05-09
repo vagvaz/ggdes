@@ -25,8 +25,8 @@ class MarkdownToPngRenderer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.theme = theme if theme in ("light", "dark") else "light"
         self.width = width
-        self._playwright = None
-        self._browser = None
+        self._playwright: Any = None
+        self._browser: Any = None
 
     async def _get_browser(self) -> Any:
         """Get or create a cached Playwright browser instance.
@@ -152,7 +152,7 @@ class MarkdownToPngRenderer:
             Complete HTML document as string
         """
         try:
-            import markdown as md
+            import markdown as md  # type: ignore[import-untyped]
             from pygments.formatters import HtmlFormatter
         except ImportError as e:
             raise ImportError(
@@ -172,7 +172,7 @@ class MarkdownToPngRenderer:
 
         # Get Pygments CSS for syntax highlighting
         try:
-            pygments_css: str = HtmlFormatter().get_style_defs(".highlight")  # type: ignore[no-untyped-call]
+            pygments_css: str = HtmlFormatter().get_style_defs(".highlight")
         except Exception:
             pygments_css = ""
 

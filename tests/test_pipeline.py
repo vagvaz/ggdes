@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -660,7 +661,6 @@ class TestLoadChangedClasses:
         Regression test: producer (semantic_diff.py) writes 'removed' but
         consumer checked for 'deleted', silently missing removed classes.
         """
-        from ggdes.agents.output_agents.base import OutputAgent
 
         # Create semantic diff data matching the producer format
         semantic_diff_dir = tmp_path / "semantic_diff"
@@ -729,9 +729,12 @@ class TestLoadChangedClasses:
         )
 
 
-def _make_minimal_output_agent(kb_path: Path) -> "OutputAgent":
+def _make_minimal_output_agent(
+    kb_path: Path,
+) -> Any:
     """Build a minimal concrete OutputAgent subclass for testing."""
     from typing import Any
+
     from ggdes.agents.output_agents.base import OutputAgent
     from ggdes.config import GGDesConfig
 

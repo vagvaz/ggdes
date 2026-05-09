@@ -1,4 +1,5 @@
 """Cleanup and conversations commands."""
+# mypy: disable-error-code="has-type,untyped-decorator"
 
 import json
 from pathlib import Path

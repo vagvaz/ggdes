@@ -61,12 +61,12 @@ for b in data['benchmarks']:
         print(f'STORAGE={json.dumps(g.get(\"storage\", \"summary\"), ensure_ascii=False)}')
         print(f'SEMANTIC_DIFF={json.dumps(str(g.get(\"semantic_diff\", True)).lower(), ensure_ascii=False)}')
         print(f'AUTO={json.dumps(str(g.get(\"auto\", True)).lower(), ensure_ascii=False)}')
-        print(f'LLM_PROVIDER={json.dumps(g.get("provider", ""), ensure_ascii=False)}')
-        print(f'LLM_MODEL={json.dumps(g.get("model_name", ""), ensure_ascii=False)}')
-        print(f'LLM_API_KEY={json.dumps(g.get("api_key", ""), ensure_ascii=False)}')
-        print(f'LLM_BASE_URL={json.dumps(g.get("base_url", ""), ensure_ascii=False)}')
-        print(f'CONTEXT_FILE={json.dumps(g.get("context_file", ""), ensure_ascii=False)}')
-        focus = g.get("focus_commits", [])
+        print(f'LLM_PROVIDER={json.dumps(g.get(\"provider\", \"\"), ensure_ascii=False)}')
+        print(f'LLM_MODEL={json.dumps(g.get(\"model_name\", \"\"), ensure_ascii=False)}')
+        print(f'LLM_API_KEY={json.dumps(g.get(\"api_key\", \"\"), ensure_ascii=False)}')
+        print(f'LLM_BASE_URL={json.dumps(g.get(\"base_url\", \"\"), ensure_ascii=False)}')
+        print(f'CONTEXT_FILE={json.dumps(g.get(\"context_file\", \"\"), ensure_ascii=False)}')
+        focus = g.get(\"focus_commits\", [])
         print(f'FOCUS_COMMITS={json.dumps(\",\".join(focus) if focus else \"\", ensure_ascii=False)}')
         sys.exit(0)
 
@@ -95,9 +95,9 @@ sys.exit(1)
   echo "  Formats   : $FORMATS"
   echo "  Storage   : $STORAGE"
   echo "  Semantic  : $SEMANTIC_DIFF"
-  if [ -n "$LLM_PROVIDER" ]; then echo "  LLM       : $LLM_PROVIDER/$LLM_MODEL"; fi
-  if [ -n "$FOCUS_COMMITS" ]; then echo "  Focus     : $FOCUS_COMMITS"; fi
-  if [ -n "$CONTEXT_FILE" ]; then echo "  Context   : $SCRIPT_DIR/$CONTEXT_FILE"; fi
+  if [ -n "${LLM_PROVIDER:-}" ]; then echo "  LLM       : ${LLM_PROVIDER:-}/${LLM_MODEL:-}"; fi
+  if [ -n "${FOCUS_COMMITS:-}" ]; then echo "  Focus     : $FOCUS_COMMITS"; fi
+  if [ -n "${CONTEXT_FILE:-}" ]; then echo "  Context   : $SCRIPT_DIR/$CONTEXT_FILE"; fi
   echo "───────────────────────────────────────────────────────────────"
   echo "  $FEATURE"
   echo "═══════════════════════════════════════════════════════════════"
@@ -112,10 +112,10 @@ sys.exit(1)
     echo "    --repo \"$repo_path\" \\"
     echo "    --formats \"$FORMATS\" \\"
     echo "    --storage \"$STORAGE\" \\"
-    if [ -n "$LLM_PROVIDER" ]; then echo "    --provider \"$LLM_PROVIDER\" \\"; fi
-    if [ -n "$LLM_MODEL" ]; then echo "    --model \"$LLM_MODEL\" \\"; fi
-    if [ -n "$FOCUS_COMMITS" ]; then echo "    --focus \"$FOCUS_COMMITS\" \\"; fi
-    if [ -n "$CONTEXT_FILE" ]; then echo "    --context-file \"$SCRIPT_DIR/$CONTEXT_FILE\" \\"; fi
+    if [ -n "${LLM_PROVIDER:-}" ]; then echo "    --provider \"$LLM_PROVIDER\" \\"; fi
+    if [ -n "${LLM_MODEL:-}" ]; then echo "    --model \"$LLM_MODEL\" \\"; fi
+    if [ -n "${FOCUS_COMMITS:-}" ]; then echo "    --focus \"$FOCUS_COMMITS\" \\"; fi
+    if [ -n "${CONTEXT_FILE:-}" ]; then echo "    --context-file \"$SCRIPT_DIR/$CONTEXT_FILE\" \\"; fi
     echo "    --auto"
     if [ "$SEMANTIC_DIFF" = "true" ]; then
       echo "    --semantic-diff"
@@ -136,20 +136,20 @@ sys.exit(1)
     if [ "$SEMANTIC_DIFF" = "false" ]; then
       args+=(--no-semantic-diff)
     fi
-    if [ -n "$LLM_PROVIDER" ]; then
+    if [ -n "${LLM_PROVIDER:-}" ]; then
       args+=(--provider "$LLM_PROVIDER")
     fi
-    if [ -n "$LLM_MODEL" ]; then
+    if [ -n "${LLM_MODEL:-}" ]; then
       args+=(--model "$LLM_MODEL")
     fi
-    if [ -n "$LLM_API_KEY" ]; then
+    if [ -n "${LLM_API_KEY:-}" ]; then
       args+=(--api-key "$LLM_API_KEY")
     fi
-    if [ -n "$CONTEXT_FILE" ]; then
-      args+=(--context-file "$SCRIPT_DIR/$CONTEXT_FILE")
-    fi
-    if [ -n "$FOCUS_COMMITS" ]; then
+    if [ -n "${FOCUS_COMMITS:-}" ]; then
       args+=(--focus "$FOCUS_COMMITS")
+    fi
+    if [ -n "${CONTEXT_FILE:-}" ]; then
+      args+=(--context-file "$SCRIPT_DIR/$CONTEXT_FILE")
     fi
 
     (cd "$PROJECT_ROOT" && $GGDES analyze "${args[@]}")

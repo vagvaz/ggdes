@@ -724,9 +724,14 @@ Provide a brief analysis of these specific changes. Focus on:
 
 IMPORTANT: Only analyze code visible in this chunk. Do not reference code not shown.
 """
+                        system_prompt = (
+                            self.conversation.system_prompt
+                            if self.conversation
+                            else None
+                        )
                         response = await self.llm.async_generate(
                             prompt=chunk_prompt,
-                            system_prompt=self.conversation.system_prompt,
+                            system_prompt=system_prompt,
                             temperature=0.3,
                             max_tokens=2048,
                         )

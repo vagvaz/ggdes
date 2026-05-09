@@ -17,10 +17,10 @@ from rich.prompt import Prompt
 
 from ggdes.kb import KnowledgeBaseManager, StageStatus
 from ggdes.stages import (
-    STAGE_WORKTREE_SETUP,
     STAGE_AST_PARSING_BASE,
     STAGE_CHANGE_FILTER,
     STAGE_SEMANTIC_DIFF,
+    STAGE_WORKTREE_SETUP,
 )
 
 

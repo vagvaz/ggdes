@@ -1,4 +1,5 @@
 """Export and archive commands."""
+# mypy: disable-error-code="has-type,untyped-decorator"
 
 import json
 import zipfile

@@ -878,7 +878,7 @@ class SemanticDiffAnalyzer:
         return changes
 
     def _make_cpp_change(
-        self, name: str, base_elem: dict, head_elem: dict, file_path: str
+        self, name: str, base_elem: dict[str, Any], head_elem: dict[str, Any], file_path: str
     ) -> SemanticChange:
         """Create a SemanticChange for a C++ signature modification."""
         base_params = ", ".join(base_elem.get("parameters", []))
@@ -1097,7 +1097,7 @@ class SemanticDiffAnalyzer:
                   name: (type_identifier) @class.name) @class.def
             """,
             )
-            captures = query.captures(tree.root_node)
+            captures = query.captures(tree.root_node)  # type: ignore[attr-defined]
 
             func_name = None
             func_params: list[str] = []
@@ -1167,8 +1167,8 @@ class SemanticDiffAnalyzer:
             if cpp_lang is None:
                 # Try to initialize C++ language
                 try:
-                    from tree_sitter_cpp import language as cpp_language
                     from tree_sitter import Language, Parser
+                    from tree_sitter_cpp import language as cpp_language
 
                     lang = Language(cpp_language())
                     parser._languages["cpp"] = lang
@@ -1204,7 +1204,7 @@ class SemanticDiffAnalyzer:
                 cpp_lang,
                 "(if_statement) @if; (for_statement) @for; (while_statement) @while; (switch_statement) @switch",
             )
-            captures = query.captures(tree.root_node)
+            captures = query.captures(tree.root_node)  # type: ignore[attr-defined]
             return len(captures)
         except Exception:
             return 0
@@ -1222,7 +1222,7 @@ class SemanticDiffAnalyzer:
                 cpp_lang,
                 "(try_statement) @try; (catch_clause) @catch; (throw_statement) @throw",
             )
-            captures = query.captures(tree.root_node)
+            captures = query.captures(tree.root_node)  # type: ignore[attr-defined]
             return len(captures)
         except Exception:
             return 0

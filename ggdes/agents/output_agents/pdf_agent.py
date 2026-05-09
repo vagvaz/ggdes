@@ -5,8 +5,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
-
 from ggdes.agents.output_agents.base import OutputAgent
 from ggdes.config import GGDesConfig, get_kb_path
 

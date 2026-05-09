@@ -666,7 +666,11 @@ Use the {diagram_type} diagram type. Respond with ONLY the PlantUML code, title,
         """Fallback to template-based generation."""
         from ggdes.diagrams import (
             _generate_architecture_plantuml as generate_architecture_diagram,
+        )
+        from ggdes.diagrams import (
             _generate_flow_plantuml as generate_flow_diagram,
+        )
+        from ggdes.diagrams import (
             _generate_sequence_plantuml as generate_sequence_diagram,
         )
 

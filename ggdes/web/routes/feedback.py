@@ -1,23 +1,22 @@
 """Feedback-related API routes."""
 
-import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from ggdes.web.manager import get_kb
 
 router = APIRouter()
 
 
-@router.get("/api/analyses/{analysis_id}/feedback")  # type: ignore[untyped-decorator]
+@router.get("/api/analyses/{analysis_id}/feedback")
 async def get_feedback(analysis_id: str) -> dict[str, str]:
     """Get section-level feedback for an analysis."""
     kb = get_kb()
     return kb.load_section_feedback(analysis_id)
 
 
-@router.post("/api/analyses/{analysis_id}/feedback")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses/{analysis_id}/feedback")
 async def save_feedback(
     analysis_id: str,
     section_title: str = Query(...),
@@ -29,7 +28,7 @@ async def save_feedback(
     return {"success": True, "section": section_title}
 
 
-@router.post("/api/analyses/{analysis_id}/feedback/bulk")  # type: ignore[untyped-decorator]
+@router.post("/api/analyses/{analysis_id}/feedback/bulk")
 async def save_feedback_bulk(
     analysis_id: str,
     request: dict[str, Any],

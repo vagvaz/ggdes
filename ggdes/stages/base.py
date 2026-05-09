@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 from rich.console import Console
 
@@ -20,7 +19,7 @@ class StageResult:
         skipped: True if the stage had nothing to do (not a failure).
     """
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     skipped: bool = False
 
 
@@ -43,7 +42,7 @@ class Stage(ABC):
         config: GGDesConfig,
         kb: KnowledgeBaseManager,
         console: Console,
-        feedback: Optional[str] = None,
+        feedback: str | None = None,
     ) -> StageResult:
         """Execute this stage.
 

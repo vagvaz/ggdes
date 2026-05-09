@@ -95,7 +95,7 @@ def resolve_stage_order(
     graph = deps or STAGE_DEPENDENCIES
 
     # Compute in-degree (number of unresolved dependencies) per stage
-    in_degree: dict[str, int] = {s: 0 for s in graph}
+    in_degree: dict[str, int] = dict.fromkeys(graph, 0)
     for stage, prereqs in graph.items():
         in_degree[stage] = len(prereqs)
 

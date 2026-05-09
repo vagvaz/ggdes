@@ -64,8 +64,9 @@ class OutputAgent(ABC):
 
             kb = KnowledgeBaseManager(self.config)
             meta = kb.load_metadata(self.analysis_id)
-            if meta and getattr(meta, "current_revision", None):
-                base = base / meta.current_revision
+            current_revision = getattr(meta, "current_revision", None)
+            if meta and current_revision:
+                base = base / current_revision
         except Exception:
             pass
         return base

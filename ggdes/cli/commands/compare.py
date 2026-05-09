@@ -1,4 +1,5 @@
 """Compare command."""
+# mypy: disable-error-code="has-type,untyped-decorator"
 
 from pathlib import Path
 from typing import Annotated

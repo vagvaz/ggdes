@@ -1,4 +1,5 @@
 """Doctor command - system diagnostics."""
+# mypy: disable-error-code="has-type,untyped-decorator"
 
 import shutil
 import subprocess
@@ -53,7 +54,7 @@ def _check_npm_package(name: str) -> bool:
 def _check_dot_features() -> None:
     """Check if Graphviz dot supports specific rendering features."""
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["dot", "-?"],
             capture_output=True, text=True, timeout=10,
         )

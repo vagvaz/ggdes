@@ -8,8 +8,8 @@ from fastapi import FastAPI
 
 from ggdes.web.routes.analyses import router as analyses_router
 from ggdes.web.routes.feedback import router as feedback_router
-from ggdes.web.routes.worktrees import router as worktrees_router
 from ggdes.web.routes.pages import router as pages_router
+from ggdes.web.routes.worktrees import router as worktrees_router
 from ggdes.web.routes.ws import router as ws_router
 
 app = FastAPI(title="GGDes Web", description="Web interface for GGDes analysis")
